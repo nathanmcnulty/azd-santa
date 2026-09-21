@@ -10,7 +10,7 @@ Captured 2026-09-21. This is an offline evidence snapshot, not proof of a live I
 - Build source minimum target is macOS 14.0. Upstream's release policy currently lists macOS 14, 15, and 26.
 - Upstream Team ID is `ZMCG7MLDV9`. Baseline Endpoint Security extension is `com.northpolesec.santa.daemon`. `com.northpolesec.santa.netd` is excluded because the network extension requires Workshop.
 
-The downloaded bytes were hash-verified on Windows. Apple package signature, Gatekeeper, notarization-staple, installed bundle signature, and entitlement verification remain mandatory on macOS and are deliberately not marked proven in the lock.
+The downloaded bytes were hash-verified on Windows. Apple package signature, Gatekeeper, notarization, installed bundle signature, and entitlement verification remain mandatory on macOS and are deliberately not marked proven in the lock. Notarization evidence may be either a stapled ticket or an online ticket accepted by Gatekeeper; the verification receipt records which path succeeded.
 
 ## Profile and Intune contract
 

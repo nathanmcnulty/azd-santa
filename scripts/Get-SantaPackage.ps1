@@ -26,9 +26,24 @@ try {
         $signatureText = $signature -join "`n"
         if ($LASTEXITCODE -ne 0 -or $signatureText -notmatch [regex]::Escape($lock.identity.teamId) -or $signatureText -notmatch [regex]::Escape($lock.identity.expectedInstallerCertificateCommonName)) { throw 'Package signature validation failed or the pinned installer identity was absent.' }
         $gatekeeper = @(& spctl --assess --type install --verbose=4 $partial 2>&1)
-        if ($LASTEXITCODE -ne 0) { throw 'Gatekeeper rejected the package.' }
+        $gatekeeperText = $gatekeeper -join "`n"
+        if ($LASTEXITCODE -ne 0) { throw "Gatekeeper rejected the package:`n$gatekeeperText" }
         $stapler = @(& xcrun stapler validate $partial 2>&1)
-        if ($LASTEXITCODE -ne 0) { throw 'The notarization staple did not validate.' }
+        $staplerText = $stapler -join "`n"
+        if ($LASTEXITCODE -eq 0) {
+            $notarizationEvidence = 'stapled-ticket'
+            $notarizationText = $staplerText
+        }
+        elseif ($gatekeeperText -match '(?im)^source=Notarized Developer ID\s*$') {
+            # Apple publishes notarization tickets online as well as allowing them to be
+            # stapled. Preserve the failed staple result alongside Gatekeeper's online
+            # notarization decision so the receipt does not imply offline installability.
+            $notarizationEvidence = 'online-ticket'
+            $notarizationText = "Gatekeeper:`n$gatekeeperText`nStapler:`n$staplerText"
+        }
+        else {
+            throw "Neither a stapled ticket nor a Gatekeeper-validated online notarization ticket was found:`n$staplerText"
+        }
         & pkgutil --expand $partial $inspectPath
         if ($LASTEXITCODE -ne 0) { throw 'Unable to expand the package for metadata validation.' }
         [xml]$packageInfo = Get-Content -LiteralPath (Join-Path $inspectPath 'app.pkg/PackageInfo') -Raw
@@ -41,7 +56,7 @@ try {
     if ($fullyVerified) {
         $metadataText = "$($packageInfo.'pkg-info'.identifier)|$($packageInfo.'pkg-info'.version)"
         $receipt = [ordered]@{
-            schemaVersion = '1.0'
+            schemaVersion = '1.1'
             releaseTag = [string] $lock.release.tag
             verifiedAt = [DateTimeOffset]::UtcNow.ToString('o')
             hostPlatform = 'macOS'
@@ -59,8 +74,8 @@ try {
             checks = [ordered]@{
                 sha256 = [ordered]@{ status = 'succeeded'; outputSha256 = (Get-TextSha256 -Text ([string] $lock.package.sha256)) }
                 packageSignature = [ordered]@{ status = 'succeeded'; outputSha256 = (Get-TextSha256 -Text $signatureText) }
-                gatekeeperAssessment = [ordered]@{ status = 'succeeded'; outputSha256 = (Get-TextSha256 -Text ($gatekeeper -join "`n")) }
-                notarizationStaple = [ordered]@{ status = 'succeeded'; outputSha256 = (Get-TextSha256 -Text ($stapler -join "`n")) }
+                gatekeeperAssessment = [ordered]@{ status = 'succeeded'; outputSha256 = (Get-TextSha256 -Text $gatekeeperText) }
+                notarization = [ordered]@{ status = 'succeeded'; evidence = $notarizationEvidence; outputSha256 = (Get-TextSha256 -Text $notarizationText) }
                 packageMetadata = [ordered]@{ status = 'succeeded'; outputSha256 = (Get-TextSha256 -Text $metadataText) }
             }
         }

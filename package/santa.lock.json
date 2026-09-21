@@ -64,9 +64,9 @@
       "status": "required-not-yet-proven",
       "command": "spctl --assess --type install --verbose=4 <package>"
     },
-    "notarizationStaple": {
+    "notarization": {
       "status": "required-not-yet-proven",
-      "command": "xcrun stapler validate <package>"
+      "command": "xcrun stapler validate <package>; if unstapled, require spctl source=Notarized Developer ID"
     }
   },
   "sources": [

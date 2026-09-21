@@ -14,7 +14,7 @@ Download and hash-check the package on Windows for inspection only:
 ./scripts/Get-SantaPackage.ps1 -AllowUnverifiedPlatform
 ```
 
-For deployable evidence, run the same script on macOS without `-AllowUnverifiedPlatform`. It then requires `pkgutil`, Gatekeeper, and notarization-staple checks to pass before moving the package into its final path.
+For deployable evidence, run the same script on macOS without `-AllowUnverifiedPlatform`. It then requires `pkgutil`, Gatekeeper, and notarization checks to pass before moving the package into its final path. The receipt distinguishes a stapled ticket from an online ticket validated by Gatekeeper; an online-only ticket means offline installation is not proven.
 
 Successful macOS verification also writes `.azure/azd-santa/package-verification-receipt.json`. The receipt binds the selected release, package hash and metadata, Team ID, installer certificate, and digests of each Apple verification result. `New-DeploymentPlan.ps1` keeps package upload blocked unless both that receipt and the immutable package bytes match the lock.
 
