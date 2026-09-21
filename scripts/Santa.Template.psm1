@@ -145,9 +145,9 @@ function Get-SantaProfileCleanupPlan {
         throw 'Intune profile receipt does not contain the exact expected profile IDs.'
     }
     $pilotGroupId = [string] $receipt.pilotGroup.id
-    foreach ($profile in @($receipt.profiles)) {
-        if ([string] $profile.assignmentGroupId -ne $pilotGroupId) {
-            throw "Profile '$($profile.id)' is scoped outside the recorded pilot group."
+    foreach ($receiptProfile in @($receipt.profiles)) {
+        if ([string] $receiptProfile.assignmentGroupId -ne $pilotGroupId) {
+            throw "Profile '$($receiptProfile.id)' is scoped outside the recorded pilot group."
         }
     }
     $operations = @(
@@ -173,6 +173,72 @@ function Get-SantaProfileCleanupPlan {
         release = [string] $receipt.release
         packageStatus = [string] $receipt.package.status
         operations = $operations
+    }
+}
+
+function Test-SantaIntuneProfileReport {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][psobject] $State)
+    $manifest = Get-ProfileManifest
+    $lock = Get-SantaLock
+    $failures = [System.Collections.Generic.List[string]]::new()
+    $expectedIds = @($manifest.profiles | Sort-Object order | ForEach-Object { [string] $_.id })
+    $actualIds = @($State.profiles | ForEach-Object { [string] $_.id })
+    if ((($expectedIds | Sort-Object) -join '|') -cne (($actualIds | Sort-Object) -join '|')) {
+        $failures.Add('profiles:exact-set')
+    }
+    if (@($actualIds | Sort-Object -Unique).Count -ne $expectedIds.Count) {
+        $failures.Add('profiles:unique')
+    }
+    if ([string] $State.release -cne [string] $lock.release.tag) {
+        $failures.Add('release:lock')
+    }
+
+    $pilotGroupId = [string] $State.pilotGroup.id
+    $assignmentProven = $true
+    $requiredProfilesDelivered = $true
+    $profileStatusRowCount = 0
+    foreach ($spec in @($manifest.profiles | Sort-Object order)) {
+        $profileMatches = @($State.profiles | Where-Object id -eq $spec.id)
+        if ($profileMatches.Count -ne 1) {
+            $assignmentProven = $false
+            if ($spec.required) { $requiredProfilesDelivered = $false }
+            continue
+        }
+        $statusProfile = $profileMatches[0]
+        $expectedName = "Santa $($lock.release.tag) - $($spec.id)"
+        $expectedDescription = "[azd-santa:$($lock.release.tag):$($spec.id)] Template-owned Intune profile."
+        if ([string] $statusProfile.displayName -cne $expectedName -or [string] $statusProfile.description -cne $expectedDescription) {
+            $failures.Add("profile:$($spec.id):ownership")
+            $assignmentProven = $false
+        }
+        $groupIds = @($statusProfile.assignment.groupIds | ForEach-Object { [string] $_ } | Sort-Object -Unique)
+        if (-not [bool] $statusProfile.assignment.exactPilotOnly -or $groupIds.Count -ne 1 -or $groupIds[0] -cne $pilotGroupId) {
+            $failures.Add("profile:$($spec.id):assignment")
+            $assignmentProven = $false
+        }
+        $rows = @($statusProfile.deviceStatuses)
+        $profileStatusRowCount += $rows.Count
+        if ($spec.required) {
+            if ($rows.Count -ne 1) {
+                $failures.Add("profile:$($spec.id):status-row")
+                $requiredProfilesDelivered = $false
+            } elseif ([string] $rows[0].status -ine 'succeeded') {
+                $failures.Add("profile:$($spec.id):$([string] $rows[0].status)")
+                $requiredProfilesDelivered = $false
+            }
+            if ([int] $statusProfile.overview.successCount -lt 1 -or [int] $statusProfile.overview.errorCount -gt 0 -or [int] $statusProfile.overview.failedCount -gt 0) {
+                $failures.Add("profile:$($spec.id):overview")
+                $requiredProfilesDelivered = $false
+            }
+        }
+    }
+    return [pscustomobject] [ordered]@{
+        assignmentProven = $assignmentProven
+        profileStatusRowCount = $profileStatusRowCount
+        requiredProfilesDelivered = $requiredProfilesDelivered
+        deliveryReadiness = ($assignmentProven -and $requiredProfilesDelivered -and $failures.Count -eq 0)
+        failures = @($failures)
     }
 }
 
@@ -248,4 +314,4 @@ function Invoke-SyncFixture {
     }
 }
 
-Export-ModuleMember -Function Get-SantaLock, Get-ProfileManifest, New-SantaProfileSet, Test-SantaProfileSet, Test-SantaPackageHash, Test-SantaPackageVerificationReceipt, Get-SantaProfileCleanupPlan, Test-EndpointState, Get-RulePrecedence, ConvertFrom-SantactlStatus, Invoke-SyncFixture
+Export-ModuleMember -Function Get-SantaLock, Get-ProfileManifest, New-SantaProfileSet, Test-SantaProfileSet, Test-SantaPackageHash, Test-SantaPackageVerificationReceipt, Get-SantaProfileCleanupPlan, Test-SantaIntuneProfileReport, Test-EndpointState, Get-RulePrecedence, ConvertFrom-SantactlStatus, Invoke-SyncFixture
