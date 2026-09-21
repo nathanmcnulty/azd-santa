@@ -3,9 +3,9 @@
   "$id": "https://github.com/nathanmcnulty/azd-santa/schemas/intune-profile-status.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "collectedAt", "performsMutation", "tenantId", "account", "release", "pilotGroup", "profiles", "summary"],
+  "required": ["schemaVersion", "collectedAt", "performsMutation", "tenantId", "account", "release", "pilotGroup", "pilotDevice", "profiles", "summary"],
   "properties": {
-    "schemaVersion": { "const": "1.0" },
+    "schemaVersion": { "const": "1.1" },
     "collectedAt": { "type": "string", "format": "date-time" },
     "performsMutation": { "const": false },
     "tenantId": { "type": "string", "format": "uuid" },
@@ -14,10 +14,41 @@
     "pilotGroup": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "displayName"],
+      "required": ["id", "displayName", "memberId"],
       "properties": {
         "id": { "type": "string", "format": "uuid" },
-        "displayName": { "type": "string", "minLength": 1 }
+        "displayName": { "type": "string", "minLength": 1 },
+        "memberId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "pilotDevice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entraObjectId", "aadDeviceId", "managedDeviceId", "deviceName", "serialNumber", "operatingSystem", "osVersion", "complianceState", "lastSyncDateTime", "configurationStates"],
+      "properties": {
+        "entraObjectId": { "type": "string", "format": "uuid" },
+        "aadDeviceId": { "type": "string", "format": "uuid" },
+        "managedDeviceId": { "type": "string", "format": "uuid" },
+        "deviceName": { "type": "string", "minLength": 1 },
+        "serialNumber": { "type": "string", "minLength": 1 },
+        "operatingSystem": { "const": "macOS" },
+        "osVersion": { "type": "string", "minLength": 1 },
+        "complianceState": { "type": "string", "minLength": 1 },
+        "lastSyncDateTime": { "type": "string", "format": "date-time" },
+        "configurationStates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "displayName", "state", "version"],
+            "properties": {
+              "id": { "type": "string", "format": "uuid" },
+              "displayName": { "type": "string", "minLength": 1 },
+              "state": { "type": "string", "minLength": 1 },
+              "version": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
       }
     },
     "profiles": {
@@ -76,9 +107,11 @@
     "summary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["assignmentProven", "profileStatusRowCount", "requiredProfilesDelivered", "deliveryReadiness", "failures"],
+      "required": ["assignmentProven", "pilotDeviceBound", "pilotDeviceConfigurationStateCount", "profileStatusRowCount", "requiredProfilesDelivered", "deliveryReadiness", "failures"],
       "properties": {
         "assignmentProven": { "type": "boolean" },
+        "pilotDeviceBound": { "type": "boolean" },
+        "pilotDeviceConfigurationStateCount": { "type": "integer", "minimum": 0 },
         "profileStatusRowCount": { "type": "integer", "minimum": 0 },
         "requiredProfilesDelivered": { "type": "boolean" },
         "deliveryReadiness": { "type": "boolean" },
