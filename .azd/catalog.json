@@ -1,6 +1,6 @@
 {
   "title": "North Pole Security Santa for Intune",
-  "summary": "Prepare a pinned Santa package and ordered Intune macOS profiles in Monitor mode.",
+  "summary": "Prepare a pinned Santa package and ordered Intune macOS profiles in a monitored pilot.",
   "tags": [
     "Microsoft Intune",
     "macOS",
