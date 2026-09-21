@@ -16,6 +16,8 @@ Download and hash-check the package on Windows for inspection only:
 
 For deployable evidence, run the same script on macOS without `-AllowUnverifiedPlatform`. It then requires `pkgutil`, Gatekeeper, and notarization-staple checks to pass before moving the package into its final path.
 
+Successful macOS verification also writes `.azure/azd-santa/package-verification-receipt.json`. The receipt binds the selected release, package hash and metadata, Team ID, installer certificate, and digests of each Apple verification result. `New-DeploymentPlan.ps1` keeps package upload blocked unless both that receipt and the immutable package bytes match the lock.
+
 The plan's zero GUID is an intentional non-deployable placeholder. A future live apply command must require a specific non-zero pilot group, explicit mutation authorization, successful per-device prerequisite state, and separately granted Graph scopes. Assignment is not readiness: the PKG must not be treated as usable until the System Extension, TCC, Service Management, and configuration profiles report success on the target device.
 
 The guarded profile-only apply command is:
@@ -31,6 +33,14 @@ The guarded profile-only apply command is:
 ```
 
 Without `-Apply`, it only prints a what-if summary and does not authenticate. With `-Apply`, it uses a normal WAM/browser Microsoft Graph connection, verifies the tenant/account/group and single macOS member, refuses display-name collisions or broader assignments, and records exact object IDs under `.azure/azd-santa/`. It cannot upload the PKG.
+
+Generate a non-mutating cleanup plan from the exact profile object IDs recorded by the apply receipt:
+
+```powershell
+./scripts/New-CleanupPlan.ps1
+```
+
+The cleanup planner works only while the receipt says the package was never uploaded. It rejects missing or duplicate profile IDs, assignment-group drift, release drift, and package-present teardown. Package or endpoint removal requires separate evidence before profile cleanup can safely proceed.
 
 After an authorized deployment, run `scripts/Test-SantaEndpoint.sh` locally on the pilot Mac. Keep these checkpoints separate:
 

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0",
+  "tenantId": "11111111-1111-4111-8111-111111111111",
+  "account": "pilot@example.invalid",
+  "release": "2026.8",
+  "pilotGroup": {
+    "id": "22222222-2222-4222-8222-222222222222",
+    "displayName": "Santa pilot"
+  },
+  "profiles": [
+    { "id": "system-extension", "objectId": "33333333-3333-4333-8333-333333333331", "displayName": "Santa 2026.8 - system-extension", "action": "create", "assignmentGroupId": "22222222-2222-4222-8222-222222222222" },
+    { "id": "tcc", "objectId": "33333333-3333-4333-8333-333333333332", "displayName": "Santa 2026.8 - tcc", "action": "create", "assignmentGroupId": "22222222-2222-4222-8222-222222222222" },
+    { "id": "service-management", "objectId": "33333333-3333-4333-8333-333333333333", "displayName": "Santa 2026.8 - service-management", "action": "create", "assignmentGroupId": "22222222-2222-4222-8222-222222222222" },
+    { "id": "configuration", "objectId": "33333333-3333-4333-8333-333333333334", "displayName": "Santa 2026.8 - configuration", "action": "create", "assignmentGroupId": "22222222-2222-4222-8222-222222222222" },
+    { "id": "notifications", "objectId": "33333333-3333-4333-8333-333333333335", "displayName": "Santa 2026.8 - notifications", "action": "create", "assignmentGroupId": "22222222-2222-4222-8222-222222222222" }
+  ],
+  "package": {
+    "status": "not-uploaded",
+    "reason": "macOS verification required"
+  }
+}

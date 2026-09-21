@@ -77,6 +77,105 @@ function Test-SantaPackageHash {
     return $true
 }
 
+function Test-SantaPackageVerificationReceipt {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string] $Path,
+        [string] $PackagePath
+    )
+    $root = Get-RepositoryRoot
+    $schemaPath = Join-Path $root 'schemas/package-verification.schema.json'
+    $raw = Get-Content -LiteralPath $Path -Raw
+    if (-not ($raw | Test-Json -SchemaFile $schemaPath -ErrorAction Stop)) {
+        throw 'Package verification receipt does not satisfy its schema.'
+    }
+    $receipt = $raw | ConvertFrom-Json
+    $lock = Get-SantaLock
+    $expected = [ordered]@{
+        releaseTag = [string] $lock.release.tag
+        assetName = [string] $lock.package.assetName
+        size = [long] $lock.package.size
+        sha256 = [string] $lock.package.sha256
+        identifier = [string] $lock.package.packageIdentifier
+        version = [string] $lock.package.packageVersion
+        teamId = [string] $lock.identity.teamId
+        installerCertificateCommonName = [string] $lock.identity.expectedInstallerCertificateCommonName
+    }
+    $actual = [ordered]@{
+        releaseTag = [string] $receipt.releaseTag
+        assetName = [string] $receipt.package.assetName
+        size = [long] $receipt.package.size
+        sha256 = [string] $receipt.package.sha256
+        identifier = [string] $receipt.package.identifier
+        version = [string] $receipt.package.version
+        teamId = [string] $receipt.identity.teamId
+        installerCertificateCommonName = [string] $receipt.identity.installerCertificateCommonName
+    }
+    foreach ($key in $expected.Keys) {
+        if ($actual[$key] -cne $expected[$key]) {
+            throw "Package verification receipt $key does not match the release lock."
+        }
+    }
+    if ($PackagePath) { Test-SantaPackageHash -Path $PackagePath | Out-Null }
+    return $true
+}
+
+function Get-SantaProfileCleanupPlan {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string] $ReceiptPath)
+    $root = Get-RepositoryRoot
+    $schemaPath = Join-Path $root 'schemas/intune-profile-receipt.schema.json'
+    $raw = Get-Content -LiteralPath $ReceiptPath -Raw
+    if (-not ($raw | Test-Json -SchemaFile $schemaPath -ErrorAction Stop)) {
+        throw 'Intune profile receipt does not satisfy its schema.'
+    }
+    $receipt = $raw | ConvertFrom-Json
+    $lock = Get-SantaLock
+    if ([string] $receipt.release -ne [string] $lock.release.tag) {
+        throw 'Intune profile receipt release does not match the release lock.'
+    }
+    if ([string] $receipt.package.status -ne 'not-uploaded') {
+        throw 'Package cleanup and endpoint removal evidence are required before profile cleanup can be planned.'
+    }
+    $expectedIds = @((Get-ProfileManifest).profiles | Sort-Object order | ForEach-Object { [string] $_.id })
+    $actualIds = @($receipt.profiles | ForEach-Object { [string] $_.id })
+    $expectedIdSet = (($expectedIds | Sort-Object) -join '|')
+    $actualIdSet = (($actualIds | Sort-Object) -join '|')
+    if ($expectedIdSet -cne $actualIdSet) {
+        throw 'Intune profile receipt does not contain the exact expected profile IDs.'
+    }
+    $pilotGroupId = [string] $receipt.pilotGroup.id
+    foreach ($profile in @($receipt.profiles)) {
+        if ([string] $profile.assignmentGroupId -ne $pilotGroupId) {
+            throw "Profile '$($profile.id)' is scoped outside the recorded pilot group."
+        }
+    }
+    $operations = @(
+        $receipt.profiles |
+            Sort-Object { [array]::IndexOf($expectedIds, [string] $_.id) } -Descending |
+            ForEach-Object {
+                [ordered]@{
+                    action = 'delete-template-owned-profile'
+                    profileId = [string] $_.id
+                    objectId = [string] $_.objectId
+                    expectedDisplayName = [string] $_.displayName
+                    assignmentGroupId = $pilotGroupId
+                    guard = 'exact receipt object ID and ownership marker must match at apply time'
+                }
+            }
+    )
+    return [pscustomobject] [ordered]@{
+        schemaVersion = '1.0'
+        mode = 'what-if'
+        performsMutation = $false
+        tenantId = [string] $receipt.tenantId
+        pilotGroupId = $pilotGroupId
+        release = [string] $receipt.release
+        packageStatus = [string] $receipt.package.status
+        operations = $operations
+    }
+}
+
 function Test-EndpointState {
     [CmdletBinding()]
     param([Parameter(Mandatory)][psobject] $State)
@@ -149,4 +248,4 @@ function Invoke-SyncFixture {
     }
 }
 
-Export-ModuleMember -Function Get-SantaLock, Get-ProfileManifest, New-SantaProfileSet, Test-SantaProfileSet, Test-SantaPackageHash, Test-EndpointState, Get-RulePrecedence, ConvertFrom-SantactlStatus, Invoke-SyncFixture
+Export-ModuleMember -Function Get-SantaLock, Get-ProfileManifest, New-SantaProfileSet, Test-SantaProfileSet, Test-SantaPackageHash, Test-SantaPackageVerificationReceipt, Get-SantaProfileCleanupPlan, Test-EndpointState, Get-RulePrecedence, ConvertFrom-SantactlStatus, Invoke-SyncFixture

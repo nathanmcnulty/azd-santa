@@ -26,6 +26,27 @@ Describe 'Release lock and profiles' {
         Set-Content -LiteralPath $fake -Value 'tampered'
         { Test-SantaPackageHash -Path $fake } | Should -Throw '*mismatch*'
     }
+
+    It 'accepts a macOS verification receipt bound to the release lock' {
+        Test-SantaPackageVerificationReceipt -Path (Join-Path $script:root 'tests/fixtures/package/verified.json') | Should -BeTrue
+    }
+
+    It 'rejects signing identity and package metadata drift' {
+        $receipt = Get-Content -Raw (Join-Path $script:root 'tests/fixtures/package/verified.json') | ConvertFrom-Json
+        foreach ($mutation in @(
+                @{ Path = 'teamId'; Value = 'AAAAAAAAAA'; Error = '*teamId*' },
+                @{ Path = 'certificate'; Value = 'Developer ID Installer: Unexpected'; Error = '*installerCertificateCommonName*' },
+                @{ Path = 'version'; Value = '2026.8.999'; Error = '*version*' }
+            )) {
+            $copy = $receipt | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+            if ($mutation.Path -eq 'teamId') { $copy.identity.teamId = $mutation.Value }
+            elseif ($mutation.Path -eq 'certificate') { $copy.identity.installerCertificateCommonName = $mutation.Value }
+            else { $copy.package.version = $mutation.Value }
+            $path = Join-Path $TestDrive "$($mutation.Path)-receipt.json"
+            $copy | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $path
+            { Test-SantaPackageVerificationReceipt -Path $path } | Should -Throw $mutation.Error
+        }
+    }
 }
 
 Describe 'Readiness and rule safety' {
@@ -88,7 +109,10 @@ Describe 'Mutation boundary' {
         $plan.mode | Should -Be 'what-if'
         $plan.performsMutation | Should -BeFalse
         $plan.authorizationRequiredForApply | Should -BeTrue
+        $plan.packageVerification.state | Should -Be 'missing'
+        $plan.packageVerification.uploadBlocked | Should -BeTrue
         (@($plan.operations | Where-Object action -eq 'create-upload-commit-required-pkg'))[0].order | Should -BeGreaterThan 60
+        (@($plan.operations | Where-Object action -eq 'create-upload-commit-required-pkg'))[0].blocked | Should -BeTrue
         $plan.rollback.available | Should -BeFalse
         @($plan.cleanup.order) | Should -Be @(10,20,30,40,50)
     }
@@ -100,6 +124,29 @@ Describe 'Mutation boundary' {
         $scriptText | Should -Not -Match 'UseDevice(Code|Authentication)'
         $scriptText | Should -Match 'exactly one member'
         $scriptText | Should -Match 'assignment outside the authorized pilot group'
+    }
+
+    It 'builds cleanup only from exact receipt object IDs in reverse profile order' {
+        $receiptPath = Join-Path $script:root 'tests/fixtures/intune/profile-receipt.json'
+        $plan = Get-SantaProfileCleanupPlan -ReceiptPath $receiptPath
+        $plan.performsMutation | Should -BeFalse
+        @($plan.operations.profileId) | Should -Be @('notifications','configuration','service-management','tcc','system-extension')
+        @($plan.operations.objectId | Sort-Object -Unique).Count | Should -Be 5
+        @($plan.operations.assignmentGroupId | Sort-Object -Unique) | Should -Be @('22222222-2222-4222-8222-222222222222')
+    }
+
+    It 'rejects cleanup scope drift and package-present teardown' {
+        $receipt = Get-Content -Raw (Join-Path $script:root 'tests/fixtures/intune/profile-receipt.json') | ConvertFrom-Json
+        $receipt.profiles[0].assignmentGroupId = '44444444-4444-4444-8444-444444444444'
+        $scopePath = Join-Path $TestDrive 'scope-drift-receipt.json'
+        $receipt | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $scopePath
+        { Get-SantaProfileCleanupPlan -ReceiptPath $scopePath } | Should -Throw '*outside the recorded pilot group*'
+
+        $receipt = Get-Content -Raw (Join-Path $script:root 'tests/fixtures/intune/profile-receipt.json') | ConvertFrom-Json
+        $receipt.package.status = 'installed'
+        $packagePath = Join-Path $TestDrive 'package-present-receipt.json'
+        $receipt | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $packagePath
+        { Get-SantaProfileCleanupPlan -ReceiptPath $packagePath } | Should -Throw '*Package cleanup and endpoint removal evidence*'
     }
 }
 
