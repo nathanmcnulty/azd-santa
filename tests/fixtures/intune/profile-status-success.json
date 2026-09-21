@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "collectedAt": "2026-09-21T20:00:00Z",
+  "performsMutation": false,
+  "tenantId": "11111111-1111-4111-8111-111111111111",
+  "account": "pilot@example.invalid",
+  "release": "2026.8",
+  "pilotGroup": { "id": "22222222-2222-4222-8222-222222222222", "displayName": "Santa pilot" },
+  "profiles": [
+    { "id": "system-extension", "required": true, "objectId": "33333333-3333-4333-8333-333333333331", "displayName": "Santa 2026.8 - system-extension", "description": "[azd-santa:2026.8:system-extension] Template-owned Intune profile.", "assignment": { "groupIds": ["22222222-2222-4222-8222-222222222222"], "exactPilotOnly": true }, "overview": { "successCount": 1, "errorCount": 0, "failedCount": 0, "pendingCount": 0, "notApplicableCount": 0 }, "deviceStatuses": [{ "id": "status-1", "deviceDisplayName": "Pilot Mac", "userName": "pilot@example.invalid", "status": "succeeded", "lastReportedDateTime": "2026-09-21T19:55:00Z" }] },
+    { "id": "tcc", "required": true, "objectId": "33333333-3333-4333-8333-333333333332", "displayName": "Santa 2026.8 - tcc", "description": "[azd-santa:2026.8:tcc] Template-owned Intune profile.", "assignment": { "groupIds": ["22222222-2222-4222-8222-222222222222"], "exactPilotOnly": true }, "overview": { "successCount": 1, "errorCount": 0, "failedCount": 0, "pendingCount": 0, "notApplicableCount": 0 }, "deviceStatuses": [{ "id": "status-2", "deviceDisplayName": "Pilot Mac", "userName": "pilot@example.invalid", "status": "succeeded", "lastReportedDateTime": "2026-09-21T19:55:00Z" }] },
+    { "id": "service-management", "required": true, "objectId": "33333333-3333-4333-8333-333333333333", "displayName": "Santa 2026.8 - service-management", "description": "[azd-santa:2026.8:service-management] Template-owned Intune profile.", "assignment": { "groupIds": ["22222222-2222-4222-8222-222222222222"], "exactPilotOnly": true }, "overview": { "successCount": 1, "errorCount": 0, "failedCount": 0, "pendingCount": 0, "notApplicableCount": 0 }, "deviceStatuses": [{ "id": "status-3", "deviceDisplayName": "Pilot Mac", "userName": "pilot@example.invalid", "status": "succeeded", "lastReportedDateTime": "2026-09-21T19:55:00Z" }] },
+    { "id": "configuration", "required": true, "objectId": "33333333-3333-4333-8333-333333333334", "displayName": "Santa 2026.8 - configuration", "description": "[azd-santa:2026.8:configuration] Template-owned Intune profile.", "assignment": { "groupIds": ["22222222-2222-4222-8222-222222222222"], "exactPilotOnly": true }, "overview": { "successCount": 1, "errorCount": 0, "failedCount": 0, "pendingCount": 0, "notApplicableCount": 0 }, "deviceStatuses": [{ "id": "status-4", "deviceDisplayName": "Pilot Mac", "userName": "pilot@example.invalid", "status": "succeeded", "lastReportedDateTime": "2026-09-21T19:55:00Z" }] },
+    { "id": "notifications", "required": false, "objectId": "33333333-3333-4333-8333-333333333335", "displayName": "Santa 2026.8 - notifications", "description": "[azd-santa:2026.8:notifications] Template-owned Intune profile.", "assignment": { "groupIds": ["22222222-2222-4222-8222-222222222222"], "exactPilotOnly": true }, "overview": { "successCount": 0, "errorCount": 0, "failedCount": 0, "pendingCount": 0, "notApplicableCount": 0 }, "deviceStatuses": [] }
+  ],
+  "summary": { "assignmentProven": true, "profileStatusRowCount": 4, "requiredProfilesDelivered": true, "deliveryReadiness": true, "failures": [] }
+}

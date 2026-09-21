@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nathanmcnulty/azd-santa/schemas/intune-profile-status.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "collectedAt", "performsMutation", "tenantId", "account", "release", "pilotGroup", "profiles", "summary"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "collectedAt": { "type": "string", "format": "date-time" },
+    "performsMutation": { "const": false },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "account": { "type": "string", "minLength": 1 },
+    "release": { "type": "string", "minLength": 1 },
+    "pilotGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "displayName"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "displayName": { "type": "string", "minLength": 1 }
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "required", "objectId", "displayName", "description", "assignment", "overview", "deviceStatuses"],
+        "properties": {
+          "id": { "enum": ["system-extension", "tcc", "service-management", "configuration", "notifications"] },
+          "required": { "type": "boolean" },
+          "objectId": { "type": "string", "format": "uuid" },
+          "displayName": { "type": "string", "minLength": 1 },
+          "description": { "type": "string", "minLength": 1 },
+          "assignment": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["groupIds", "exactPilotOnly"],
+            "properties": {
+              "groupIds": { "type": "array", "items": { "type": "string", "format": "uuid" }, "uniqueItems": true },
+              "exactPilotOnly": { "type": "boolean" }
+            }
+          },
+          "overview": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["successCount", "errorCount", "failedCount", "pendingCount", "notApplicableCount"],
+            "properties": {
+              "successCount": { "type": "integer", "minimum": 0 },
+              "errorCount": { "type": "integer", "minimum": 0 },
+              "failedCount": { "type": "integer", "minimum": 0 },
+              "pendingCount": { "type": "integer", "minimum": 0 },
+              "notApplicableCount": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "deviceStatuses": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "deviceDisplayName", "userName", "status", "lastReportedDateTime"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "deviceDisplayName": { "type": "string" },
+                "userName": { "type": "string" },
+                "status": { "type": "string", "minLength": 1 },
+                "lastReportedDateTime": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assignmentProven", "profileStatusRowCount", "requiredProfilesDelivered", "deliveryReadiness", "failures"],
+      "properties": {
+        "assignmentProven": { "type": "boolean" },
+        "profileStatusRowCount": { "type": "integer", "minimum": 0 },
+        "requiredProfilesDelivered": { "type": "boolean" },
+        "deliveryReadiness": { "type": "boolean" },
+        "failures": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    }
+  }
+}

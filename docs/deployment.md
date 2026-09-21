@@ -34,6 +34,16 @@ The guarded profile-only apply command is:
 
 Without `-Apply`, it only prints a what-if summary and does not authenticate. With `-Apply`, it uses a normal WAM/browser Microsoft Graph connection, verifies the tenant/account/group and single macOS member, refuses display-name collisions or broader assignments, and records exact object IDs under `.azure/azd-santa/`. It cannot upload the PKG.
 
+Collect current assignment and per-profile device status without changing Intune or requesting a device sync:
+
+```powershell
+./scripts/Get-SantaIntuneProfileStatus.ps1 `
+  -TenantId '<tenant-id>' `
+  -ExpectedAccount '<expected-upn>'
+```
+
+The collector requests only `DeviceManagementConfiguration.Read.All`, reads the five exact object IDs from the apply receipt, and writes `.azure/azd-santa/intune-profile-status.json`. Assignment proof and device delivery are reported separately. Package readiness remains false until each required profile has exactly one successful device-status row and no failed or error count; the optional notifications profile does not gate readiness.
+
 Generate a non-mutating cleanup plan from the exact profile object IDs recorded by the apply receipt:
 
 ```powershell
