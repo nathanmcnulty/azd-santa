@@ -1,0 +1,29 @@
+name: Verify Santa package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Verify immutable package
+        shell: pwsh
+        run: |
+          ./scripts/Get-SantaPackage.ps1 -Destination ./out/santa-2026.8.pkg -ReceiptPath ./out/package-verification-receipt.json
+
+      - name: Upload verified package and receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: santa-2026.8-verified
+          path: |
+            out/santa-2026.8.pkg
+            out/package-verification-receipt.json
+          if-no-files-found: error
+          retention-days: 3
