@@ -19,6 +19,10 @@ Describe 'Release lock and profiles' {
         $result.valid | Should -BeTrue
         $result.profiles | Should -Be @('10-system-extension.mobileconfig','20-tcc.mobileconfig','30-service-management.mobileconfig','40-configuration.mobileconfig','50-notifications.mobileconfig')
         (Get-Content -Raw (Join-Path $script:generated '10-system-extension.mobileconfig')) | Should -Not -Match 'santa\.netd'
+        foreach ($profileName in $result.profiles) {
+            $profileText = Get-Content -Raw (Join-Path $script:generated $profileName)
+            ([regex]::Matches($profileText, '<key>PayloadUUID</key>')).Count | Should -Be 2 -Because "the top-level and inner payloads in '$profileName' both require stable UUIDs"
+        }
     }
 
     It 'detects package tampering before Apple verification' {

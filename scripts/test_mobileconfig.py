@@ -28,7 +28,7 @@ def main() -> int:
             if required not in profile:
                 raise ValueError(f"{path.name}: missing {required}")
         for payload in profile["PayloadContent"]:
-            for required in ("PayloadType", "PayloadIdentifier"):
+            for required in ("PayloadType", "PayloadIdentifier", "PayloadUUID"):
                 if required not in payload:
                     raise ValueError(f"{path.name}: nested payload missing {required}")
             identifier = payload["PayloadIdentifier"]
@@ -44,7 +44,7 @@ def main() -> int:
     if "SyncBaseURL" in config:
         raise ValueError("deployment-only baseline must not require a sync server")
     allowed_keys = {
-        "PayloadType", "PayloadVersion", "PayloadIdentifier", "ClientMode",
+        "PayloadType", "PayloadVersion", "PayloadIdentifier", "PayloadUUID", "ClientMode",
         "EnableSilentMode", "ModeNotificationMonitor", "StaticRules",
     }
     unknown_keys = set(config) - allowed_keys
