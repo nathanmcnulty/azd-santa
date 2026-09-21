@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0",
+  "eventId": "evt-001",
+  "observedAt": "2026-09-21T18:00:00Z",
+  "client": { "santaVersion": "2026.8", "syncProfile": "deployment-only" },
+  "device": { "pseudonymousId": "device-7f32a948" },
+  "decision": "DENY",
+  "binary": { "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "path": "<redacted>/tool", "pathClassification": "redacted", "teamId": null, "signingId": null, "cdhash": null },
+  "rawEvidence": { "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "reference": "retention://events/evt-001" }
+}

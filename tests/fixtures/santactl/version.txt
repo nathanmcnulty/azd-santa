@@ -1,0 +1,3 @@
+santad          | 2026.8 (build 244, commit dbe97b0a)
+santactl        | 2026.8 (build 244, commit dbe97b0a)
+SantaGUI        | 2026.8 (build 244, commit dbe97b0a)

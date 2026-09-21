@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>PayloadType</key><string>Configuration</string><key>PayloadVersion</key><integer>1</integer><key>PayloadUUID</key><string>4CE7A8E3-3AB9-4BED-9851-DF71332F5778</string>
+<key>PayloadIdentifier</key><string>com.contoso.santa.notifications</string><key>PayloadOrganization</key><string>Contoso</string>
+<key>PayloadDisplayName</key><string>Santa: Notifications</string><key>PayloadScope</key><string>System</string><key>PayloadRemovalDisallowed</key><true/>
+<key>PayloadContent</key><array><dict><key>PayloadType</key><string>com.apple.notificationsettings</string><key>PayloadVersion</key><integer>1</integer>
+<key>PayloadUUID</key><string>F6FBB355-7288-425A-895C-8BE02D18DB2A</string><key>PayloadIdentifier</key><string>com.contoso.santa.notifications.settings</string>
+<key>NotificationSettings</key><array><dict><key>BundleIdentifier</key><string>com.northpolesec.santa</string><key>NotificationsEnabled</key><true/><key>ShowInNotificationCenter</key><true/><key>ShowInLockScreen</key><true/><key>AlertType</key><integer>1</integer><key>BadgesEnabled</key><true/><key>SoundsEnabled</key><false/><key>CriticalAlertEnabled</key><true/></dict></array>
+</dict></array></dict></plist>

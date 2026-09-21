@@ -1,0 +1,7 @@
+>>> Daemon Info
+  Mode                                            | Monitor
+>>> Sync Info
+  Sync Server                                     | https://fixture.invalid/api/santa/
+  Clean Sync Required                             | No
+  Last Successful Full Sync                       | 2026/09/21 10:00:00 -0700
+  Last Successful Rule Sync                       | 2026/09/21 10:00:00 -0700

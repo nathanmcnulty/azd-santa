@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>PayloadType</key><string>Configuration</string><key>PayloadVersion</key><integer>1</integer><key>PayloadUUID</key><string>4D0DFE79-A7B0-4D0E-91AF-B9C7286DE299</string>
+<key>PayloadIdentifier</key><string>com.{{ORG_ID}}.santa.configuration</string><key>PayloadOrganization</key><string>{{ORGANIZATION}}</string>
+<key>PayloadDisplayName</key><string>Santa: Monitor Configuration</string><key>PayloadScope</key><string>System</string><key>PayloadRemovalDisallowed</key><true/>
+<key>PayloadContent</key><array><dict>
+<key>PayloadType</key><string>com.northpolesec.santa</string><key>PayloadVersion</key><integer>1</integer><key>PayloadIdentifier</key><string>com.{{ORG_ID}}.santa.configuration.settings</string>
+<key>ClientMode</key><integer>1</integer><key>EnableSilentMode</key><false/>
+<key>ModeNotificationMonitor</key><string>Santa is running in Monitor mode.</string>
+<key>StaticRules</key><array>
+<dict><key>identifier</key><string>ZMCG7MLDV9:com.northpolesec.santa</string><key>policy</key><string>ALLOWLIST</string><key>rule_type</key><string>SIGNINGID</string></dict>
+<dict><key>identifier</key><string>ZMCG7MLDV9:com.northpolesec.santa.daemon</string><key>policy</key><string>ALLOWLIST</string><key>rule_type</key><string>SIGNINGID</string></dict>
+<dict><key>identifier</key><string>ZMCG7MLDV9:com.northpolesec.santa.bundleservice</string><key>policy</key><string>ALLOWLIST</string><key>rule_type</key><string>SIGNINGID</string></dict>
+<dict><key>identifier</key><string>ZMCG7MLDV9:com.northpolesec.santa.syncservice</string><key>policy</key><string>ALLOWLIST</string><key>rule_type</key><string>SIGNINGID</string></dict>
+<dict><key>identifier</key><string>ZMCG7MLDV9:com.northpolesec.santa.metricservice</string><key>policy</key><string>ALLOWLIST</string><key>rule_type</key><string>SIGNINGID</string></dict>
+<dict><key>identifier</key><string>ZMCG7MLDV9:com.northpolesec.santa.ctl</string><key>policy</key><string>ALLOWLIST</string><key>rule_type</key><string>SIGNINGID</string></dict>
+<dict><key>identifier</key><string>ZMCG7MLDV9:com.northpolesec.santa.sleigh</string><key>policy</key><string>ALLOWLIST</string><key>rule_type</key><string>SIGNINGID</string></dict>
+</array>
+</dict></array></dict></plist>

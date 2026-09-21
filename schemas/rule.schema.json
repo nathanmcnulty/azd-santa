@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nathanmcnulty/azd-santa/schemas/rule.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "ruleId", "candidateId", "evidenceDigest", "ruleType", "identifier", "policy", "scope", "lifecycle", "approval", "publication"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "ruleId": { "type": "string", "minLength": 1 },
+    "candidateId": { "type": "string", "minLength": 1 },
+    "evidenceDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "ruleType": { "enum": ["CDHASH", "BINARY", "SIGNINGID", "CERTIFICATE", "TEAMID", "CEL"] },
+    "identifier": { "type": "string", "minLength": 1 },
+    "policy": { "enum": ["ALLOWLIST", "ALLOWLIST_COMPILER", "BLOCKLIST", "SILENT_BLOCKLIST", "SILENT_GUI_BLOCKLIST", "SILENT_TTY_BLOCKLIST", "CEL"] },
+    "scope": { "type": "string", "minLength": 1 },
+    "lifecycle": { "enum": ["approved", "published", "rolled-back", "expired"] },
+    "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+    "approval": { "type": "object", "required": ["reviewedCommit", "artifactDigest", "reviewerRecord"], "properties": { "reviewedCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" }, "artifactDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "reviewerRecord": { "type": "string", "minLength": 1 } } },
+    "publication": { "type": "object", "required": ["target", "status"], "properties": { "target": { "type": "string" }, "status": { "enum": ["not-published", "published", "failed", "rolled-back"] }, "receiptDigest": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" } } }
+  }
+}

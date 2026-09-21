@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0",
+  "ruleId": "rule-001",
+  "candidateId": "candidate-001",
+  "evidenceDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "ruleType": "BINARY",
+  "identifier": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "policy": "BLOCKLIST",
+  "scope": "pilot",
+  "lifecycle": "approved",
+  "expiresAt": null,
+  "approval": { "reviewedCommit": "dddddddddddddddddddddddddddddddddddddddd", "artifactDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "reviewerRecord": "fixture-review-001" },
+  "publication": { "target": "fixture", "status": "not-published", "receiptDigest": null }
+}

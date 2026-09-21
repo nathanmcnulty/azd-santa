@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nathanmcnulty/azd-santa/schemas/event.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "eventId", "observedAt", "client", "device", "decision", "binary", "rawEvidence"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "eventId": { "type": "string", "minLength": 1 },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "client": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["santaVersion", "syncProfile"],
+      "properties": {
+        "santaVersion": { "type": "string" },
+        "syncProfile": { "enum": ["deployment-only", "workshop", "compatible-server", "azure-spike"] }
+      }
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pseudonymousId"],
+      "properties": { "pseudonymousId": { "type": "string", "minLength": 8 } }
+    },
+    "decision": { "enum": ["ALLOW", "DENY", "ALLOW_COMPILER", "UNKNOWN"] },
+    "binary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "pathClassification"],
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "path": { "type": "string" },
+        "pathClassification": { "enum": ["redacted", "internal", "sensitive"] },
+        "teamId": { "type": ["string", "null"] },
+        "signingId": { "type": ["string", "null"] },
+        "cdhash": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$" }
+      }
+    },
+    "rawEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "reference"],
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "reference": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

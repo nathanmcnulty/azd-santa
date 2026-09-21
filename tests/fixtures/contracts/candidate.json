@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "candidateId": "candidate-001",
+  "eventIds": ["evt-001"],
+  "evidenceDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "observation": { "firstSeen": "2026-09-21T18:00:00Z", "lastSeen": "2026-09-21T18:00:00Z", "deviceCount": 1, "eventCount": 1 },
+  "proposedRule": { "ruleType": "BINARY", "identifier": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": "BLOCKLIST", "scope": "pilot" },
+  "counterfactual": { "performed": true, "affectedBinaryCount": 1 },
+  "riskFlags": [],
+  "generator": { "name": "fixture", "version": "1.0.0", "outputDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
+  "aiExplanation": "Non-authoritative fixture explanation."
+}

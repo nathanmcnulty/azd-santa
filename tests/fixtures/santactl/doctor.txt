@@ -1,0 +1,2 @@
+Santa Doctor
+All required baseline checks passed in this fixture.

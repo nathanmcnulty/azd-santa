@@ -1,0 +1,12 @@
+{
+  "profiles": [
+    { "id": "system-extension", "state": "succeeded" },
+    { "id": "tcc", "state": "succeeded" },
+    { "id": "service-management", "state": "succeeded" },
+    { "id": "configuration", "state": "succeeded" }
+  ],
+  "package": { "state": "installed", "version": "2026.8" },
+  "systemExtension": { "bundleId": "com.northpolesec.santa.daemon", "state": "activated enabled" },
+  "santa": { "mode": "MONITOR", "doctorHealthy": true, "syncConfigured": false, "lastSyncSucceeded": false },
+  "lastCheckAgeMinutes": 5
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nathanmcnulty/azd-santa/schemas/candidate.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "candidateId", "eventIds", "evidenceDigest", "observation", "proposedRule", "counterfactual", "riskFlags", "generator"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "candidateId": { "type": "string", "minLength": 1 },
+    "eventIds": { "type": "array", "items": { "type": "string" }, "minItems": 1, "uniqueItems": true },
+    "evidenceDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "observation": {
+      "type": "object",
+      "required": ["firstSeen", "lastSeen", "deviceCount", "eventCount"],
+      "properties": {
+        "firstSeen": { "type": "string", "format": "date-time" },
+        "lastSeen": { "type": "string", "format": "date-time" },
+        "deviceCount": { "type": "integer", "minimum": 1 },
+        "eventCount": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "proposedRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ruleType", "identifier", "policy", "scope"],
+      "properties": {
+        "ruleType": { "enum": ["CDHASH", "BINARY", "SIGNINGID", "CERTIFICATE", "TEAMID", "CEL"] },
+        "identifier": { "type": "string", "minLength": 1 },
+        "policy": { "enum": ["ALLOWLIST", "ALLOWLIST_COMPILER", "BLOCKLIST", "SILENT_BLOCKLIST", "SILENT_GUI_BLOCKLIST", "SILENT_TTY_BLOCKLIST", "CEL"] },
+        "scope": { "type": "string", "minLength": 1 }
+      }
+    },
+    "counterfactual": { "type": "object", "required": ["performed", "affectedBinaryCount"], "properties": { "performed": { "type": "boolean" }, "affectedBinaryCount": { "type": "integer", "minimum": 0 } } },
+    "riskFlags": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "generator": { "type": "object", "required": ["name", "version", "outputDigest"], "properties": { "name": { "type": "string" }, "version": { "type": "string" }, "outputDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" } } },
+    "aiExplanation": { "type": "string" }
+  }
+}

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>PayloadType</key><string>Configuration</string><key>PayloadVersion</key><integer>1</integer>
+<key>PayloadUUID</key><string>5C743469-4669-4F40-90D2-B6713295C458</string>
+<key>PayloadIdentifier</key><string>com.{{ORG_ID}}.santa.system-extension</string>
+<key>PayloadOrganization</key><string>{{ORGANIZATION}}</string><key>PayloadDisplayName</key><string>Santa: System Extension</string>
+<key>PayloadDescription</key><string>Allow the pinned Santa Endpoint Security extension.</string>
+<key>PayloadScope</key><string>System</string><key>PayloadRemovalDisallowed</key><true/>
+<key>PayloadContent</key><array><dict>
+<key>PayloadType</key><string>com.apple.system-extension-policy</string><key>PayloadVersion</key><integer>1</integer>
+<key>PayloadUUID</key><string>A4291CD5-A6D6-4DB3-B04F-13291A166D71</string>
+<key>PayloadIdentifier</key><string>com.{{ORG_ID}}.santa.system-extension.policy</string>
+<key>PayloadDisplayName</key><string>Santa Endpoint Security Extension</string>
+<key>AllowedSystemExtensions</key><dict><key>ZMCG7MLDV9</key><array><string>com.northpolesec.santa.daemon</string></array></dict>
+<key>AllowedSystemExtensionTypes</key><dict><key>ZMCG7MLDV9</key><array><string>EndpointSecurityExtension</string></array></dict>
+<key>NonRemovableFromUISystemExtensions</key><dict><key>ZMCG7MLDV9</key><array><string>com.northpolesec.santa.daemon</string></array></dict>
+</dict></array></dict></plist>

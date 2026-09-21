@@ -1,0 +1,78 @@
+{
+  "$schema": "../schemas/santa-lock.schema.json",
+  "schemaVersion": "1.0",
+  "release": {
+    "tag": "2026.8",
+    "name": "v2026.8",
+    "publishedAt": "2026-09-16T17:07:58Z",
+    "sourceCommit": "dbe97b0aa0f5929feece5f4cbd2c69362c271abc",
+    "sourceCommitVerifiedByGitHub": true,
+    "releaseUrl": "https://github.com/northpolesec/santa/releases/tag/2026.8"
+  },
+  "package": {
+    "assetName": "santa-2026.8.pkg",
+    "sourceUrl": "https://github.com/northpolesec/santa/releases/download/2026.8/santa-2026.8.pkg",
+    "size": 53569367,
+    "sha256": "0aaa970c7ddc63fe6a55c3144c825acb7f6bfa9cb15bcba1bffcaf2b5efc952a",
+    "metadataRetrievedAt": "2026-09-21T18:04:43Z",
+    "packageIdentifier": "com.northpolesec.santa",
+    "packageVersion": "2026.8.244",
+    "bundleIdentifier": "com.northpolesec.santa",
+    "bundleShortVersion": "2026.8",
+    "architectures": [
+      "arm64",
+      "x86_64"
+    ]
+  },
+  "platform": {
+    "minimumMacOS": "14.0",
+    "supportedMacOSMajors": [
+      14,
+      15,
+      26
+    ]
+  },
+  "identity": {
+    "teamId": "ZMCG7MLDV9",
+    "expectedInstallerCertificateCommonName": "Developer ID Installer: North Pole Security, Inc. (ZMCG7MLDV9)",
+    "applicationBundleIds": [
+      "com.northpolesec.santa",
+      "com.northpolesec.santa.ctl",
+      "com.northpolesec.santa.bundleservice",
+      "com.northpolesec.santa.syncservice",
+      "com.northpolesec.santa.metricservice",
+      "com.northpolesec.santa.sleigh"
+    ],
+    "baselineSystemExtensionBundleIds": [
+      "com.northpolesec.santa.daemon"
+    ],
+    "workshopOnlySystemExtensionBundleIds": [
+      "com.northpolesec.santa.netd"
+    ]
+  },
+  "verification": {
+    "sha256": {
+      "status": "verified",
+      "verifiedAt": "2026-09-21T18:04:43Z",
+      "hostPlatform": "windows"
+    },
+    "packageSignature": {
+      "status": "required-not-yet-proven",
+      "command": "pkgutil --check-signature <package>"
+    },
+    "gatekeeperAssessment": {
+      "status": "required-not-yet-proven",
+      "command": "spctl --assess --type install --verbose=4 <package>"
+    },
+    "notarizationStaple": {
+      "status": "required-not-yet-proven",
+      "command": "xcrun stapler validate <package>"
+    }
+  },
+  "sources": [
+    "https://api.github.com/repos/northpolesec/santa/releases/latest",
+    "https://github.com/northpolesec/santa/tree/2026.8",
+    "https://northpole.dev/deployment/install-package/",
+    "https://northpole.dev/development/version-policy/"
+  ]
+}

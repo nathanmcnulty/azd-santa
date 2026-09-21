@@ -1,0 +1,9 @@
+>>> Daemon Info
+  Mode                                            | Monitor
+  Log Type                                        | file
+>>> Database Info
+  Binary Rules                                    | 1
+  TeamID Rules                                    | 1
+  Events Pending Upload                           | 0
+>>> Static Rules
+  Rules                                           | 1

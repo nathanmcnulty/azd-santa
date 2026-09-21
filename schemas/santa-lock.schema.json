@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nathanmcnulty/azd-santa/schemas/santa-lock.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "release", "package", "platform", "identity", "verification", "sources"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": "1.0" },
+    "release": {
+      "type": "object",
+      "required": ["tag", "sourceCommit", "releaseUrl"],
+      "properties": {
+        "tag": { "type": "string" },
+        "name": { "type": "string" },
+        "publishedAt": { "type": "string", "format": "date-time" },
+        "sourceCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "sourceCommitVerifiedByGitHub": { "type": "boolean" },
+        "releaseUrl": { "type": "string", "format": "uri" }
+      }
+    },
+    "package": {
+      "type": "object",
+      "required": ["assetName", "sourceUrl", "size", "sha256", "packageIdentifier", "packageVersion"],
+      "properties": {
+        "assetName": { "type": "string", "pattern": "\\.pkg$" },
+        "sourceUrl": { "type": "string", "format": "uri" },
+        "size": { "type": "integer", "minimum": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "metadataRetrievedAt": { "type": "string", "format": "date-time" },
+        "packageIdentifier": { "const": "com.northpolesec.santa" },
+        "packageVersion": { "type": "string" },
+        "bundleIdentifier": { "type": "string" },
+        "bundleShortVersion": { "type": "string" },
+        "architectures": { "type": "array", "items": { "enum": ["arm64", "x86_64"] }, "minItems": 2 }
+      }
+    },
+    "platform": { "type": "object" },
+    "identity": {
+      "type": "object",
+      "required": ["teamId", "baselineSystemExtensionBundleIds", "workshopOnlySystemExtensionBundleIds"],
+      "properties": {
+        "teamId": { "const": "ZMCG7MLDV9" },
+        "expectedInstallerCertificateCommonName": { "type": "string" },
+        "applicationBundleIds": { "type": "array", "items": { "type": "string" } },
+        "baselineSystemExtensionBundleIds": { "type": "array", "items": { "type": "string" } },
+        "workshopOnlySystemExtensionBundleIds": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "verification": { "type": "object" },
+    "sources": { "type": "array", "items": { "type": "string", "format": "uri" }, "minItems": 1 }
+  }
+}

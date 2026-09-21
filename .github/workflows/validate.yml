@@ -1,0 +1,36 @@
+name: Validate Santa template
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install test runner
+        run: Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
+
+      - name: Generate and validate offline artifacts
+        run: |
+          ./scripts/New-DeploymentPlan.ps1 -Organization 'Contoso'
+          ./scripts/Test-SantaTemplate.ps1
+          Invoke-Pester ./tests -CI
+
+      - name: Confirm committed generated profiles are reproducible
+        run: git diff --exit-code -- profiles/generated

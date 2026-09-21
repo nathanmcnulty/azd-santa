@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1.0",
+  "releaseTag": "2026.8",
+  "teamId": "ZMCG7MLDV9",
+  "organization": "Contoso",
+  "mode": "MONITOR",
+  "networkExtension": false,
+  "profiles": [
+    { "order": 10, "id": "system-extension", "template": "system-extension.mobileconfig.tmpl", "required": true },
+    { "order": 20, "id": "tcc", "template": "tcc.mobileconfig.tmpl", "required": true },
+    { "order": 30, "id": "service-management", "template": "service-management.mobileconfig.tmpl", "required": true },
+    { "order": 40, "id": "configuration", "template": "configuration.mobileconfig.tmpl", "required": true },
+    { "order": 50, "id": "notifications", "template": "notifications.mobileconfig.tmpl", "required": false }
+  ],
+  "sources": {
+    "systemExtension": "https://northpole.dev/deployment/profile-system-extension/",
+    "tcc": "https://northpole.dev/deployment/profile-tcc/",
+    "serviceManagement": "https://northpole.dev/deployment/profile-background/",
+    "configuration": "https://northpole.dev/deployment/profile-configuration/",
+    "notifications": "https://northpole.dev/deployment/profile-notifications/"
+  }
+}

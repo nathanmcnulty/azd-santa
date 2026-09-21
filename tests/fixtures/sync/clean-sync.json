@@ -1,0 +1,19 @@
+{
+  "protocol": "santa.sync.v1",
+  "cleanSync": true,
+  "stages": [
+    { "name": "preflight", "status": 200 },
+    { "name": "eventUpload", "status": 200 },
+    { "name": "ruleDownload", "status": 200 },
+    { "name": "postflight", "status": 200 }
+  ],
+  "events": [
+    { "event_id": "evt-001", "decision": "DENY" },
+    { "event_id": "evt-001", "decision": "DENY" },
+    { "event_id": "evt-002", "decision": "ALLOW" }
+  ],
+  "rulePages": [
+    { "cursor": "start", "nextCursor": "page-2", "rules": [{ "rule_type": "BINARY", "identifier": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "policy": "BLOCKLIST" }] },
+    { "cursor": "page-2", "nextCursor": "", "rules": [{ "rule_type": "SIGNINGID", "identifier": "ZMCG7MLDV9:com.northpolesec.santa", "policy": "ALLOWLIST" }] }
+  ]
+}

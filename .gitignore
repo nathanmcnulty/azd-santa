@@ -1,0 +1,6 @@
+.azure/
+out/
+package/downloads/
+testResults.xml
+__pycache__/
+*.pyc

@@ -1,0 +1,19 @@
+name: azd-santa
+metadata:
+  template: azd-santa@0.1.0
+hooks:
+  preprovision:
+    - shell: pwsh
+      run: ./scripts/New-SantaProfiles.ps1
+      interactive: false
+      continueOnError: false
+    - shell: pwsh
+      run: ./scripts/New-DeploymentPlan.ps1
+      interactive: false
+      continueOnError: false
+    - shell: pwsh
+      run: ./scripts/Test-SantaTemplate.ps1
+      interactive: false
+      continueOnError: false
+requiredVersions:
+  azd: ">= 1.23.0"
