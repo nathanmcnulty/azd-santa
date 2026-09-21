@@ -72,7 +72,7 @@ Intune
 
 ## Implemented offline slice
 
-The current slice pins Santa `2026.8` (`2026.8.244`) and its standard upstream PKG, generates the ordered baseline mobileconfig files, validates their structure and identity bindings, emits exact Microsoft Graph request shapes as a non-mutating deployment plan, checks endpoint-state fixtures, and exercises clean-sync behavior against a local fixture adapter.
+The current slice pins Santa `2026.8` (`2026.8.244`) and its standard upstream PKG, generates the ordered baseline mobileconfig files, validates their structure and identity bindings, emits exact Microsoft Graph request shapes as a non-mutating deployment plan, binds deployable package readiness to a macOS verification receipt, produces exact-ID cleanup plans, checks endpoint-state fixtures, and exercises clean-sync behavior against a local fixture adapter.
 
 ```powershell
 azd init -t nathanmcnulty/azd-santa

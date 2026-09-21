@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nathanmcnulty/azd-santa/schemas/package-verification.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "releaseTag", "verifiedAt", "hostPlatform", "package", "identity", "checks"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "releaseTag": { "type": "string", "minLength": 1 },
+    "verifiedAt": { "type": "string", "format": "date-time" },
+    "hostPlatform": { "const": "macOS" },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetName", "size", "sha256", "identifier", "version"],
+      "properties": {
+        "assetName": { "type": "string", "minLength": 1 },
+        "size": { "type": "integer", "minimum": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "identifier": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["teamId", "installerCertificateCommonName"],
+      "properties": {
+        "teamId": { "type": "string", "pattern": "^[A-Z0-9]{10}$" },
+        "installerCertificateCommonName": { "type": "string", "minLength": 1 }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "packageSignature", "gatekeeperAssessment", "notarizationStaple", "packageMetadata"],
+      "properties": {
+        "sha256": { "$ref": "#/$defs/check" },
+        "packageSignature": { "$ref": "#/$defs/check" },
+        "gatekeeperAssessment": { "$ref": "#/$defs/check" },
+        "notarizationStaple": { "$ref": "#/$defs/check" },
+        "packageMetadata": { "$ref": "#/$defs/check" }
+      }
+    }
+  },
+  "$defs": {
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "outputSha256"],
+      "properties": {
+        "status": { "const": "succeeded" },
+        "outputSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    }
+  }
+}

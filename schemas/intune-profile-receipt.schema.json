@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nathanmcnulty/azd-santa/schemas/intune-profile-receipt.schema.json",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "tenantId", "release", "pilotGroup", "profiles", "package"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "release": { "type": "string", "minLength": 1 },
+    "pilotGroup": {
+      "type": "object",
+      "required": ["id", "displayName"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "displayName": { "type": "string", "minLength": 1 }
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "objectId", "displayName", "action", "assignmentGroupId"],
+        "properties": {
+          "id": { "enum": ["system-extension", "tcc", "service-management", "configuration", "notifications"] },
+          "objectId": { "type": "string", "format": "uuid" },
+          "displayName": { "type": "string", "minLength": 1 },
+          "action": { "enum": ["create", "update"] },
+          "assignmentGroupId": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
+    "package": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["not-uploaded", "uploaded", "assigned", "installed"] }
+      }
+    }
+  }
+}

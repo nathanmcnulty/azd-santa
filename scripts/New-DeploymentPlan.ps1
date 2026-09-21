@@ -2,13 +2,29 @@
 param(
     [string] $Organization = $(if ($env:SANTA_ORGANIZATION) { $env:SANTA_ORGANIZATION } else { 'Contoso' }),
     [string] $PilotGroupId = $(if ($env:SANTA_PILOT_GROUP_ID) { $env:SANTA_PILOT_GROUP_ID } else { '00000000-0000-0000-0000-000000000000' }),
+    [string] $PackagePath,
+    [string] $PackageVerificationReceiptPath = (Join-Path (Split-Path -Parent $PSScriptRoot) '.azure/azd-santa/package-verification-receipt.json'),
     [string] $OutputPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'out/deployment-plan.json')
 )
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'Santa.Template.psm1') -Force
 $lock = Get-SantaLock
+if (-not $PackagePath) { $PackagePath = Join-Path (Split-Path -Parent $PSScriptRoot) ('package/downloads/' + $lock.package.assetName) }
 $profilePaths = New-SantaProfileSet -Organization $Organization
 Test-SantaProfileSet | Out-Null
+$packageExists = Test-Path -LiteralPath $PackagePath -PathType Leaf
+$packageReceiptExists = Test-Path -LiteralPath $PackageVerificationReceiptPath -PathType Leaf
+$packageVerificationState = if ($packageExists -and $packageReceiptExists) {
+    Test-SantaPackageVerificationReceipt -Path $PackageVerificationReceiptPath -PackagePath $PackagePath | Out-Null
+    'verified'
+}
+elseif ($packageExists -or $packageReceiptExists) {
+    'incomplete'
+}
+else {
+    'missing'
+}
+$packageUploadBlocked = $packageVerificationState -ne 'verified'
 $operations = @()
 foreach ($profilePath in $profilePaths) {
     $name = Split-Path -Leaf $profilePath
@@ -36,7 +52,7 @@ foreach ($profilePath in $profilePaths) {
     }
 }
 $operations += [ordered]@{ order = 60; action = 'wait-for-profile-readiness'; mutatesTenant = $false; requires = @('system-extension','tcc','service-management','configuration'); successEvidence = 'per-device profile state succeeded' }
-$operations += [ordered]@{ order = 70; action = 'create-upload-commit-required-pkg'; mutatesTenant = $true; graph = [ordered]@{ apiVersion = 'beta'; path = '/deviceAppManagement/mobileApps'; permission = 'DeviceManagementApps.ReadWrite.All'; resourceType = '#microsoft.graph.macOSPkgApp'; asset = $lock.package.assetName; sha256 = $lock.package.sha256; primaryBundleId = $lock.package.bundleIdentifier; primaryBundleVersion = $lock.package.bundleShortVersion; uploadContract = 'create app -> content version -> file/Azure Storage upload -> commit -> poll -> assign required' } }
+$operations += [ordered]@{ order = 70; action = 'create-upload-commit-required-pkg'; mutatesTenant = $true; blocked = $packageUploadBlocked; requires = @('macOS verification receipt','matching immutable package bytes','per-device prerequisite profile success'); graph = [ordered]@{ apiVersion = 'beta'; path = '/deviceAppManagement/mobileApps'; permission = 'DeviceManagementApps.ReadWrite.All'; resourceType = '#microsoft.graph.macOSPkgApp'; asset = $lock.package.assetName; sha256 = $lock.package.sha256; primaryBundleId = $lock.package.bundleIdentifier; primaryBundleVersion = $lock.package.bundleShortVersion; uploadContract = 'create app -> content version -> file/Azure Storage upload -> commit -> poll -> assign required' } }
 $operations += [ordered]@{ order = 80; action = 'assign-pilot-group'; mutatesTenant = $true; targetGroupId = $PilotGroupId; guard = 'non-zero explicit group id required for live execution' }
 $operations += [ordered]@{ order = 90; action = 'verify-endpoint'; mutatesTenant = $false; evidence = @('Intune app state','santactl version','santactl status','santactl doctor','systemextensionsctl','profiles show','controlled execution fixture') }
 $plan = [ordered]@{
@@ -48,6 +64,12 @@ $plan = [ordered]@{
     organization = $Organization
     pilotGroupId = $PilotGroupId
     authorizationRequiredForApply = $true
+    packageVerification = [ordered]@{
+        state = $packageVerificationState
+        packagePath = $PackagePath
+        receiptPath = $PackageVerificationReceiptPath
+        uploadBlocked = $packageUploadBlocked
+    }
     operations = $operations
     rollback = [ordered]@{
         available = $false

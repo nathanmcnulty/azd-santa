@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1.0",
+  "releaseTag": "2026.8",
+  "verifiedAt": "2026-09-21T20:00:00Z",
+  "hostPlatform": "macOS",
+  "package": {
+    "assetName": "santa-2026.8.pkg",
+    "size": 53569367,
+    "sha256": "0aaa970c7ddc63fe6a55c3144c825acb7f6bfa9cb15bcba1bffcaf2b5efc952a",
+    "identifier": "com.northpolesec.santa",
+    "version": "2026.8.244"
+  },
+  "identity": {
+    "teamId": "ZMCG7MLDV9",
+    "installerCertificateCommonName": "Developer ID Installer: North Pole Security, Inc. (ZMCG7MLDV9)"
+  },
+  "checks": {
+    "sha256": { "status": "succeeded", "outputSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+    "packageSignature": { "status": "succeeded", "outputSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+    "gatekeeperAssessment": { "status": "succeeded", "outputSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
+    "notarizationStaple": { "status": "succeeded", "outputSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },
+    "packageMetadata": { "status": "succeeded", "outputSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" }
+  }
+}
