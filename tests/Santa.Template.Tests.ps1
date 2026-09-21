@@ -149,42 +149,56 @@ Describe 'Mutation boundary' {
         { Get-SantaProfileCleanupPlan -ReceiptPath $packagePath } | Should -Throw '*Package cleanup and endpoint removal evidence*'
     }
 
-    It 'separates exact assignment proof from missing device delivery rows' {
+    It 'separates exact assignment proof from missing pilot-device configuration states' {
         $state = Get-Content -Raw (Join-Path $script:root 'tests/fixtures/intune/profile-status-zero.json') | ConvertFrom-Json
         $result = Test-SantaIntuneProfileReport -State $state
         $result.assignmentProven | Should -BeTrue
+        $result.pilotDeviceBound | Should -BeTrue
+        $result.pilotDeviceConfigurationStateCount | Should -Be 0
         $result.profileStatusRowCount | Should -Be 0
         $result.requiredProfilesDelivered | Should -BeFalse
         $result.deliveryReadiness | Should -BeFalse
     }
 
-    It 'accepts one successful row for every required profile' {
+    It 'accepts a successful exact-device state for every required profile' {
         $state = Get-Content -Raw (Join-Path $script:root 'tests/fixtures/intune/profile-status-success.json') | ConvertFrom-Json
         $result = Test-SantaIntuneProfileReport -State $state
         $result.assignmentProven | Should -BeTrue
+        $result.pilotDeviceBound | Should -BeTrue
+        $result.pilotDeviceConfigurationStateCount | Should -Be 4
         $result.profileStatusRowCount | Should -Be 4
         $result.requiredProfilesDelivered | Should -BeTrue
         $result.deliveryReadiness | Should -BeTrue
     }
 
-    It 'rejects foreign assignment, failed status, and duplicate status rows' {
+    It 'rejects foreign assignment, failed exact-device state, and missing exact-device state' {
         $state = Get-Content -Raw (Join-Path $script:root 'tests/fixtures/intune/profile-status-success.json') | ConvertFrom-Json
         $state.profiles[0].assignment.groupIds += '44444444-4444-4444-8444-444444444444'
         $state.profiles[0].assignment.exactPilotOnly = $false
-        $state.profiles[1].deviceStatuses[0].status = 'failed'
-        $state.profiles[2].deviceStatuses = @($state.profiles[2].deviceStatuses[0], $state.profiles[2].deviceStatuses[0])
+        $state.pilotDevice.configurationStates[1].state = 'failed'
+        $state.pilotDevice.configurationStates = @($state.pilotDevice.configurationStates | Where-Object id -ne '33333333-3333-4333-8333-333333333333')
         $result = Test-SantaIntuneProfileReport -State $state
         $result.assignmentProven | Should -BeFalse
         $result.requiredProfilesDelivered | Should -BeFalse
         $result.deliveryReadiness | Should -BeFalse
         $result.failures | Should -Contain 'profile:system-extension:assignment'
         $result.failures | Should -Contain 'profile:tcc:failed'
-        $result.failures | Should -Contain 'profile:service-management:status-row'
+        $result.failures | Should -Contain 'profile:service-management:pilot-device-state'
+    }
+
+    It 'rejects a report whose pilot group and managed-device chain do not bind' {
+        $state = Get-Content -Raw (Join-Path $script:root 'tests/fixtures/intune/profile-status-success.json') | ConvertFrom-Json
+        $state.pilotDevice.entraObjectId = '88888888-8888-4888-8888-888888888888'
+        $result = Test-SantaIntuneProfileReport -State $state
+        $result.pilotDeviceBound | Should -BeFalse
+        $result.deliveryReadiness | Should -BeFalse
+        $result.failures | Should -Contain 'pilot-device:binding'
     }
 
     It 'keeps the status collector read-only and free of device-code fallback' {
         $scriptText = Get-Content -Raw (Join-Path $script:root 'scripts/Get-SantaIntuneProfileStatus.ps1')
         $scriptText | Should -Match "DeviceManagementConfiguration.Read.All"
+        $scriptText | Should -Match "DeviceManagementManagedDevices.Read.All"
         $scriptText | Should -Not -Match "(?i)-Method\s+(POST|PATCH|DELETE)|syncDevice|UseDevice(Code|Authentication)"
     }
 }

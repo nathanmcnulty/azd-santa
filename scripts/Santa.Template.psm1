@@ -195,9 +195,17 @@ function Test-SantaIntuneProfileReport {
     }
 
     $pilotGroupId = [string] $State.pilotGroup.id
+    $pilotDeviceBound = (
+        [string] $State.pilotGroup.memberId -ceq [string] $State.pilotDevice.entraObjectId -and
+        -not [string]::IsNullOrWhiteSpace([string] $State.pilotDevice.aadDeviceId) -and
+        -not [string]::IsNullOrWhiteSpace([string] $State.pilotDevice.managedDeviceId) -and
+        [string] $State.pilotDevice.operatingSystem -ieq 'macOS'
+    )
+    if (-not $pilotDeviceBound) { $failures.Add('pilot-device:binding') }
     $assignmentProven = $true
     $requiredProfilesDelivered = $true
     $profileStatusRowCount = 0
+    $pilotDeviceConfigurationStateCount = @($State.pilotDevice.configurationStates).Count
     foreach ($spec in @($manifest.profiles | Sort-Object order)) {
         $profileMatches = @($State.profiles | Where-Object id -eq $spec.id)
         if ($profileMatches.Count -ne 1) {
@@ -220,14 +228,15 @@ function Test-SantaIntuneProfileReport {
         $rows = @($statusProfile.deviceStatuses)
         $profileStatusRowCount += $rows.Count
         if ($spec.required) {
-            if ($rows.Count -ne 1) {
-                $failures.Add("profile:$($spec.id):status-row")
+            $deviceStateMatches = @($State.pilotDevice.configurationStates | Where-Object id -eq $statusProfile.objectId)
+            if ($deviceStateMatches.Count -ne 1) {
+                $failures.Add("profile:$($spec.id):pilot-device-state")
                 $requiredProfilesDelivered = $false
-            } elseif ([string] $rows[0].status -ine 'succeeded') {
-                $failures.Add("profile:$($spec.id):$([string] $rows[0].status)")
+            } elseif ([string] $deviceStateMatches[0].state -inotmatch '^(succeeded|remediated)$') {
+                $failures.Add("profile:$($spec.id):$([string] $deviceStateMatches[0].state)")
                 $requiredProfilesDelivered = $false
             }
-            if ([int] $statusProfile.overview.successCount -lt 1 -or [int] $statusProfile.overview.errorCount -gt 0 -or [int] $statusProfile.overview.failedCount -gt 0) {
+            if ([int] $statusProfile.overview.errorCount -gt 0 -or [int] $statusProfile.overview.failedCount -gt 0) {
                 $failures.Add("profile:$($spec.id):overview")
                 $requiredProfilesDelivered = $false
             }
@@ -235,9 +244,11 @@ function Test-SantaIntuneProfileReport {
     }
     return [pscustomobject] [ordered]@{
         assignmentProven = $assignmentProven
+        pilotDeviceBound = $pilotDeviceBound
+        pilotDeviceConfigurationStateCount = $pilotDeviceConfigurationStateCount
         profileStatusRowCount = $profileStatusRowCount
         requiredProfilesDelivered = $requiredProfilesDelivered
-        deliveryReadiness = ($assignmentProven -and $requiredProfilesDelivered -and $failures.Count -eq 0)
+        deliveryReadiness = ($assignmentProven -and $pilotDeviceBound -and $requiredProfilesDelivered -and $failures.Count -eq 0)
         failures = @($failures)
     }
 }
