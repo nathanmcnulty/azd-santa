@@ -80,7 +80,7 @@ cd azd-santa
 azd hooks run preprovision
 ```
 
-Until this repository is published under that owner/name, run the scripts directly from this checkout:
+For direct local validation, run the scripts from this checkout:
 
 ```powershell
 ./scripts/New-SantaProfiles.ps1 -Organization 'Example Corp'
