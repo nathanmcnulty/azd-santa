@@ -121,6 +121,8 @@ Describe 'Readiness and rule safety' {
         $scriptText | Should -Match '/usr/local/bin/santactl version'
         $scriptText | Should -Match '/usr/local/bin/santactl status'
         $scriptText | Should -Match '/usr/local/bin/santactl doctor'
+        $scriptText | Should -Match '\[\+\] No configuration errors detected'
+        $scriptText | Should -Match '\[\+\] Sync is disabled'
         $scriptText | Should -Match 'systemextensionsctl list com\.apple\.system_extension\.endpoint_security'
         $scriptText | Should -Not -Match '\.azure|/tmp|sudo'
         $deployment | Should -Match 'Library\.Manage'
@@ -289,5 +291,40 @@ Describe 'Guarded Intune package apply' {
         $scriptText | Should -Match 'summary\.deliveryReadiness'
         $scriptText | Should -Match "publishingState -ne 'published'"
         $scriptText | Should -Match 'Assignment read-back did not match the exact required pilot target'
+    }
+}
+
+Describe 'Managed endpoint health channels' {
+    It 'uses the consented legacy Defender audience and exact-machine Live Response binding' {
+        $publisher = Get-Content -Raw (Join-Path $script:root 'scripts/Publish-SantaLiveResponseScript.ps1')
+        $runner = Get-Content -Raw (Join-Path $script:root 'scripts/Invoke-SantaLiveResponseHealth.ps1')
+
+        $publisher | Should -Match "get-access-token --resource 'https://api\.securitycenter\.microsoft\.com'"
+        $publisher | Should -Match 'managed by azd-santa'
+        $runner | Should -Match 'runliveresponse'
+        $runner | Should -Match 'GetLiveResponseResultDownloadLink'
+        $runner | Should -Match 'ExpectedMachineName'
+        $runner | Should -Not -Match 'UseDevice(Code|Authentication)|DeviceCodeCredential'
+    }
+
+    It 'publishes the same health artifact to an exact Intune pilot group' {
+        $publisher = Get-Content -Raw (Join-Path $script:root 'scripts/Publish-SantaIntuneHealthScript.ps1')
+        $publisher | Should -Match 'deviceManagement/deviceShellScripts'
+        $publisher | Should -Match 'deviceManagementScriptAssignment'
+        $publisher | Should -Match 'groupAssignmentTarget'
+        $publisher | Should -Match '\$expand=groupAssignments,assignments'
+        $publisher | Should -Match 'Pilot group is not the exact one-device macOS target'
+        $publisher | Should -Match "runAsAccount = 'system'"
+        $publisher | Should -Not -Match 'UseDevice(Code|Authentication)|DeviceCodeCredential'
+    }
+
+    It 'wires opt-in Intune publication and Live Response execution into azd postprovision' {
+        $azure = Get-Content -Raw (Join-Path $script:root 'azure.yaml')
+        $post = Get-Content -Raw (Join-Path $script:root 'scripts/Post-Provision.ps1')
+        $azure | Should -Match 'postprovision:'
+        $post | Should -Match 'AZD_SANTA_DEPLOY_INTUNE_HEALTH_SCRIPT'
+        $post | Should -Match 'AZD_SANTA_PUBLISH_LIVE_RESPONSE_LIBRARY'
+        $post | Should -Match 'AZD_SANTA_RUN_LIVE_RESPONSE_HEALTH'
+        $post | Should -Match 'AZD_SANTA_MDE_MACHINE_ID'
     }
 }

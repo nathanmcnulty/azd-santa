@@ -95,7 +95,16 @@ evidence bundle under `.azure/azd-santa/endpoint-evidence/`. For a remote Mac,
 use the self-contained Defender Live Response script documented in the
 [deployment guide](docs/deployment.md#remote-verification-with-defender-live-response).
 
-The hook is deliberately offline. It writes `out/deployment-plan.json` and performs no Azure, Intune, Graph, GitHub, Azure DevOps, Workshop, or other external mutation. See [deployment preparation](docs/deployment.md) and the [Phase 0 evidence snapshot](docs/phase-0-evidence.md).
+For repeatable AZD deployment, the same self-contained script can be published
+and assigned through Intune and published/executed through Defender Live
+Response by the `postprovision` hook. Both channels are opt-in, bind to explicit
+tenant, account, group, and device identities, and write environment-scoped
+receipts. Manual upload or execution is only a development fallback.
+
+The default hook path remains offline: it writes `out/deployment-plan.json` and
+does not contact Intune or Defender unless the managed health-channel settings
+are explicitly enabled. See [deployment preparation](docs/deployment.md) and
+the [Phase 0 evidence snapshot](docs/phase-0-evidence.md).
 
 ## Primary references
 
@@ -108,6 +117,9 @@ The hook is deliberately offline. It writes `out/deployment-plan.json` and perfo
 - [Building Santa](https://northpole.dev/development/building/)
 - [Santa sync protocol](https://northpole.security/docs/santa/features/sync)
 - [Deploy macOS PKG apps with Intune](https://learn.microsoft.com/en-us/intune/app-management/deployment/add-unmanaged-pkg-macos)
+- [Create an Intune macOS shell script with Microsoft Graph](https://learn.microsoft.com/en-us/graph/api/intune-devices-deviceshellscript-create?view=graph-rest-beta)
+- [Assign an Intune macOS shell script with Microsoft Graph](https://learn.microsoft.com/en-us/graph/api/intune-devices-deviceshellscript-assign?view=graph-rest-beta)
+- [Run a Defender Live Response command](https://learn.microsoft.com/en-us/defender-endpoint/api/run-live-response)
 
 ## License
 
@@ -117,4 +129,4 @@ dependencies retain their respective terms. See [third-party notices](THIRD_PART
 
 ## Status
 
-Phase 0 one-device deployment is in progress. The immutable upstream PKG passed SHA-256, installer-identity, Gatekeeper online-notarization, and package-metadata verification on macOS; the upstream artifact has no stapled ticket, so offline installability is not claimed. All five profiles reported remediated on the exact pilot Mac. The verified PKG was uploaded to Intune, published as `Santa 2026.8 (azd-santa pilot)`, and assigned Required only to the one-member pilot group. Intune reported the app installed on `C02GF7BBQ6L4` at `2026-09-22T00:37:18Z`. On 2026-09-21, the operator reported that `santactl version`, `santactl status`, `santactl doctor`, and the Endpoint Security extension check all completed without errors and appeared healthy. Raw endpoint output was not retained, so this is user-observed health evidence rather than a reproducible endpoint receipt. Sync-server compatibility and controlled rule behavior remain unproven.
+Phase 0 one-device deployment is in progress. The immutable upstream PKG passed SHA-256, installer-identity, Gatekeeper online-notarization, and package-metadata verification on macOS; the upstream artifact has no stapled ticket, so offline installability is not claimed. All five profiles reported remediated on the exact pilot Mac. The verified PKG was uploaded to Intune, published as `Santa 2026.8 (azd-santa pilot)`, and assigned Required only to the one-member pilot group. Intune reported the app installed on `C02GF7BBQ6L4` at `2026-09-22T00:37:18Z`. A retained Defender Live Response result subsequently verified that ASDF2 maps to `C02GF7BBQ6L4`, Santa `2026.8` is in Monitor mode, its doctor checks report no configuration errors, and the Santa Endpoint Security extension is activated and enabled. The same hash-bound health artifact is also assigned as an Intune macOS shell script to that one-device pilot group. Intune execution status, sync-server compatibility, and controlled rule behavior remain separate and unproven.

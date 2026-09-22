@@ -35,7 +35,16 @@ printf '%s\n' "$status_output"
 printf '%s\n' "$status_output" | /usr/bin/grep -Eiq 'Mode[[:space:]]*\|[[:space:]]*Monitor' || fail 'Santa was not in Monitor mode.'
 
 printf '\n== Santa doctor ==\n'
-/usr/local/bin/santactl doctor 2>&1 || fail 'santactl doctor reported a failure.'
+set +e
+doctor_output="$(/usr/local/bin/santactl doctor 2>&1)"
+doctor_exit=$?
+set -e
+printf '%s\n' "$doctor_output"
+printf '%s\n' "$doctor_output" | /usr/bin/grep -Fq '[+] System Integrity Protection is enabled' || fail 'Santa doctor did not confirm System Integrity Protection.'
+printf '%s\n' "$doctor_output" | /usr/bin/grep -Fq '[+] No configuration errors detected' || fail 'Santa doctor reported a configuration error.'
+if [[ $doctor_exit -ne 0 ]]; then
+  printf '%s\n' "$doctor_output" | /usr/bin/grep -Fq '[+] Sync is disabled' || fail 'santactl doctor reported an unexpected failure.'
+fi
 
 printf '\n== Endpoint Security extension ==\n'
 extension_output="$(/usr/bin/systemextensionsctl list com.apple.system_extension.endpoint_security 2>&1)" || {

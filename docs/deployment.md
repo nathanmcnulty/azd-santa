@@ -88,26 +88,44 @@ sharing it because profile output can contain organization-specific settings.
 ### Remote verification with Defender Live Response
 
 Do not use the checkout-oriented script when the repository is not present on
-the Mac. For an onboarded remote device, upload
-`scripts/live-response/Get-SantaHealth.sh` to the Microsoft Defender Live
-Response library and run it on the explicitly approved device. The script is
-self-contained, writes no persistent device files, defaults to Santa `2026.8`,
-and returns its evidence through the Live Response command result.
+the Mac. `azd up` can publish the self-contained
+`scripts/live-response/Get-SantaHealth.sh` to both Intune and the Defender Live
+Response library, and can execute it through Live Response against one exact
+MDE machine. Configure the explicit bindings before deployment:
 
-The operator or API identity needs `Library.Manage` to upload or list library
-files and `Machine.LiveResponse` to run the script. In the Defender portal,
-upload the file once to the Live Response library, open a session for the exact
-device, and run:
-
-```text
-run Get-SantaHealth.sh
+```powershell
+azd env set AZD_SANTA_DEPLOY_INTUNE_HEALTH_SCRIPT true
+azd env set AZD_SANTA_PUBLISH_LIVE_RESPONSE_LIBRARY true
+azd env set AZD_SANTA_RUN_LIVE_RESPONSE_HEALTH true
+azd env set AZD_SANTA_PILOT_GROUP_ID '<entra-device-group-guid>'
+azd env set AZD_SANTA_PILOT_GROUP_NAME '<exact-group-name>'
+azd env set AZD_SANTA_INTUNE_DEVICE_NAME '<exact-intune-device-name>'
+azd env set AZD_SANTA_INTUNE_ACCOUNT '<intune-admin-upn>'
+azd env set AZD_SANTA_MDE_MACHINE_ID '<40-character-mde-machine-id>'
+azd env set AZD_SANTA_MDE_MACHINE_NAME '<exact-mde-machine-name>'
+azd env set AZD_SANTA_MDE_ACCOUNT '<mde-admin-upn>'
+azd up
 ```
 
-Download and retain the command result before its download link expires. The
-result includes the computer name, capture time, enrollment state, Santa
-version, Monitor-mode status, doctor output, Endpoint Security extension state,
-and an explicit pass/fail boundary. It intentionally omits the full profile
-inventory to avoid collecting unrelated organization settings.
+The Intune publisher uses the beta `deviceShellScripts` API, runs the script as
+System, assigns it only to the verified one-member macOS pilot group, and
+requires `DeviceManagementScripts.ReadWrite.All` plus the documented assignment
+permissions. The Defender publisher uses Azure CLI's cached browser/WAM session,
+the legacy `https://api.securitycenter.microsoft.com` token audience required by
+the current API, and the `https://api.security.microsoft.com` REST endpoint. It
+requires `Library.Manage`; automatic execution requires `Machine.LiveResponse`.
+
+The script writes no persistent files when run through either managed channel.
+The Live Response result is downloaded immediately into the selected AZD
+environment under `.azure/`. It includes the computer name, capture time,
+enrollment state, Santa version, Monitor-mode status, doctor output, Endpoint
+Security extension state, and an explicit pass/fail boundary. It intentionally
+omits the full profile inventory to avoid collecting unrelated organization
+settings.
+
+For testing only, an operator can still upload the script to the Defender
+library and run `run Get-SantaHealth.sh` manually. That fallback is not part of
+the AZD deployment contract.
 
 Keep these checkpoints separate:
 
@@ -118,11 +136,13 @@ Keep these checkpoints separate:
 5. Sync completion, when configured.
 6. A controlled execution's observed decision.
 
-For the current one-device pilot, Intune reported the package installed and the
-operator subsequently reported successful, healthy-looking results from the
-version, status, doctor, and Endpoint Security extension checks. Because the
-raw command output was not retained, treat this as user-observed health evidence
-rather than a durable endpoint receipt. Re-run `scripts/Test-SantaEndpoint.sh`
-to create retained evidence before any promotion decision.
+For the current one-device pilot, Intune reported the package installed. A
+subsequent Defender Live Response action retained a successful result for the
+exact MDE machine: the script identified `C02GF7BBQ6L4`, verified Santa `2026.8`
+in Monitor mode, confirmed no doctor configuration errors, and confirmed the
+Santa Endpoint Security extension was activated and enabled. The Intune shell
+script object and exact pilot assignment were also verified by Graph read-back;
+that assignment is not evidence that Intune has executed the script. Preserve
+delivery, execution, sync, and controlled-rule evidence as separate gates.
 
 Removing Santa requires the inverse safety order: remove any non-removable system-extension constraint as part of an approved removal profile, use the upstream-supported uninstall procedure, verify extension/package removal, and only then remove remaining template-owned profiles. Never delete unrelated Intune objects by display-name similarity.
