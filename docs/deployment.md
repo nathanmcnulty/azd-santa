@@ -70,7 +70,22 @@ Generate a non-mutating cleanup plan from the exact profile object IDs recorded 
 
 The cleanup planner works only while the receipt says the package was never uploaded. It rejects missing or duplicate profile IDs, assignment-group drift, release drift, and package-present teardown. Package or endpoint removal requires separate evidence before profile cleanup can safely proceed.
 
-After an authorized deployment, run `scripts/Test-SantaEndpoint.sh` locally on the pilot Mac. Keep these checkpoints separate:
+After an authorized deployment, run `scripts/Test-SantaEndpoint.sh` locally on
+the pilot Mac from the repository root. The first argument optionally overrides
+the expected version, and the second optionally overrides the evidence root:
+
+```zsh
+./scripts/Test-SantaEndpoint.sh 2026.8
+```
+
+The script may prompt for administrator approval when running `santactl doctor`.
+It writes a private timestamped bundle under
+`.azure/azd-santa/endpoint-evidence/`, including raw command output, a result
+receipt, and `SHA256SUMS`. Failed runs retain their partial evidence and a failed
+receipt. The `.azure` directory is ignored by Git; review the bundle before
+sharing it because profile output can contain organization-specific settings.
+
+Keep these checkpoints separate:
 
 1. Intune profile/app delivery state.
 2. Local package version and receipt.
@@ -84,6 +99,6 @@ operator subsequently reported successful, healthy-looking results from the
 version, status, doctor, and Endpoint Security extension checks. Because the
 raw command output was not retained, treat this as user-observed health evidence
 rather than a durable endpoint receipt. Re-run `scripts/Test-SantaEndpoint.sh`
-when retained evidence is required for a promotion decision.
+to create retained evidence before any promotion decision.
 
 Removing Santa requires the inverse safety order: remove any non-removable system-extension constraint as part of an approved removal profile, use the upstream-supported uninstall procedure, verify extension/package removal, and only then remove remaining template-owned profiles. Never delete unrelated Intune objects by display-name similarity.

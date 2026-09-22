@@ -89,6 +89,10 @@ For direct local validation, run the scripts from this checkout:
 Invoke-Pester ./tests -CI
 ```
 
+After deployment, `./scripts/Test-SantaEndpoint.sh 2026.8` runs the local Mac
+health gates and retains a private timestamped evidence bundle under
+`.azure/azd-santa/endpoint-evidence/`.
+
 The hook is deliberately offline. It writes `out/deployment-plan.json` and performs no Azure, Intune, Graph, GitHub, Azure DevOps, Workshop, or other external mutation. See [deployment preparation](docs/deployment.md) and the [Phase 0 evidence snapshot](docs/phase-0-evidence.md).
 
 ## Primary references
