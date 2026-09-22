@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "1.1",
   "releaseTag": "2026.8",
   "verifiedAt": "2026-09-21T20:00:00Z",
   "hostPlatform": "macOS",
@@ -18,7 +18,7 @@
     "sha256": { "status": "succeeded", "outputSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
     "packageSignature": { "status": "succeeded", "outputSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
     "gatekeeperAssessment": { "status": "succeeded", "outputSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
-    "notarizationStaple": { "status": "succeeded", "outputSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },
+    "notarization": { "status": "succeeded", "evidence": "stapled-ticket", "outputSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },
     "packageMetadata": { "status": "succeeded", "outputSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" }
   }
 }

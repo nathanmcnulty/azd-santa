@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schemaVersion", "releaseTag", "verifiedAt", "hostPlatform", "package", "identity", "checks"],
   "properties": {
-    "schemaVersion": { "const": "1.0" },
+    "schemaVersion": { "const": "1.1" },
     "releaseTag": { "type": "string", "minLength": 1 },
     "verifiedAt": { "type": "string", "format": "date-time" },
     "hostPlatform": { "const": "macOS" },
@@ -33,12 +33,12 @@
     "checks": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sha256", "packageSignature", "gatekeeperAssessment", "notarizationStaple", "packageMetadata"],
+      "required": ["sha256", "packageSignature", "gatekeeperAssessment", "notarization", "packageMetadata"],
       "properties": {
         "sha256": { "$ref": "#/$defs/check" },
         "packageSignature": { "$ref": "#/$defs/check" },
         "gatekeeperAssessment": { "$ref": "#/$defs/check" },
-        "notarizationStaple": { "$ref": "#/$defs/check" },
+        "notarization": { "$ref": "#/$defs/notarizationCheck" },
         "packageMetadata": { "$ref": "#/$defs/check" }
       }
     }
@@ -50,6 +50,16 @@
       "required": ["status", "outputSha256"],
       "properties": {
         "status": { "const": "succeeded" },
+        "outputSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "notarizationCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "evidence", "outputSha256"],
+      "properties": {
+        "status": { "const": "succeeded" },
+        "evidence": { "enum": ["stapled-ticket", "online-ticket"] },
         "outputSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     }
