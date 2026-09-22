@@ -51,6 +51,20 @@ Describe 'Release lock and profiles' {
             { Test-SantaPackageVerificationReceipt -Path $path } | Should -Throw $mutation.Error
         }
     }
+
+    It 'preserves the pinned Santa license and dependency notices with verified artifacts' {
+        $notice = Get-Content -Raw (Join-Path $script:root 'THIRD_PARTY_NOTICES.md')
+        $workflow = Get-Content -Raw (Join-Path $script:root '.github/workflows/verify-santa-package.yml')
+        $license = Get-Content -Raw (Join-Path $script:root 'third_party/santa-2026.8/LICENSE.txt')
+        $dependencyNotices = Get-Content -Raw (Join-Path $script:root 'third_party/santa-2026.8/ThirdPartyLicenses.txt')
+
+        $notice | Should -Match 'santa/blob/2026\.8/LICENSE'
+        $notice | Should -Match 'not modified, repackaged, committed'
+        $workflow | Should -Match 'third_party/santa-2026\.8/LICENSE\.txt'
+        $workflow | Should -Match 'third_party/santa-2026\.8/ThirdPartyLicenses\.txt'
+        $license | Should -Match 'Apache License\s+Version 2\.0, January 2004'
+        $dependencyNotices | Should -Match 'Third Party Licenses'
+    }
 }
 
 Describe 'Readiness and rule safety' {
