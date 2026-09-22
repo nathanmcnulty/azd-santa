@@ -100,6 +100,18 @@ Describe 'Readiness and rule safety' {
         (Test-EndpointState -State $state).failures | Should -Contain 'evidence:stale'
     }
 
+    It 'retains private timestamped endpoint evidence instead of transient output' {
+        $scriptText = Get-Content -Raw (Join-Path $script:root 'scripts/Test-SantaEndpoint.sh')
+        $scriptText | Should -Match '\.azure/azd-santa/endpoint-evidence'
+        $scriptText | Should -Match 'receipt\.txt'
+        $scriptText | Should -Match 'SHA256SUMS'
+        $scriptText | Should -Match 'umask 077'
+        $scriptText | Should -Not -Match '/tmp/azd-santa'
+
+        $workflow = Get-Content -Raw (Join-Path $script:root '.github/workflows/validate.yml')
+        $workflow | Should -Match '/bin/zsh -n ./scripts/Test-SantaEndpoint\.sh'
+    }
+
     It 'implements the documented first-match precedence' {
         Get-RulePrecedence CDHASH | Should -BeLessThan (Get-RulePrecedence BINARY)
         Get-RulePrecedence BINARY | Should -BeLessThan (Get-RulePrecedence SIGNINGID)
