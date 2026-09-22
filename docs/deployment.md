@@ -1,6 +1,6 @@
 # Offline deployment preparation
 
-This slice prepares exact artifacts and a mutation-free Intune plan. It does not authenticate to Microsoft Graph, upload the package, create profiles, or assign a group.
+This slice prepares exact artifacts and a mutation-free Intune plan. Live profile and package apply commands remain separately guarded and require `-Apply` plus PowerShell confirmation.
 
 ```powershell
 ./scripts/New-SantaProfiles.ps1 -Organization 'Example Corp'
@@ -18,7 +18,7 @@ For deployable evidence, run the same script on macOS without `-AllowUnverifiedP
 
 Successful macOS verification also writes `.azure/azd-santa/package-verification-receipt.json`. The receipt binds the selected release, package hash and metadata, Team ID, installer certificate, and digests of each Apple verification result. `New-DeploymentPlan.ps1` keeps package upload blocked unless both that receipt and the immutable package bytes match the lock.
 
-The plan's zero GUID is an intentional non-deployable placeholder. A future live apply command must require a specific non-zero pilot group, explicit mutation authorization, successful per-device prerequisite state, and separately granted Graph scopes. Assignment is not readiness: the PKG must not be treated as usable until the System Extension, TCC, Service Management, and configuration profiles report success on the target device.
+The plan's zero GUID is an intentional non-deployable placeholder. Assignment is not readiness: the PKG must not be uploaded until the System Extension, TCC, Service Management, and configuration profiles report success on the exact target device.
 
 The guarded profile-only apply command is:
 
@@ -32,7 +32,7 @@ The guarded profile-only apply command is:
   -Apply -Confirm
 ```
 
-Without `-Apply`, it only prints a what-if summary and does not authenticate. With `-Apply`, it uses a normal WAM/browser Microsoft Graph connection, verifies the tenant/account/group and single macOS member, refuses display-name collisions or broader assignments, and records exact object IDs under `.azure/azd-santa/`. It cannot upload the PKG.
+Without `-Apply`, it only prints a what-if summary and does not authenticate. With `-Apply`, it uses a normal WAM/browser Microsoft Graph connection, verifies the tenant/account/group and single macOS member, refuses display-name collisions or broader assignments, and records exact object IDs under `.azure/azd-santa/`.
 
 Collect current assignment and per-profile device status without changing Intune or requesting a device sync:
 
@@ -44,6 +44,23 @@ Collect current assignment and per-profile device status without changing Intune
 ```
 
 The collector requests read-only Graph scopes, reads the five exact object IDs from the apply receipt, and writes `.azure/azd-santa/intune-profile-status.json`. It verifies that the pilot group still contains exactly the recorded Entra device, resolves that identity to exactly one Intune managed device, and reads that device's configuration-state inventory. Assignment proof and device delivery are reported separately. Package readiness remains false until every required profile has a successful state on that exact managed device and no failed or error count; the optional notifications profile does not gate readiness.
+
+After macOS verification and exact-device profile readiness, upload and assign the verified bytes with:
+
+```powershell
+./scripts/Invoke-SantaIntunePackage.ps1 `
+  -PackagePath '<verified-pkg>' `
+  -PackageVerificationReceiptPath '<macos-verification-receipt>' `
+  -ProfileStatusPath '<current-exact-device-profile-report>' `
+  -TenantId '<tenant-id>' `
+  -PilotGroupId '<pilot-group-object-id>' `
+  -ExpectedPilotGroupName '<exact-name>' `
+  -ExpectedDeviceName '<exact-device-name>' `
+  -ExpectedAccount '<expected-upn>' `
+  -Apply -Confirm
+```
+
+The command validates the immutable bytes and macOS receipt before authentication, revalidates the one-device target, encrypts and commits the package through Intune's content service, waits for publication, creates one Required assignment, and verifies that exact assignment by read-back. Interrupted uncommitted objects are resumed only when their ownership marker, release, hash, and unassigned state match exactly.
 
 Generate a non-mutating cleanup plan from the exact profile object IDs recorded by the apply receipt:
 
