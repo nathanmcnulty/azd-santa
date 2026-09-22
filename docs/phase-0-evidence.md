@@ -1,6 +1,21 @@
 # Phase 0 evidence snapshot
 
-Captured 2026-09-21. This is an offline evidence snapshot, not proof of a live Intune deployment or a working Mac.
+Captured 2026-09-21 as an offline evidence snapshot. Subsequent live-pilot
+evidence is recorded below without changing the boundary of the original
+offline results.
+
+## Live pilot update
+
+- All five profiles reported remediated on the exact pilot Mac.
+- Intune reported Santa 2026.8 installed on `C02GF7BBQ6L4` at
+  `2026-09-22T00:37:18Z`.
+- On 2026-09-21, the operator reported that `santactl version`,
+  `santactl status`, `santactl doctor`, and
+  `systemextensionsctl list com.apple.system_extension.endpoint_security` all
+  completed without errors and appeared healthy.
+- Raw endpoint command output was not retained. The report is positive
+  user-observed endpoint evidence, not a reproducible endpoint receipt or proof
+  of sync-server compatibility or controlled rule behavior.
 
 ## Selected release
 
@@ -37,7 +52,15 @@ The `schemas/` directory defines provider-neutral event, candidate, and approved
 
 ## License and name
 
-Santa source is Apache-2.0. The license allows redistribution under its conditions but does not grant trademark rights. This template does not redistribute the package; it retrieves the exact upstream asset, attributes North Pole Security, and describes the project as an integration rather than an official product.
+Original work in this repository is released under the Unlicense. Santa remains
+Apache-2.0 licensed; that license permits redistribution under its conditions
+but does not grant trademark rights. The workflow can retain the exact,
+unchanged upstream PKG as a private short-lived artifact, and an authorized
+deployment can redistribute those unchanged bytes internally through Intune.
+The tagged upstream license and dependency notices are retained in
+`third_party/santa-2026.8` and accompany the workflow artifact. North Pole
+Security and Santa are named only to identify origin and compatibility; this
+project does not claim affiliation or endorsement.
 
 ## Primary sources
 

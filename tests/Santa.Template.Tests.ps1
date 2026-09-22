@@ -53,11 +53,15 @@ Describe 'Release lock and profiles' {
     }
 
     It 'preserves the pinned Santa license and dependency notices with verified artifacts' {
+        $projectLicense = Get-Content -Raw (Join-Path $script:root 'LICENSE')
         $notice = Get-Content -Raw (Join-Path $script:root 'THIRD_PARTY_NOTICES.md')
         $workflow = Get-Content -Raw (Join-Path $script:root '.github/workflows/verify-santa-package.yml')
         $license = Get-Content -Raw (Join-Path $script:root 'third_party/santa-2026.8/LICENSE.txt')
         $dependencyNotices = Get-Content -Raw (Join-Path $script:root 'third_party/santa-2026.8/ThirdPartyLicenses.txt')
 
+        $projectLicense | Should -Match 'free and unencumbered software released into the public domain'
+        $projectLicense | Should -Match 'THE SOFTWARE IS PROVIDED "AS IS"'
+        $notice | Should -Match 'released under the \[Unlicense\]\(LICENSE\)'
         $notice | Should -Match 'santa/blob/2026\.8/LICENSE'
         $notice | Should -Match 'not modified, repackaged, committed'
         $workflow | Should -Match 'third_party/santa-2026\.8/LICENSE\.txt'

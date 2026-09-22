@@ -1,5 +1,8 @@
 # Third-party notices
 
+Original work in this repository is released under the [Unlicense](LICENSE).
+The following terms continue to apply to third-party material and artifacts.
+
 ## North Pole Security Santa
 
 This project integrates with and derives configuration-profile details from

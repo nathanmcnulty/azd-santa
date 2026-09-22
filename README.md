@@ -103,6 +103,12 @@ The hook is deliberately offline. It writes `out/deployment-plan.json` and perfo
 - [Santa sync protocol](https://northpole.security/docs/santa/features/sync)
 - [Deploy macOS PKG apps with Intune](https://learn.microsoft.com/en-us/intune/app-management/deployment/add-unmanaged-pkg-macos)
 
+## License
+
+Original work in this repository is released under the [Unlicense](LICENSE).
+Santa remains licensed by North Pole Security under Apache-2.0, and its bundled
+dependencies retain their respective terms. See [third-party notices](THIRD_PARTY_NOTICES.md).
+
 ## Status
 
-Phase 0 one-device deployment is in progress. The immutable upstream PKG passed SHA-256, installer-identity, Gatekeeper online-notarization, and package-metadata verification on macOS; the upstream artifact has no stapled ticket, so offline installability is not claimed. All five profiles reported remediated on the exact pilot Mac. The verified PKG was uploaded to Intune, published as `Santa 2026.8 (azd-santa pilot)`, and assigned Required only to the one-member pilot group. Intune reported the app installed on `C02GF7BBQ6L4` at `2026-09-22T00:37:18Z`. Installed entitlements, real-Mac Santa health, sync-server compatibility, and observed rule behavior remain unproven until endpoint evidence is collected.
+Phase 0 one-device deployment is in progress. The immutable upstream PKG passed SHA-256, installer-identity, Gatekeeper online-notarization, and package-metadata verification on macOS; the upstream artifact has no stapled ticket, so offline installability is not claimed. All five profiles reported remediated on the exact pilot Mac. The verified PKG was uploaded to Intune, published as `Santa 2026.8 (azd-santa pilot)`, and assigned Required only to the one-member pilot group. Intune reported the app installed on `C02GF7BBQ6L4` at `2026-09-22T00:37:18Z`. On 2026-09-21, the operator reported that `santactl version`, `santactl status`, `santactl doctor`, and the Endpoint Security extension check all completed without errors and appeared healthy. Raw endpoint output was not retained, so this is user-observed health evidence rather than a reproducible endpoint receipt. Sync-server compatibility and controlled rule behavior remain unproven.
