@@ -228,3 +228,20 @@ Describe 'Provider-neutral evidence contracts' {
         }
     }
 }
+
+Describe 'Guarded Intune package apply' {
+    It 'has an explicit apply boundary and no device-code authentication fallback' {
+        $scriptText = Get-Content -Raw (Join-Path $script:root 'scripts/Invoke-SantaIntunePackage.ps1')
+        $scriptText | Should -Match '\[switch\]\s+\$Apply'
+        $scriptText | Should -Match 'SupportsShouldProcess'
+        $scriptText | Should -Not -Match '(?i)UseDevice(Code|Authentication)|DeviceCodeCredential'
+    }
+
+    It 'requires verified bytes, exact-device readiness, publication, and assignment read-back' {
+        $scriptText = Get-Content -Raw (Join-Path $script:root 'scripts/Invoke-SantaIntunePackage.ps1')
+        $scriptText | Should -Match 'Test-SantaPackageVerificationReceipt'
+        $scriptText | Should -Match 'summary\.deliveryReadiness'
+        $scriptText | Should -Match "publishingState -ne 'published'"
+        $scriptText | Should -Match 'Assignment read-back did not match the exact required pilot target'
+    }
+}
