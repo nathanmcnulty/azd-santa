@@ -85,6 +85,30 @@ receipt, and `SHA256SUMS`. Failed runs retain their partial evidence and a faile
 receipt. The `.azure` directory is ignored by Git; review the bundle before
 sharing it because profile output can contain organization-specific settings.
 
+### Remote verification with Defender Live Response
+
+Do not use the checkout-oriented script when the repository is not present on
+the Mac. For an onboarded remote device, upload
+`scripts/live-response/Get-SantaHealth.sh` to the Microsoft Defender Live
+Response library and run it on the explicitly approved device. The script is
+self-contained, writes no persistent device files, defaults to Santa `2026.8`,
+and returns its evidence through the Live Response command result.
+
+The operator or API identity needs `Library.Manage` to upload or list library
+files and `Machine.LiveResponse` to run the script. In the Defender portal,
+upload the file once to the Live Response library, open a session for the exact
+device, and run:
+
+```text
+run Get-SantaHealth.sh
+```
+
+Download and retain the command result before its download link expires. The
+result includes the computer name, capture time, enrollment state, Santa
+version, Monitor-mode status, doctor output, Endpoint Security extension state,
+and an explicit pass/fail boundary. It intentionally omits the full profile
+inventory to avoid collecting unrelated organization settings.
+
 Keep these checkpoints separate:
 
 1. Intune profile/app delivery state.
