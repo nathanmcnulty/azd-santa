@@ -79,4 +79,11 @@ After an authorized deployment, run `scripts/Test-SantaEndpoint.sh` locally on t
 5. Sync completion, when configured.
 6. A controlled execution's observed decision.
 
+For the current one-device pilot, Intune reported the package installed and the
+operator subsequently reported successful, healthy-looking results from the
+version, status, doctor, and Endpoint Security extension checks. Because the
+raw command output was not retained, treat this as user-observed health evidence
+rather than a durable endpoint receipt. Re-run `scripts/Test-SantaEndpoint.sh`
+when retained evidence is required for a promotion decision.
+
 Removing Santa requires the inverse safety order: remove any non-removable system-extension constraint as part of an approved removal profile, use the upstream-supported uninstall procedure, verify extension/package removal, and only then remove remaining template-owned profiles. Never delete unrelated Intune objects by display-name similarity.
