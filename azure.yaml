@@ -7,6 +7,11 @@ hooks:
       run: ./scripts/New-SantaProfiles.ps1
       interactive: false
       continueOnError: false
+  postprovision:
+    - shell: pwsh
+      run: ./scripts/Post-Provision.ps1
+      interactive: true
+      continueOnError: false
     - shell: pwsh
       run: ./scripts/New-DeploymentPlan.ps1
       interactive: false
