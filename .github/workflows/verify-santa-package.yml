@@ -18,12 +18,15 @@ jobs:
         run: |
           ./scripts/Get-SantaPackage.ps1 -Destination ./out/santa-2026.8.pkg -ReceiptPath ./out/package-verification-receipt.json
 
-      - name: Upload verified package and receipt
+      - name: Upload verified package, receipt, and licenses
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: santa-2026.8-verified
           path: |
             out/santa-2026.8.pkg
             out/package-verification-receipt.json
+            third_party/santa-2026.8/LICENSE.txt
+            third_party/santa-2026.8/ThirdPartyLicenses.txt
+            THIRD_PARTY_NOTICES.md
           if-no-files-found: error
           retention-days: 3
