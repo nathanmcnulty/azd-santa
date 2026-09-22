@@ -18,7 +18,9 @@ jobs:
 
       - name: Parse endpoint evidence script
         shell: /bin/zsh -e {0}
-        run: /bin/zsh -n ./scripts/Test-SantaEndpoint.sh
+        run: |
+          /bin/zsh -n ./scripts/Test-SantaEndpoint.sh
+          /bin/bash -n ./scripts/live-response/Get-SantaHealth.sh
 
   validate:
     strategy:

@@ -110,6 +110,22 @@ Describe 'Readiness and rule safety' {
 
         $workflow = Get-Content -Raw (Join-Path $script:root '.github/workflows/validate.yml')
         $workflow | Should -Match '/bin/zsh -n ./scripts/Test-SantaEndpoint\.sh'
+        $workflow | Should -Match '/bin/bash -n ./scripts/live-response/Get-SantaHealth\.sh'
+    }
+
+    It 'provides a self-contained Defender Live Response health check' {
+        $scriptText = Get-Content -Raw (Join-Path $script:root 'scripts/live-response/Get-SantaHealth.sh')
+        $deployment = Get-Content -Raw (Join-Path $script:root 'docs/deployment.md')
+
+        $scriptText | Should -Match '^#!/bin/bash'
+        $scriptText | Should -Match '/usr/local/bin/santactl version'
+        $scriptText | Should -Match '/usr/local/bin/santactl status'
+        $scriptText | Should -Match '/usr/local/bin/santactl doctor'
+        $scriptText | Should -Match 'systemextensionsctl list com\.apple\.system_extension\.endpoint_security'
+        $scriptText | Should -Not -Match '\.azure|/tmp|sudo'
+        $deployment | Should -Match 'Library\.Manage'
+        $deployment | Should -Match 'Machine\.LiveResponse'
+        $deployment | Should -Match 'run Get-SantaHealth\.sh'
     }
 
     It 'implements the documented first-match precedence' {

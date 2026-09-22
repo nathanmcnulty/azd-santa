@@ -89,9 +89,11 @@ For direct local validation, run the scripts from this checkout:
 Invoke-Pester ./tests -CI
 ```
 
-After deployment, `./scripts/Test-SantaEndpoint.sh 2026.8` runs the local Mac
-health gates and retains a private timestamped evidence bundle under
-`.azure/azd-santa/endpoint-evidence/`.
+After deployment, `./scripts/Test-SantaEndpoint.sh 2026.8` runs the health gates
+when the repository is present on the Mac and retains a private timestamped
+evidence bundle under `.azure/azd-santa/endpoint-evidence/`. For a remote Mac,
+use the self-contained Defender Live Response script documented in the
+[deployment guide](docs/deployment.md#remote-verification-with-defender-live-response).
 
 The hook is deliberately offline. It writes `out/deployment-plan.json` and performs no Azure, Intune, Graph, GitHub, Azure DevOps, Workshop, or other external mutation. See [deployment preparation](docs/deployment.md) and the [Phase 0 evidence snapshot](docs/phase-0-evidence.md).
 
