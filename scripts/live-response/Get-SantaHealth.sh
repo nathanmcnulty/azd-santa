@@ -52,8 +52,10 @@ extension_output="$(/usr/bin/systemextensionsctl list com.apple.system_extension
   fail 'Unable to read Endpoint Security extension state.'
 }
 printf '%s\n' "$extension_output"
-printf '%s\n' "$extension_output" | /usr/bin/grep -Fq 'com.northpolesec.santa.daemon' || fail 'Santa Endpoint Security extension was absent.'
-printf '%s\n' "$extension_output" | /usr/bin/grep -Fq 'activated enabled' || fail 'Santa Endpoint Security extension was not activated and enabled.'
+santa_extension_line="$(printf '%s\n' "$extension_output" | /usr/bin/grep -F 'com.northpolesec.santa.daemon' || true)"
+[[ -n "$santa_extension_line" ]] || fail 'Santa Endpoint Security extension was absent.'
+[[ "$santa_extension_line" != *$'\n'* ]] || fail 'Multiple Santa Endpoint Security extension rows were found.'
+[[ "$santa_extension_line" == *'ZMCG7MLDV9'* && "$santa_extension_line" == *'[activated enabled]'* ]] || fail 'Santa Endpoint Security extension did not have the expected Team ID and active state.'
 
 printf '\nresult=passed\n'
 printf 'evidenceBoundary=Local Santa health only; this does not prove Intune delivery, sync receipt, or controlled rule behavior.\n'

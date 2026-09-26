@@ -29,7 +29,8 @@
     "supportedMacOSMajors": [
       14,
       15,
-      26
+      26,
+      27
     ]
   },
   "identity": {

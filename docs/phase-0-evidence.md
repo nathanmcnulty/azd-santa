@@ -13,16 +13,27 @@ offline results.
   `santactl status`, `santactl doctor`, and
   `systemextensionsctl list com.apple.system_extension.endpoint_security` all
   completed without errors and appeared healthy.
-- Raw endpoint command output was not retained. The report is positive
-  user-observed endpoint evidence, not a reproducible endpoint receipt or proof
-  of sync-server compatibility or controlled rule behavior.
+- The original operator report did not retain raw output. Subsequent managed
+  checks did: Defender Live Response succeeded against `ASDF2`, which reported
+  local name `C02GF7BBQ6L4`, and Intune's assigned shell script reported
+  `success` for that exact managed Mac at `2026-09-22T06:41:26Z`. Both outputs
+  showed Santa `2026.8` in Monitor mode, no doctor configuration errors, and
+  an activated, enabled Santa Endpoint Security extension. These are endpoint
+  health results, not proof of sync-server compatibility or controlled rule behavior.
+- On 2026-09-26, the health script was tightened to require Santa's own extension
+  row to have the expected Team ID and active state. Defender Live Response
+  passed with the revised script. The revision was published to the same Intune
+  pilot assignment; its new Intune execution is pending as of this snapshot.
 
 ## Selected release
 
 - Santa `2026.8`, source commit `dbe97b0aa0f5929feece5f4cbd2c69362c271abc`.
 - Standard upstream PKG `santa-2026.8.pkg`, 53,569,367 bytes, SHA-256 `0aaa970c7ddc63fe6a55c3144c825acb7f6bfa9cb15bcba1bffcaf2b5efc952a`.
 - Installer metadata: package ID `com.northpolesec.santa`, package version `2026.8.244`, bundle version `2026.8`, universal `arm64` and `x86_64`.
-- Build source minimum target is macOS 14.0. Upstream's release policy currently lists macOS 14, 15, and 26.
+- Build source minimum target is macOS 14.0. The pinned release supports macOS
+  14, 15, and 26; its [release notes](https://github.com/northpolesec/santa/releases/tag/2026.8)
+  also report validation on macOS 27.0. Intune reported the pilot Mac on 27.0
+  at its 2026-09-26 check-in.
 - Upstream Team ID is `ZMCG7MLDV9`. Baseline Endpoint Security extension is `com.northpolesec.santa.daemon`. `com.northpolesec.santa.netd` is excluded because the network extension requires Workshop.
 
 The downloaded bytes were hash-verified on Windows. Apple package signature, Gatekeeper, notarization, installed bundle signature, and entitlement verification remain mandatory on macOS and are deliberately not marked proven in the lock. Notarization evidence may be either a stapled ticket or an online ticket accepted by Gatekeeper; the verification receipt records which path succeeded.

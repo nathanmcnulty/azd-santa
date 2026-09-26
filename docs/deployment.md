@@ -60,7 +60,14 @@ After macOS verification and exact-device profile readiness, upload and assign t
   -Apply -Confirm
 ```
 
-The command validates the immutable bytes and macOS receipt before authentication, revalidates the one-device target, encrypts and commits the package through Intune's content service, waits for publication, creates one Required assignment, and verifies that exact assignment by read-back. Interrupted uncommitted objects are resumed only when their ownership marker, release, hash, and unassigned state match exactly.
+The command validates the immutable bytes and macOS receipt before authentication,
+requires a profile status report collected within 30 minutes for the same tenant,
+account, group, and device, and recomputes prerequisite readiness. It then
+revalidates the one-device target, encrypts and commits the package through
+Intune's content service, waits for publication, creates one Required assignment,
+and verifies that exact assignment by read-back. Interrupted uncommitted objects
+are resumed only when their ownership marker, release, hash, and unassigned state
+match exactly.
 
 Generate a non-mutating cleanup plan from the exact profile object IDs recorded by the apply receipt:
 
@@ -107,6 +114,10 @@ azd env set AZD_SANTA_MDE_ACCOUNT '<mde-admin-upn>'
 azd up
 ```
 
+This hook automates the health channels. Profile creation and PKG publication
+still use the guarded commands earlier in this guide; they are not yet part of
+the `azd up` hook.
+
 The Intune publisher uses the beta `deviceShellScripts` API, runs the script as
 System, assigns it only to the verified one-member macOS pilot group, and
 requires `DeviceManagementScripts.ReadWrite.All` plus the documented assignment
@@ -114,6 +125,25 @@ permissions. The Defender publisher uses Azure CLI's cached browser/WAM session,
 the legacy `https://api.securitycenter.microsoft.com` token audience required by
 the current API, and the `https://api.security.microsoft.com` REST endpoint. It
 requires `Library.Manage`; automatic execution requires `Machine.LiveResponse`.
+
+After Intune has processed the assignment, collect its exact-device execution
+result without changing tenant state. `postprovision` does this once; this
+command refreshes the result after a later check-in:
+
+```powershell
+./scripts/Get-SantaIntuneHealthStatus.ps1 `
+  -TenantId '<tenant-id>' `
+  -ExpectedAccount '<intune-reader-upn>' `
+  -EnvironmentName '<azd-environment-name>'
+```
+
+The collector verifies the publication hash, the one-member pilot group, the
+Entra-to-Intune device binding, the unfiltered assignment, and the script's
+`deviceRunStates` record. Its private `.azure/<environment>/santa-intune-health-result.json`
+receipt is `passed` only when a successful run contains the expected computer
+name, Santa version, and pass marker and happened after the script's last update.
+A pending result means Intune has not yet reported execution of those exact
+bytes. The Graph endpoint is a beta API and may change.
 
 The script writes no persistent files when run through either managed channel.
 The Live Response result is downloaded immediately into the selected AZD
@@ -140,9 +170,10 @@ For the current one-device pilot, Intune reported the package installed. A
 subsequent Defender Live Response action retained a successful result for the
 exact MDE machine: the script identified `C02GF7BBQ6L4`, verified Santa `2026.8`
 in Monitor mode, confirmed no doctor configuration errors, and confirmed the
-Santa Endpoint Security extension was activated and enabled. The Intune shell
-script object and exact pilot assignment were also verified by Graph read-back;
-that assignment is not evidence that Intune has executed the script. Preserve
-delivery, execution, sync, and controlled-rule evidence as separate gates.
+Santa Endpoint Security extension was activated and enabled. Intune subsequently
+reported a successful health-script run on the bound pilot managed device at
+`2026-09-22T06:41:26Z`, with the same computer name, Santa version, Monitor
+status, doctor output, and activated Santa extension. Preserve sync and
+controlled-rule evidence as separate gates.
 
 Removing Santa requires the inverse safety order: remove any non-removable system-extension constraint as part of an approved removal profile, use the upstream-supported uninstall procedure, verify extension/package removal, and only then remove remaining template-owned profiles. Never delete unrelated Intune objects by display-name similarity.

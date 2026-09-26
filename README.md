@@ -101,6 +101,10 @@ Response by the `postprovision` hook. Both channels are opt-in, bind to explicit
 tenant, account, group, and device identities, and write environment-scoped
 receipts. Manual upload or execution is only a development fallback.
 
+Profile creation and PKG publication still use the guarded commands in the
+[deployment guide](docs/deployment.md). The current `azd up` hook does not run
+those two steps; it automates the managed health channels when enabled.
+
 The default hook path remains offline: it writes `out/deployment-plan.json` and
 does not contact Intune or Defender unless the managed health-channel settings
 are explicitly enabled. See [deployment preparation](docs/deployment.md) and
@@ -129,4 +133,4 @@ dependencies retain their respective terms. See [third-party notices](THIRD_PART
 
 ## Status
 
-Phase 0 one-device deployment is in progress. The immutable upstream PKG passed SHA-256, installer-identity, Gatekeeper online-notarization, and package-metadata verification on macOS; the upstream artifact has no stapled ticket, so offline installability is not claimed. All five profiles reported remediated on the exact pilot Mac. The verified PKG was uploaded to Intune, published as `Santa 2026.8 (azd-santa pilot)`, and assigned Required only to the one-member pilot group. Intune reported the app installed on `C02GF7BBQ6L4` at `2026-09-22T00:37:18Z`. A retained Defender Live Response result subsequently verified that ASDF2 maps to `C02GF7BBQ6L4`, Santa `2026.8` is in Monitor mode, its doctor checks report no configuration errors, and the Santa Endpoint Security extension is activated and enabled. The same hash-bound health artifact is also assigned as an Intune macOS shell script to that one-device pilot group. Intune execution status, sync-server compatibility, and controlled rule behavior remain separate and unproven.
+Phase 0 one-device deployment is in progress. The immutable upstream PKG passed SHA-256, installer-identity, Gatekeeper online-notarization, and package-metadata verification on macOS; the upstream artifact has no stapled ticket, so offline installability is not claimed. All five profiles reported remediated on the exact pilot Mac. The verified PKG was uploaded to Intune, published as `Santa 2026.8 (azd-santa pilot)`, and assigned Required only to the one-member pilot group. Intune reported the app installed on `C02GF7BBQ6L4` at `2026-09-22T00:37:18Z`. Defender Live Response verified that ASDF2 maps to `C02GF7BBQ6L4`, Santa `2026.8` is in Monitor mode, its doctor checks report no configuration errors, and the Santa Endpoint Security extension is activated and enabled. Intune also reported a successful run of the assigned health script on that exact Mac at `2026-09-22T06:41:26Z`. Sync-server compatibility and controlled rule behavior remain unproven.
