@@ -179,6 +179,10 @@ Describe 'Mutation boundary' {
         $scriptText | Should -Not -Match 'UseDevice(Code|Authentication)'
         $scriptText | Should -Match 'exactly one member'
         $scriptText | Should -Match 'assignment outside the authorized pilot group'
+        $scriptText | Should -Match 'status = ''unknown'''
+        $scriptText | Should -Match 'ExpectedDeviceName'
+        $scriptText | Should -Match 'AllowProfileUpdate'
+        $scriptText | Should -Match 'No Intune changes were made'
     }
 
     It 'builds cleanup only from exact receipt object IDs in reverse profile order' {
@@ -200,6 +204,10 @@ Describe 'Mutation boundary' {
         $receipt = Get-Content -Raw (Join-Path $script:root 'tests/fixtures/intune/profile-receipt.json') | ConvertFrom-Json
         $receipt.package.status = 'installed'
         $packagePath = Join-Path $TestDrive 'package-present-receipt.json'
+        $receipt | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $packagePath
+        { Get-SantaProfileCleanupPlan -ReceiptPath $packagePath } | Should -Throw '*Package cleanup and endpoint removal evidence*'
+
+        $receipt.package.status = 'unknown'
         $receipt | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $packagePath
         { Get-SantaProfileCleanupPlan -ReceiptPath $packagePath } | Should -Throw '*Package cleanup and endpoint removal evidence*'
     }
@@ -327,6 +335,7 @@ Describe 'Managed endpoint health channels' {
         $post = Get-Content -Raw (Join-Path $script:root 'scripts/Post-Provision.ps1')
         $azure | Should -Match 'postprovision:'
         $post | Should -Match 'AZD_SANTA_DEPLOY_INTUNE_HEALTH_SCRIPT'
+        $post | Should -Match 'AZD_SANTA_DEPLOY_INTUNE_PROFILES'
         $post | Should -Match 'AZD_SANTA_PUBLISH_LIVE_RESPONSE_LIBRARY'
         $post | Should -Match 'AZD_SANTA_RUN_LIVE_RESPONSE_HEALTH'
         $post | Should -Match 'AZD_SANTA_MDE_MACHINE_ID'

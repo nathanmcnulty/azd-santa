@@ -1,6 +1,6 @@
 # Offline deployment preparation
 
-This slice prepares exact artifacts and a mutation-free Intune plan. Live profile and package apply commands remain separately guarded and require `-Apply` plus PowerShell confirmation.
+This slice prepares exact artifacts and a mutation-free Intune plan. Live profile apply can be explicitly enabled in `azd up`; the standalone apply command remains guarded by `-Apply` and PowerShell confirmation. PKG upload remains a separate guarded step until macOS verification and exact-device profile readiness are available.
 
 ```powershell
 ./scripts/New-SantaProfiles.ps1 -Organization 'Example Corp'
@@ -27,12 +27,13 @@ The guarded profile-only apply command is:
   -TenantId '<tenant-id>' `
   -PilotGroupId '<pilot-group-object-id>' `
   -ExpectedGroupDisplayName '<exact-name>' `
+  -ExpectedDeviceName '<exact-device-name>' `
   -ExpectedAccount '<expected-upn>' `
   -Organization '<organization>' `
   -Apply -Confirm
 ```
 
-Without `-Apply`, it only prints a what-if summary and does not authenticate. With `-Apply`, it uses a normal WAM/browser Microsoft Graph connection, verifies the tenant/account/group and single macOS member, refuses display-name collisions or broader assignments, and records exact object IDs under `.azure/azd-santa/`.
+Without `-Apply`, it only prints a what-if summary and does not authenticate. With `-Apply`, it uses a normal WAM/browser Microsoft Graph connection, verifies the tenant/account/group and exact single macOS device, preflights all existing assignments before any mutation, and refuses display-name collisions or broader assignments. Existing payload changes require the separate `-AllowProfileUpdate` switch after reviewing the drift; an unchanged profile is only verified, not patched. Exact object IDs are recorded under `.azure/azd-santa/`. Its package status is deliberately `unknown`: profile publication cannot prove the package is absent, so this receipt cannot authorize a cleanup plan by itself.
 
 Collect current assignment and per-profile device status without changing Intune or requesting a device sync:
 
@@ -75,7 +76,7 @@ Generate a non-mutating cleanup plan from the exact profile object IDs recorded 
 ./scripts/New-CleanupPlan.ps1
 ```
 
-The cleanup planner works only while the receipt says the package was never uploaded. It rejects missing or duplicate profile IDs, assignment-group drift, release drift, and package-present teardown. Package or endpoint removal requires separate evidence before profile cleanup can safely proceed.
+The cleanup planner works only with a separately established `not-uploaded` package status. The profile publisher now records `unknown` and cannot supply that proof. The planner rejects missing or duplicate profile IDs, assignment-group drift, release drift, and package-present teardown. Package or endpoint removal requires separate evidence before profile cleanup can safely proceed.
 
 After an authorized deployment, run `scripts/Test-SantaEndpoint.sh` locally on
 the pilot Mac from the repository root. The first argument optionally overrides
@@ -102,6 +103,8 @@ MDE machine. Configure the explicit bindings before deployment:
 
 ```powershell
 azd env set AZD_SANTA_DEPLOY_INTUNE_HEALTH_SCRIPT true
+azd env set AZD_SANTA_DEPLOY_INTUNE_PROFILES true
+azd env set AZD_SANTA_ORGANIZATION '<organization-for-profile-payloads>'
 azd env set AZD_SANTA_PUBLISH_LIVE_RESPONSE_LIBRARY true
 azd env set AZD_SANTA_RUN_LIVE_RESPONSE_HEALTH true
 azd env set AZD_SANTA_PILOT_GROUP_ID '<entra-device-group-guid>'
@@ -114,9 +117,19 @@ azd env set AZD_SANTA_MDE_ACCOUNT '<mde-admin-upn>'
 azd up
 ```
 
-This hook automates the health channels. Profile creation and PKG publication
-still use the guarded commands earlier in this guide; they are not yet part of
-the `azd up` hook.
+The profile flag makes `azd up` create or update the five pilot-only profiles,
+then collect their exact-device status. It is opt-in and requires the named
+organization and pilot bindings above. To permit reviewed profile changes, set
+`AZD_SANTA_ALLOW_PROFILE_UPDATE=true`; leave it unset for a new deployment or
+an unchanged rerun. The status may initially be pending
+while Intune delivers the profiles; a later `azd up` refreshes it. The hook
+also automates the health channels. PKG publication still uses the guarded
+command earlier in this guide: package signing/notarization must be verified
+on macOS, and the required profiles must first report ready on the exact device.
+The current pilot's configuration profile lacks one payload UUID present in
+this checkout; the other four differ only by a trailing newline. Leave the
+update setting unset until that configuration difference is reviewed; the
+hook will fail before changing any profile.
 
 The Intune publisher uses the beta `deviceShellScripts` API, runs the script as
 System, assigns it only to the verified one-member macOS pilot group, and

@@ -18,10 +18,11 @@ function Test-Enabled { param([string] $Value) return $Value -match '^(?i:true|1
 function Assert-Setting { param([string] $Name, [string] $Pattern = '.+') $value = Get-AzdSetting $Name; if ($value -notmatch $Pattern) { throw "Required AZD setting '$Name' is missing or invalid." }; return $value }
 
 $publishIntune = Test-Enabled (Get-AzdSetting 'AZD_SANTA_DEPLOY_INTUNE_HEALTH_SCRIPT')
+$deployProfiles = Test-Enabled (Get-AzdSetting 'AZD_SANTA_DEPLOY_INTUNE_PROFILES')
 $publishLiveResponse = Test-Enabled (Get-AzdSetting 'AZD_SANTA_PUBLISH_LIVE_RESPONSE_LIBRARY')
 $runLiveResponse = Test-Enabled (Get-AzdSetting 'AZD_SANTA_RUN_LIVE_RESPONSE_HEALTH')
-if (-not ($publishIntune -or $publishLiveResponse -or $runLiveResponse)) {
-    Write-Host 'No optional Santa health publication or execution channel is enabled.' -ForegroundColor DarkGray
+if (-not ($deployProfiles -or $publishIntune -or $publishLiveResponse -or $runLiveResponse)) {
+    Write-Host 'No optional Santa Intune deployment or health channel is enabled.' -ForegroundColor DarkGray
     return
 }
 if ($runLiveResponse -and -not $publishLiveResponse) { throw 'AZD_SANTA_RUN_LIVE_RESPONSE_HEALTH requires AZD_SANTA_PUBLISH_LIVE_RESPONSE_LIBRARY=true.' }
@@ -30,6 +31,24 @@ $tenantId = Assert-Setting 'AZURE_TENANT_ID' '^[0-9a-fA-F-]{36}$'
 $environmentName = Get-AzdSetting 'AZURE_ENV_NAME'
 if ([string]::IsNullOrWhiteSpace($environmentName)) { $environmentName = 'default' }
 if ($environmentName -notmatch '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$') { throw 'AZURE_ENV_NAME is not safe for a receipt path.' }
+
+if ($deployProfiles) {
+    $pilotGroupId = Assert-Setting 'AZD_SANTA_PILOT_GROUP_ID' '^[0-9a-fA-F-]{36}$'
+    $pilotGroupName = Assert-Setting 'AZD_SANTA_PILOT_GROUP_NAME'
+    $deviceName = Assert-Setting 'AZD_SANTA_INTUNE_DEVICE_NAME' '^[A-Za-z0-9._-]{1,255}$'
+    $intuneAccount = Assert-Setting 'AZD_SANTA_INTUNE_ACCOUNT' '^[^@\s]+@[^@\s]+$'
+    $organization = Assert-Setting 'AZD_SANTA_ORGANIZATION'
+    $allowProfileUpdate = Test-Enabled (Get-AzdSetting 'AZD_SANTA_ALLOW_PROFILE_UPDATE')
+    $profileReceipt = Join-Path (Split-Path -Parent $PSScriptRoot) ".azure/$environmentName/santa-intune-profiles-receipt.json"
+    $profileStatus = Join-Path (Split-Path -Parent $PSScriptRoot) ".azure/$environmentName/santa-intune-profile-status.json"
+    & (Join-Path $PSScriptRoot 'Invoke-SantaIntuneProfiles.ps1') `
+        -TenantId $tenantId -PilotGroupId $pilotGroupId -ExpectedGroupDisplayName $pilotGroupName `
+        -ExpectedDeviceName $deviceName -ExpectedAccount $intuneAccount -Organization $organization `
+        -ReceiptPath $profileReceipt -AllowProfileUpdate:$allowProfileUpdate -Apply -Confirm:$false
+    & (Join-Path $PSScriptRoot 'Get-SantaIntuneProfileStatus.ps1') `
+        -TenantId $tenantId -ExpectedAccount $intuneAccount -ExpectedDeviceName $deviceName `
+        -ReceiptPath $profileReceipt -OutputPath $profileStatus
+}
 
 if ($publishIntune) {
     & (Join-Path $PSScriptRoot 'Publish-SantaIntuneHealthScript.ps1') `
