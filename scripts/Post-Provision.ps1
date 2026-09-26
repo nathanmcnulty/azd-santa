@@ -19,18 +19,21 @@ function Assert-Setting { param([string] $Name, [string] $Pattern = '.+') $value
 
 $publishIntune = Test-Enabled (Get-AzdSetting 'AZD_SANTA_DEPLOY_INTUNE_HEALTH_SCRIPT')
 $deployProfiles = Test-Enabled (Get-AzdSetting 'AZD_SANTA_DEPLOY_INTUNE_PROFILES')
+$deployPackage = Test-Enabled (Get-AzdSetting 'AZD_SANTA_DEPLOY_INTUNE_PACKAGE')
 $publishLiveResponse = Test-Enabled (Get-AzdSetting 'AZD_SANTA_PUBLISH_LIVE_RESPONSE_LIBRARY')
 $runLiveResponse = Test-Enabled (Get-AzdSetting 'AZD_SANTA_RUN_LIVE_RESPONSE_HEALTH')
-if (-not ($deployProfiles -or $publishIntune -or $publishLiveResponse -or $runLiveResponse)) {
+if (-not ($deployProfiles -or $deployPackage -or $publishIntune -or $publishLiveResponse -or $runLiveResponse)) {
     Write-Host 'No optional Santa Intune deployment or health channel is enabled.' -ForegroundColor DarkGray
     return
 }
 if ($runLiveResponse -and -not $publishLiveResponse) { throw 'AZD_SANTA_RUN_LIVE_RESPONSE_HEALTH requires AZD_SANTA_PUBLISH_LIVE_RESPONSE_LIBRARY=true.' }
+if ($deployPackage -and -not $deployProfiles) { throw 'AZD_SANTA_DEPLOY_INTUNE_PACKAGE requires AZD_SANTA_DEPLOY_INTUNE_PROFILES=true for fresh exact-device readiness.' }
 
 $tenantId = Assert-Setting 'AZURE_TENANT_ID' '^[0-9a-fA-F-]{36}$'
 $environmentName = Get-AzdSetting 'AZURE_ENV_NAME'
 if ([string]::IsNullOrWhiteSpace($environmentName)) { $environmentName = 'default' }
 if ($environmentName -notmatch '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$') { throw 'AZURE_ENV_NAME is not safe for a receipt path.' }
+$profileStatus = Join-Path (Split-Path -Parent $PSScriptRoot) ".azure/$environmentName/santa-intune-profile-status.json"
 
 if ($deployProfiles) {
     $pilotGroupId = Assert-Setting 'AZD_SANTA_PILOT_GROUP_ID' '^[0-9a-fA-F-]{36}$'
@@ -40,7 +43,6 @@ if ($deployProfiles) {
     $organization = Assert-Setting 'AZD_SANTA_ORGANIZATION'
     $allowProfileUpdate = Test-Enabled (Get-AzdSetting 'AZD_SANTA_ALLOW_PROFILE_UPDATE')
     $profileReceipt = Join-Path (Split-Path -Parent $PSScriptRoot) ".azure/$environmentName/santa-intune-profiles-receipt.json"
-    $profileStatus = Join-Path (Split-Path -Parent $PSScriptRoot) ".azure/$environmentName/santa-intune-profile-status.json"
     & (Join-Path $PSScriptRoot 'Invoke-SantaIntuneProfiles.ps1') `
         -TenantId $tenantId -PilotGroupId $pilotGroupId -ExpectedGroupDisplayName $pilotGroupName `
         -ExpectedDeviceName $deviceName -ExpectedAccount $intuneAccount -Organization $organization `
@@ -48,6 +50,19 @@ if ($deployProfiles) {
     & (Join-Path $PSScriptRoot 'Get-SantaIntuneProfileStatus.ps1') `
         -TenantId $tenantId -ExpectedAccount $intuneAccount -ExpectedDeviceName $deviceName `
         -ReceiptPath $profileReceipt -OutputPath $profileStatus
+}
+
+if ($deployPackage) {
+    $root = Split-Path -Parent $PSScriptRoot
+    $lock = Get-Content (Join-Path $root 'package/santa.lock.json') -Raw | ConvertFrom-Json
+    & (Join-Path $PSScriptRoot 'Invoke-SantaIntunePackage.ps1') `
+        -PackagePath (Join-Path $root "package/vendor/$($lock.package.assetName)") `
+        -PackageVerificationReceiptPath (Join-Path $root "package/verification/santa-$($lock.release.tag).json") `
+        -ProfileStatusPath $profileStatus `
+        -TenantId $tenantId -PilotGroupId $pilotGroupId -ExpectedPilotGroupName $pilotGroupName `
+        -ExpectedDeviceName $deviceName -ExpectedAccount $intuneAccount `
+        -ReceiptPath (Join-Path $root ".azure/$environmentName/santa-intune-package-receipt.json") `
+        -Apply -Confirm:$false
 }
 
 if ($publishIntune) {

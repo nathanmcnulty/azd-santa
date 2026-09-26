@@ -3,13 +3,14 @@ param(
     [string] $Organization = $(if ($env:SANTA_ORGANIZATION) { $env:SANTA_ORGANIZATION } else { 'Contoso' }),
     [string] $PilotGroupId = $(if ($env:SANTA_PILOT_GROUP_ID) { $env:SANTA_PILOT_GROUP_ID } else { '00000000-0000-0000-0000-000000000000' }),
     [string] $PackagePath,
-    [string] $PackageVerificationReceiptPath = (Join-Path (Split-Path -Parent $PSScriptRoot) '.azure/azd-santa/package-verification-receipt.json'),
+    [string] $PackageVerificationReceiptPath,
     [string] $OutputPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'out/deployment-plan.json')
 )
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'Santa.Template.psm1') -Force
 $lock = Get-SantaLock
-if (-not $PackagePath) { $PackagePath = Join-Path (Split-Path -Parent $PSScriptRoot) ('package/downloads/' + $lock.package.assetName) }
+if (-not $PackagePath) { $PackagePath = Join-Path (Split-Path -Parent $PSScriptRoot) ('package/vendor/' + $lock.package.assetName) }
+if (-not $PackageVerificationReceiptPath) { $PackageVerificationReceiptPath = Join-Path (Split-Path -Parent $PSScriptRoot) ('package/verification/santa-' + $lock.release.tag + '.json') }
 $profilePaths = New-SantaProfileSet -Organization $Organization
 Test-SantaProfileSet | Out-Null
 $packageExists = Test-Path -LiteralPath $PackagePath -PathType Leaf

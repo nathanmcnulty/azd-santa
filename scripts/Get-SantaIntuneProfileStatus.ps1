@@ -16,6 +16,14 @@ function Invoke-GraphRead {
     param([Parameter(Mandatory)][string] $Uri)
     return Invoke-MgGraphRequest -Method GET -Uri $Uri -OutputType PSObject
 }
+function Test-ExactPilotAssignment {
+    param([Parameter(Mandatory)][object] $Assignment, [Parameter(Mandatory)][string] $GroupId)
+    $target = $Assignment.target
+    if (-not $target -or $target.'@odata.type' -ne '#microsoft.graph.groupAssignmentTarget' -or $target.groupId -ne $GroupId) { return $false }
+    $filterId = $target.PSObject.Properties['deviceAndAppManagementAssignmentFilterId']
+    $filterType = $target.PSObject.Properties['deviceAndAppManagementAssignmentFilterType']
+    return (-not $filterId -or -not $filterId.Value) -and (-not $filterType -or $filterType.Value -in @($null, 'none'))
+}
 
 $receiptSchema = Join-Path $root 'schemas/intune-profile-receipt.schema.json'
 $receiptRaw = Get-Content -LiteralPath $ReceiptPath -Raw
@@ -76,7 +84,7 @@ if ([string] $managedDevice.deviceName -cne $ExpectedDeviceName -or [string] $ma
 $deviceConfigurationStates = Invoke-GraphRead -Uri "/beta/deviceManagement/managedDevices/$($managedDevice.id)/deviceConfigurationStates?`$top=200"
 
 $report = [ordered]@{
-    schemaVersion = '1.1'
+    schemaVersion = '1.2'
     collectedAt = [DateTimeOffset]::UtcNow.ToString('o')
     performsMutation = $false
     tenantId = $TenantId
@@ -113,6 +121,9 @@ foreach ($spec in @($manifest.profiles | Sort-Object order)) {
     }
     $assignments = Invoke-GraphRead -Uri "/v1.0/deviceManagement/deviceConfigurations/${objectId}/assignments?`$top=999"
     $groupIds = @($assignments.value | ForEach-Object { $_.target.groupId } | Where-Object { $_ } | Sort-Object -Unique)
+    $nextLink = $assignments.PSObject.Properties['@odata.nextLink']
+    $exactAssignment = @($assignments.value).Count -eq 1 -and (-not $nextLink -or -not $nextLink.Value) -and
+        (Test-ExactPilotAssignment -Assignment $assignments.value[0] -GroupId $receipt.pilotGroup.id)
     $overview = Invoke-GraphRead -Uri "/v1.0/deviceManagement/deviceConfigurations/${objectId}/deviceStatusOverview"
     $statuses = Invoke-GraphRead -Uri "/v1.0/deviceManagement/deviceConfigurations/${objectId}/deviceStatuses?`$top=100"
     $report.profiles += [ordered]@{
@@ -121,9 +132,10 @@ foreach ($spec in @($manifest.profiles | Sort-Object order)) {
         objectId = $objectId
         displayName = [string] $remote.displayName
         description = [string] $remote.description
+        lastModifiedDateTime = ([DateTimeOffset] $remote.lastModifiedDateTime).ToString('o')
         assignment = [ordered]@{
             groupIds = $groupIds
-            exactPilotOnly = (@($assignments.value).Count -eq 1 -and $groupIds.Count -eq 1 -and [string] $groupIds[0] -ceq [string] $receipt.pilotGroup.id)
+            exactPilotOnly = $exactAssignment
         }
         overview = [ordered]@{
             successCount = [int] $overview.successCount
@@ -138,7 +150,7 @@ foreach ($spec in @($manifest.profiles | Sort-Object order)) {
                 deviceDisplayName = [string] $_.deviceDisplayName
                 userName = [string] $_.userName
                 status = [string] $_.status
-                lastReportedDateTime = [string] $_.lastReportedDateTime
+                lastReportedDateTime = ([DateTimeOffset] $_.lastReportedDateTime).ToString('o')
             }
         })
     }

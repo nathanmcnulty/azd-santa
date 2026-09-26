@@ -101,10 +101,11 @@ Response by the `postprovision` hook. Both channels are opt-in, bind to explicit
 tenant, account, group, and device identities, and write environment-scoped
 receipts. Manual upload or execution is only a development fallback.
 
-Profile creation and exact-device status collection can also be enabled in
-`azd up`; see the [deployment guide](docs/deployment.md). PKG publication still
-uses its separately guarded command because macOS package verification and
-per-device profile readiness must be proven first.
+Profile creation, exact-device status collection, and PKG publication can also
+be enabled in `azd up`; see the [deployment guide](docs/deployment.md). The
+unchanged upstream PKG and macOS verification receipt are vendored, so the
+deployment path is independent of GitHub and macOS. PKG upload still waits for
+required profiles to report ready on the exact pilot device.
 
 The default hook path remains offline: it writes `out/deployment-plan.json` and
 does not contact Intune or Defender unless the managed deployment or health
