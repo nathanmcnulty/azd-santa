@@ -2,6 +2,13 @@
 
 This slice prepares exact artifacts and a mutation-free Intune plan. Live profile and PKG deployment can be explicitly enabled in `azd up`; the standalone apply commands remain guarded by `-Apply` and PowerShell confirmation. PKG upload still waits for exact-device profile readiness.
 
+AZD provisions one tagged, otherwise empty resource group to run its normal
+subscription deployment lifecycle. It creates no Azure compute or service.
+The Intune profiles, PKG app, and Defender library item are managed by the
+guarded hooks, not by that resource group. `azd down` must not be treated as
+endpoint teardown; use the receipt-bound cleanup plan and separate endpoint
+removal evidence before deleting those artifacts.
+
 ```powershell
 ./scripts/New-SantaProfiles.ps1 -Organization 'Example Corp'
 ./scripts/New-DeploymentPlan.ps1 -Organization 'Example Corp' -PilotGroupId '<pilot-group-object-id>'

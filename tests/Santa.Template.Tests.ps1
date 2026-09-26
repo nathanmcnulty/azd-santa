@@ -158,6 +158,16 @@ Describe 'Fixture sync adapter' {
 }
 
 Describe 'Mutation boundary' {
+    It 'uses only a tagged AZD orchestration resource group in Bicep' {
+        $bicep = Get-Content -Raw (Join-Path $script:root 'infra/main.bicep')
+        $parameters = Get-Content -Raw (Join-Path $script:root 'infra/main.parameters.json') | ConvertFrom-Json
+        $bicep | Should -Match "targetScope = 'subscription'"
+        $bicep | Should -Match 'Microsoft.Resources/resourceGroups'
+        $bicep | Should -Not -Match 'virtualMachines|Microsoft.Web|Microsoft.Storage'
+        $parameters.parameters.environmentName.value | Should -Be '${AZURE_ENV_NAME}'
+        $parameters.parameters.location.value | Should -Be '${AZURE_LOCATION}'
+    }
+
     It 'keeps the generated plan as what-if only' {
         & (Join-Path $script:root 'scripts/New-DeploymentPlan.ps1') -Organization 'Contoso' -OutputPath (Join-Path $TestDrive 'plan.json')
         $plan = Get-Content -Raw (Join-Path $TestDrive 'plan.json') | ConvertFrom-Json
