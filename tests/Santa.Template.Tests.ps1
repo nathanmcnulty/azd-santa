@@ -10,6 +10,7 @@ Describe 'Release lock and profiles' {
         $lock = Get-SantaLock
         $lock.release.tag | Should -Be '2026.8'
         $lock.release.sourceCommit | Should -Match '^[0-9a-f]{40}$'
+        $lock.platform.supportedMacOSMajors | Should -Contain 27
         $lock.identity.teamId | Should -Be 'ZMCG7MLDV9'
         $lock.verification.packageSignature.status | Should -Be 'required-not-yet-proven'
     }
@@ -124,6 +125,8 @@ Describe 'Readiness and rule safety' {
         $scriptText | Should -Match '\[\+\] No configuration errors detected'
         $scriptText | Should -Match '\[\+\] Sync is disabled'
         $scriptText | Should -Match 'systemextensionsctl list com\.apple\.system_extension\.endpoint_security'
+        $scriptText | Should -Match 'santa_extension_line'
+        $scriptText | Should -Match 'Multiple Santa Endpoint Security extension rows'
         $scriptText | Should -Not -Match '\.azure|/tmp|sudo'
         $deployment | Should -Match 'Library\.Manage'
         $deployment | Should -Match 'Machine\.LiveResponse'
@@ -282,6 +285,7 @@ Describe 'Guarded Intune package apply' {
         $scriptText = Get-Content -Raw (Join-Path $script:root 'scripts/Invoke-SantaIntunePackage.ps1')
         $scriptText | Should -Match '\[switch\]\s+\$Apply'
         $scriptText | Should -Match 'SupportsShouldProcess'
+        $scriptText | Should -Not -Match '847b5907|2b2c6016|C02GF7BBQ6L4|nathan@sharemylabs'
         $scriptText | Should -Not -Match '(?i)UseDevice(Code|Authentication)|DeviceCodeCredential'
     }
 
@@ -326,5 +330,13 @@ Describe 'Managed endpoint health channels' {
         $post | Should -Match 'AZD_SANTA_PUBLISH_LIVE_RESPONSE_LIBRARY'
         $post | Should -Match 'AZD_SANTA_RUN_LIVE_RESPONSE_HEALTH'
         $post | Should -Match 'AZD_SANTA_MDE_MACHINE_ID'
+    }
+
+    It 'collects Intune execution from the bound pilot device with read-only Graph calls' {
+        $collector = Get-Content -Raw (Join-Path $script:root 'scripts/Get-SantaIntuneHealthStatus.ps1')
+        $collector | Should -Match 'deviceRunStates'
+        $collector | Should -Match 'managedDeviceId'
+        $collector | Should -Match 'lastModifiedDateTime'
+        $collector | Should -Not -Match '(?i)-Method\s+(POST|PATCH|DELETE)|UseDevice(Code|Authentication)|DeviceCodeCredential'
     }
 }

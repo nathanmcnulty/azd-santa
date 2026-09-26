@@ -3,11 +3,11 @@ param(
     [Parameter(Mandatory)][string] $PackagePath,
     [Parameter(Mandatory)][string] $PackageVerificationReceiptPath,
     [Parameter(Mandatory)][string] $ProfileStatusPath,
-    [string] $TenantId = '847b5907-ca15-40f4-b171-eb18619dbfab',
-    [string] $PilotGroupId = '2b2c6016-1c51-4cbe-b68f-4da6f3d02859',
-    [string] $ExpectedPilotGroupName = 'Intune - MacBook Air',
-    [string] $ExpectedDeviceName = 'C02GF7BBQ6L4',
-    [string] $ExpectedAccount = 'nathan@sharemylabs.com',
+    [Parameter(Mandatory)][string] $TenantId,
+    [Parameter(Mandatory)][string] $PilotGroupId,
+    [Parameter(Mandatory)][string] $ExpectedPilotGroupName,
+    [Parameter(Mandatory)][string] $ExpectedDeviceName,
+    [Parameter(Mandatory)][string] $ExpectedAccount,
     [string] $ReceiptPath = (Join-Path (Split-Path -Parent $PSScriptRoot) '.azure/azd-santa/intune-package-receipt.json'),
     [switch] $Apply
 )
@@ -110,9 +110,20 @@ function Send-BlockBlob {
 }
 
 Test-SantaPackageVerificationReceipt -Path $PackageVerificationReceiptPath -PackagePath $PackagePath | Out-Null
-$profileStatus = Get-Content -LiteralPath $ProfileStatusPath -Raw | ConvertFrom-Json
-if ($profileStatus.pilotDevice.deviceName -ne $ExpectedDeviceName -or -not $profileStatus.summary.deliveryReadiness) { throw 'Exact-device prerequisite profile readiness is not proven.' }
-if (@($profileStatus.profiles | Where-Object { -not $_.assignment.exactPilotOnly -or @($_.deviceStatuses).Count -ne 1 -or $_.deviceStatuses[0].deviceDisplayName -ne $ExpectedDeviceName -or $_.deviceStatuses[0].status -ne 'remediated' }).Count -ne 0) { throw 'One or more prerequisite profiles are not remediated on the exact pilot device.' }
+$profileStatusRaw = Get-Content -LiteralPath $ProfileStatusPath -Raw
+if (-not ($profileStatusRaw | Test-Json -SchemaFile (Join-Path (Split-Path -Parent $PSScriptRoot) 'schemas/intune-profile-status.schema.json') -ErrorAction Stop)) {
+    throw 'Intune profile status report does not satisfy its schema.'
+}
+$profileStatus = $profileStatusRaw | ConvertFrom-Json
+$statusAge = [DateTimeOffset]::UtcNow - [DateTimeOffset]$profileStatus.collectedAt
+if ($statusAge.TotalMinutes -lt -5 -or $statusAge.TotalMinutes -gt 30) { throw 'Intune profile status report must have been collected within the last 30 minutes.' }
+if ($profileStatus.tenantId -ne $TenantId -or $profileStatus.account -ne $ExpectedAccount -or
+    $profileStatus.pilotGroup.id -ne $PilotGroupId -or $profileStatus.pilotGroup.displayName -ne $ExpectedPilotGroupName -or
+    $profileStatus.pilotDevice.deviceName -ne $ExpectedDeviceName) {
+    throw 'Intune profile status report does not match the selected tenant, account, group, and device.'
+}
+$verifiedProfileStatus = Test-SantaIntuneProfileReport -State $profileStatus
+if (-not $profileStatus.summary.deliveryReadiness -or -not $verifiedProfileStatus.deliveryReadiness) { throw 'Exact-device prerequisite profile readiness is not proven.' }
 
 if (-not $Apply) {
     Write-Information "WHAT-IF: would upload '$displayName' and assign it as Required only to '$ExpectedPilotGroupName' ($PilotGroupId)." -InformationAction Continue

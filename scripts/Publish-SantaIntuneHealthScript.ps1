@@ -45,6 +45,21 @@ function Invoke-GraphJson {
     Invoke-MgGraphRequest @parameters
 }
 
+function Get-PilotAssignmentTargets {
+    param([Parameter(Mandatory)] $Script, [Parameter(Mandatory)][string] $GroupId)
+    $legacy = @($Script.groupAssignments)
+    $modern = @($Script.assignments)
+    if ($legacy.Count -gt 1 -or $modern.Count -gt 1) { throw 'Intune health script has duplicate pilot assignments.' }
+    $foreignLegacy = @($legacy | Where-Object targetGroupId -ne $GroupId)
+    $foreignModern = @($modern | Where-Object {
+        $_.target.'@odata.type' -ne '#microsoft.graph.groupAssignmentTarget' -or
+        $_.target.groupId -ne $GroupId -or
+        ($_.target.deviceAndAppManagementAssignmentFilterType -and $_.target.deviceAndAppManagementAssignmentFilterType -ne 'none')
+    })
+    if ($foreignLegacy.Count -gt 0 -or $foreignModern.Count -gt 0) { throw 'Intune health script has an assignment outside the authorized unfiltered pilot group.' }
+    @(@($legacy | ForEach-Object targetGroupId) + @($modern | ForEach-Object { $_.target.groupId }) | Sort-Object -Unique)
+}
+
 $group = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/v1.0/groups/$PilotGroupId`?`$select=id,displayName,securityEnabled,mailEnabled" -Body $null
 if ($group.displayName -ne $ExpectedGroupDisplayName -or -not $group.securityEnabled -or $group.mailEnabled) { throw 'Pilot group identity or type did not match the authorized target.' }
 $members = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/v1.0/groups/$PilotGroupId/members`?`$select=id,displayName,deviceId,operatingSystem&`$top=100" -Body $null
@@ -66,8 +81,12 @@ if ($owned.Count -eq 0) {
     $remote = Invoke-GraphJson -Method POST -Uri 'https://graph.microsoft.com/beta/deviceManagement/deviceShellScripts' -Body $body
     $action = 'created'
 } else {
-    $remote = $owned[0]
-    if ([string]$remote.description -eq $description) {
+    $remote = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceShellScripts/$($owned[0].id)?`$expand=groupAssignments,assignments" -Body $null
+    $existingTargets = @(Get-PilotAssignmentTargets -Script $remote -GroupId $PilotGroupId)
+    if ($existingTargets.Count -gt 1) { throw 'Intune health script has duplicate pilot assignments.' }
+    $remoteHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Convert]::FromBase64String([string] $remote.scriptContent))).ToLowerInvariant()
+    if ([string]$remote.description -eq $description -and $remoteHash -eq $sha256 -and
+        [string]$remote.fileName -eq $fileName -and [string]$remote.runAsAccount -eq 'system') {
         $action = 'verified'
     } else {
         Invoke-GraphJson -Method PATCH -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceShellScripts/$($remote.id)" -Body $body | Out-Null
@@ -75,21 +94,8 @@ if ($owned.Count -eq 0) {
     }
 }
 
-$assignmentState = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceShellScripts/$($remote.id)?`$select=id&`$expand=groupAssignments,assignments" -Body $null
-$legacyAssignments = @($assignmentState.groupAssignments)
-$modernAssignments = @($assignmentState.assignments)
-$foreignLegacy = @($legacyAssignments | Where-Object targetGroupId -ne $PilotGroupId)
-$foreignModern = @($modernAssignments | Where-Object {
-    $_.target.'@odata.type' -ne '#microsoft.graph.groupAssignmentTarget' -or
-    $_.target.groupId -ne $PilotGroupId -or
-    ($_.target.deviceAndAppManagementAssignmentFilterType -and $_.target.deviceAndAppManagementAssignmentFilterType -ne 'none')
-})
-if ($foreignLegacy.Count -gt 0 -or $foreignModern.Count -gt 0) { throw 'Intune health script has an assignment outside the authorized unfiltered pilot group.' }
-$exactTargets = @(
-    @($legacyAssignments | Where-Object targetGroupId -eq $PilotGroupId | ForEach-Object targetGroupId) +
-    @($modernAssignments | Where-Object { $_.target.groupId -eq $PilotGroupId } | ForEach-Object { $_.target.groupId }) |
-        Sort-Object -Unique
-)
+$assignmentState = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceShellScripts/$($remote.id)?`$expand=groupAssignments,assignments" -Body $null
+$exactTargets = @(Get-PilotAssignmentTargets -Script $assignmentState -GroupId $PilotGroupId)
 if ($exactTargets.Count -eq 0) {
     $assignmentBody = [ordered]@{
         deviceManagementScriptGroupAssignments = @()
@@ -102,9 +108,11 @@ if ($exactTargets.Count -eq 0) {
     }
     Invoke-GraphJson -Method POST -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceShellScripts/$($remote.id)/assign" -Body $assignmentBody | Out-Null
 } elseif ($exactTargets.Count -gt 1) { throw 'Intune health script has duplicate pilot assignments.' }
-$readback = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceShellScripts/$($remote.id)?`$select=id&`$expand=groupAssignments,assignments" -Body $null
-$readbackTargets = @(@($readback.groupAssignments | ForEach-Object targetGroupId) + @($readback.assignments | ForEach-Object { $_.target.groupId }) | Sort-Object -Unique)
+$readback = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceShellScripts/$($remote.id)?`$expand=groupAssignments,assignments" -Body $null
+$readbackTargets = @(Get-PilotAssignmentTargets -Script $readback -GroupId $PilotGroupId)
 if ($readbackTargets.Count -ne 1 -or [string]$readbackTargets[0] -ne $PilotGroupId) { throw 'Intune health script assignment read-back failed.' }
+$readbackHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Convert]::FromBase64String([string] $readback.scriptContent))).ToLowerInvariant()
+if ($readbackHash -ne $sha256 -or [string]$readback.description -ne $description) { throw 'Intune health script content read-back failed.' }
 
 New-Item -ItemType Directory -Path (Split-Path -Parent $ReceiptPath) -Force | Out-Null
 [ordered]@{

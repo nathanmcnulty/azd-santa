@@ -39,6 +39,10 @@ if ($publishIntune) {
         -ExpectedDeviceName (Assert-Setting 'AZD_SANTA_INTUNE_DEVICE_NAME' '^[A-Za-z0-9._-]{1,255}$') `
         -ExpectedAccount (Assert-Setting 'AZD_SANTA_INTUNE_ACCOUNT' '^[^@\s]+@[^@\s]+$') `
         -EnvironmentName $environmentName -Apply -Confirm:$false
+    & (Join-Path $PSScriptRoot 'Get-SantaIntuneHealthStatus.ps1') `
+        -TenantId $tenantId `
+        -ExpectedAccount (Assert-Setting 'AZD_SANTA_INTUNE_ACCOUNT' '^[^@\s]+@[^@\s]+$') `
+        -EnvironmentName $environmentName
 }
 
 if ($publishLiveResponse) {
