@@ -28,7 +28,7 @@
           "id": { "enum": ["system-extension", "tcc", "service-management", "configuration", "notifications"] },
           "objectId": { "type": "string", "format": "uuid" },
           "displayName": { "type": "string", "minLength": 1 },
-          "action": { "enum": ["create", "update"] },
+          "action": { "enum": ["create", "update", "verify"] },
           "assignmentGroupId": { "type": "string", "format": "uuid" }
         }
       }
@@ -37,7 +37,7 @@
       "type": "object",
       "required": ["status"],
       "properties": {
-        "status": { "enum": ["not-uploaded", "uploaded", "assigned", "installed"] }
+        "status": { "enum": ["unknown", "not-uploaded", "uploaded", "assigned", "installed"] }
       }
     }
   }

@@ -101,13 +101,14 @@ Response by the `postprovision` hook. Both channels are opt-in, bind to explicit
 tenant, account, group, and device identities, and write environment-scoped
 receipts. Manual upload or execution is only a development fallback.
 
-Profile creation and PKG publication still use the guarded commands in the
-[deployment guide](docs/deployment.md). The current `azd up` hook does not run
-those two steps; it automates the managed health channels when enabled.
+Profile creation and exact-device status collection can also be enabled in
+`azd up`; see the [deployment guide](docs/deployment.md). PKG publication still
+uses its separately guarded command because macOS package verification and
+per-device profile readiness must be proven first.
 
 The default hook path remains offline: it writes `out/deployment-plan.json` and
-does not contact Intune or Defender unless the managed health-channel settings
-are explicitly enabled. See [deployment preparation](docs/deployment.md) and
+does not contact Intune or Defender unless the managed deployment or health
+settings are explicitly enabled. See [deployment preparation](docs/deployment.md) and
 the [Phase 0 evidence snapshot](docs/phase-0-evidence.md).
 
 ## Primary references
