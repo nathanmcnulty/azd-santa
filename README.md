@@ -107,9 +107,10 @@ unchanged upstream PKG and macOS verification receipt are vendored, so the
 deployment path is independent of GitHub and macOS. PKG upload still waits for
 required profiles to report ready on the exact pilot device.
 
-The default hook path remains offline: it writes `out/deployment-plan.json` and
-does not contact Intune or Defender unless the managed deployment or health
-settings are explicitly enabled. See [deployment preparation](docs/deployment.md) and
+The default hook path does not contact Intune or Defender unless the managed
+deployment or health settings are explicitly enabled. `azd up` still provisions
+one tagged, otherwise empty resource group required by AZD's lifecycle; it
+does not create compute. See [deployment preparation](docs/deployment.md) and
 the [Phase 0 evidence snapshot](docs/phase-0-evidence.md).
 
 ## Primary references

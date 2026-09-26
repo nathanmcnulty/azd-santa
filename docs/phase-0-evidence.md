@@ -31,6 +31,11 @@ offline results.
   published and assigned; the repeat-safe AZD path recorded it as
   `verified-existing` without re-uploading. New PKG uploads now wait for a
   per-device status reported after each required profile's last modification.
+- A complete `azd up --environment pilot --no-prompt` provisioned only the
+  tagged `rg-azd-santa-pilot` orchestration resource group. Its package hook
+  then stopped before any upload because Intune had not yet reported a fresh
+  configuration-profile status. The Intune and Defender objects are independent
+  of the Azure resource group and are not removed by `azd down`.
 
 ## Selected release
 
