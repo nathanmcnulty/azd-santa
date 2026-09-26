@@ -1,6 +1,6 @@
 # Offline deployment preparation
 
-This slice prepares exact artifacts and a mutation-free Intune plan. Live profile apply can be explicitly enabled in `azd up`; the standalone apply command remains guarded by `-Apply` and PowerShell confirmation. PKG upload remains a separate guarded step until macOS verification and exact-device profile readiness are available.
+This slice prepares exact artifacts and a mutation-free Intune plan. Live profile and PKG deployment can be explicitly enabled in `azd up`; the standalone apply commands remain guarded by `-Apply` and PowerShell confirmation. PKG upload still waits for exact-device profile readiness.
 
 ```powershell
 ./scripts/New-SantaProfiles.ps1 -Organization 'Example Corp'
@@ -8,15 +8,24 @@ This slice prepares exact artifacts and a mutation-free Intune plan. Live profil
 ./scripts/Test-SantaTemplate.ps1
 ```
 
-Download and hash-check the package on Windows for inspection only:
+The unchanged Santa PKG is vendored at `package/vendor/santa-2026.8.pkg` with
+the macOS verification receipt at `package/verification/santa-2026.8.json`.
+They came from the successful pinned macOS verification
+[run 36271914240](https://github.com/nathanmcnulty/azd-santa/actions/runs/36271914240).
+`azd up` verifies both against the release lock locally; it does not need
+GitHub, CI, or a macOS host at deployment time. The upstream Apache-2.0 license
+and dependency notices remain in `third_party/santa-2026.8/` and
+`THIRD_PARTY_NOTICES.md`.
+
+For release-maintenance inspection, download and hash-check on Windows with:
 
 ```powershell
 ./scripts/Get-SantaPackage.ps1 -AllowUnverifiedPlatform
 ```
 
-For deployable evidence, run the same script on macOS without `-AllowUnverifiedPlatform`. It then requires `pkgutil`, Gatekeeper, and notarization checks to pass before moving the package into its final path. The receipt distinguishes a stapled ticket from an online ticket validated by Gatekeeper; an online-only ticket means offline installation is not proven.
+For a new release, run the same script on macOS without `-AllowUnverifiedPlatform` before updating the vendored asset and receipt. It then requires `pkgutil`, Gatekeeper, and notarization checks to pass before moving the package into its final path. The receipt distinguishes a stapled ticket from an online ticket validated by Gatekeeper; an online-only ticket means offline installation is not proven.
 
-Successful macOS verification also writes `.azure/azd-santa/package-verification-receipt.json`. The receipt binds the selected release, package hash and metadata, Team ID, installer certificate, and digests of each Apple verification result. `New-DeploymentPlan.ps1` keeps package upload blocked unless both that receipt and the immutable package bytes match the lock.
+Successful macOS verification also writes `.azure/azd-santa/package-verification-receipt.json`. The receipt binds the selected release, package hash and metadata, Team ID, installer certificate, and digests of each Apple verification result. `New-DeploymentPlan.ps1` checks the vendored receipt and bytes against the lock. A passing package check does not bypass the separate profile-delivery gate.
 
 The plan's zero GUID is an intentional non-deployable placeholder. Assignment is not readiness: the PKG must not be uploaded until the System Extension, TCC, Service Management, and configuration profiles report success on the exact target device.
 
@@ -44,7 +53,7 @@ Collect current assignment and per-profile device status without changing Intune
   -ExpectedDeviceName '<exact-device-name>'
 ```
 
-The collector requests read-only Graph scopes, reads the five exact object IDs from the apply receipt, and writes `.azure/azd-santa/intune-profile-status.json`. It verifies that the pilot group still contains exactly the recorded Entra device, resolves that identity to exactly one Intune managed device, and reads that device's configuration-state inventory. Assignment proof and device delivery are reported separately. Package readiness remains false until every required profile has a successful state on that exact managed device and no failed or error count; the optional notifications profile does not gate readiness.
+The collector requests read-only Graph scopes, reads the five exact object IDs from the apply receipt, and writes `.azure/azd-santa/intune-profile-status.json`. It verifies that the pilot group still contains exactly the recorded Entra device, resolves that identity to exactly one Intune managed device, and reads that device's configuration-state inventory. Assignment proof and device delivery are reported separately. Package readiness remains false until every required profile has a successful state on that managed device, plus a matching per-device success row reported after the profile's last modification, with no failed or error count. This prevents an old remediated summary from masking a newly updated profile. The optional notifications profile does not gate readiness.
 
 After macOS verification and exact-device profile readiness, upload and assign the verified bytes with:
 
@@ -64,11 +73,16 @@ After macOS verification and exact-device profile readiness, upload and assign t
 The command validates the immutable bytes and macOS receipt before authentication,
 requires a profile status report collected within 30 minutes for the same tenant,
 account, group, and device, and recomputes prerequisite readiness. It then
-revalidates the one-device target, encrypts and commits the package through
-Intune's content service, waits for publication, creates one Required assignment,
-and verifies that exact assignment by read-back. Interrupted uncommitted objects
-are resumed only when their ownership marker, release, hash, and unassigned state
-match exactly.
+revalidates the one-device target. If the exact template-owned app is already
+published with one committed file and one unfiltered Required pilot assignment,
+it records a `verified-existing` receipt without uploading again. Otherwise,
+it encrypts and commits the package through Intune's content service, waits
+for publication, creates one Required assignment, and verifies that exact
+assignment by read-back. Interrupted uncommitted objects are resumed only when
+their ownership marker, release, hash, and unassigned state match exactly.
+Graph exposes the committed file name, size, and upload state but not its
+plaintext digest; `verified-existing` confirms this template's ownership
+marker and Intune metadata, not a fresh cryptographic read-back of remote bytes.
 
 Generate a non-mutating cleanup plan from the exact profile object IDs recorded by the apply receipt:
 
@@ -104,6 +118,7 @@ MDE machine. Configure the explicit bindings before deployment:
 ```powershell
 azd env set AZD_SANTA_DEPLOY_INTUNE_HEALTH_SCRIPT true
 azd env set AZD_SANTA_DEPLOY_INTUNE_PROFILES true
+azd env set AZD_SANTA_DEPLOY_INTUNE_PACKAGE true
 azd env set AZD_SANTA_ORGANIZATION '<organization-for-profile-payloads>'
 azd env set AZD_SANTA_PUBLISH_LIVE_RESPONSE_LIBRARY true
 azd env set AZD_SANTA_RUN_LIVE_RESPONSE_HEALTH true
@@ -121,15 +136,13 @@ The profile flag makes `azd up` create or update the five pilot-only profiles,
 then collect their exact-device status. It is opt-in and requires the named
 organization and pilot bindings above. To permit reviewed profile changes, set
 `AZD_SANTA_ALLOW_PROFILE_UPDATE=true`; leave it unset for a new deployment or
-an unchanged rerun. The status may initially be pending
-while Intune delivers the profiles; a later `azd up` refreshes it. The hook
-also automates the health channels. PKG publication still uses the guarded
-command earlier in this guide: package signing/notarization must be verified
-on macOS, and the required profiles must first report ready on the exact device.
-The current pilot's configuration profile lacks one payload UUID present in
-this checkout; the other four differ only by a trailing newline. Leave the
-update setting unset until that configuration difference is reviewed; the
-hook will fail before changing any profile.
+an unchanged rerun. The package flag requires the profile flag: the same hook
+collects fresh exact-device status, verifies the vendored package and receipt,
+and only uploads when required profiles report ready. On a new device, Intune
+delivery may still be pending; `azd up` fails closed before PKG upload and can
+be rerun after the next check-in. The hook also automates the health channels.
+The pilot configuration profile was updated on 2026-09-26 to add the stable
+inner payload UUID; the other four were verified unchanged.
 
 The Intune publisher uses the beta `deviceShellScripts` API, runs the script as
 System, assigns it only to the verified one-member macOS pilot group, and

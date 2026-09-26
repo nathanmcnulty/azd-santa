@@ -24,6 +24,13 @@ offline results.
   row to have the expected Team ID and active state. Defender Live Response
   passed with the revised script. The revision was published to the same Intune
   pilot assignment; its new Intune execution is pending as of this snapshot.
+- Later on 2026-09-26, the AZD hook updated only the Santa configuration
+  profile to add the stable inner payload UUID and verified the other four
+  unchanged. Intune's managed-device summary still showed `remediated`, but
+  a fresh post-update per-device row had not yet appeared. The PKG remained
+  published and assigned; the repeat-safe AZD path recorded it as
+  `verified-existing` without re-uploading. New PKG uploads now wait for a
+  per-device status reported after each required profile's last modification.
 
 ## Selected release
 
@@ -36,13 +43,20 @@ offline results.
   at its 2026-09-26 check-in.
 - Upstream Team ID is `ZMCG7MLDV9`. Baseline Endpoint Security extension is `com.northpolesec.santa.daemon`. `com.northpolesec.santa.netd` is excluded because the network extension requires Workshop.
 
-The downloaded bytes were hash-verified on Windows. Apple package signature, Gatekeeper, notarization, installed bundle signature, and entitlement verification remain mandatory on macOS and are deliberately not marked proven in the lock. Notarization evidence may be either a stapled ticket or an online ticket accepted by Gatekeeper; the verification receipt records which path succeeded.
+The unchanged package bytes and macOS verification receipt are now vendored in
+`package/vendor/` and `package/verification/` from the successful pinned
+[verification run](https://github.com/nathanmcnulty/azd-santa/actions/runs/36271914240).
+The receipt records successful Apple package signature, Gatekeeper, online
+notarization, and package metadata checks against the locked hash and identity.
+The upstream artifact has no stapled ticket, so offline installability is not
+claimed. Installed bundle signature and entitlement verification remain a
+separate endpoint gate.
 
 ## Profile and Intune contract
 
 The baseline generates, in order: System Extension, TCC/PPPC, Service Management, Santa configuration, and optional notifications. The configuration sets `ClientMode` to integer `1` (MONITOR) and contains explicit Signing ID bootstrap rules for the release's Santa components. It deliberately avoids a broader Team ID rule. The package operation appears only after a device-level readiness gate.
 
-Custom profiles use the Microsoft Graph v1.0 `macOSCustomConfiguration` resource at `/deviceManagement/deviceConfigurations` with UTF-8 profile bytes encoded in `payload`. PKG automation uses the beta `macOSPkgApp` contract and its multi-stage content upload; this beta dependency is isolated and must be revalidated before live use. No Graph requests are sent by this slice.
+Custom profiles use the Microsoft Graph v1.0 `macOSCustomConfiguration` resource at `/deviceManagement/deviceConfigurations` with UTF-8 profile bytes encoded in `payload`. PKG automation uses the beta `macOSPkgApp` contract and its multi-stage content upload. No Graph requests were sent for the original 2026-09-21 offline snapshot; subsequent live-pilot results are recorded above.
 
 ## Sync protocol snapshot
 
@@ -65,11 +79,10 @@ The `schemas/` directory defines provider-neutral event, candidate, and approved
 
 Original work in this repository is released under the Unlicense. Santa remains
 Apache-2.0 licensed; that license permits redistribution under its conditions
-but does not grant trademark rights. The workflow can retain the exact,
-unchanged upstream PKG as a private short-lived artifact, and an authorized
-deployment can redistribute those unchanged bytes internally through Intune.
-The tagged upstream license and dependency notices are retained in
-`third_party/santa-2026.8` and accompany the workflow artifact. North Pole
+but does not grant trademark rights. The repository retains the exact,
+unchanged upstream PKG, and an authorized deployment can redistribute those
+bytes internally through Intune. The tagged upstream license and dependency
+notices are retained in `third_party/santa-2026.8`. North Pole
 Security and Santa are named only to identify origin and compatibility; this
 project does not claim affiliation or endorsement.
 

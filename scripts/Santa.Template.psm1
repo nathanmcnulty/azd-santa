@@ -240,6 +240,16 @@ function Test-SantaIntuneProfileReport {
                 $failures.Add("profile:$($spec.id):overview")
                 $requiredProfilesDelivered = $false
             }
+            $statusSuffix = "_$($statusProfile.objectId)_$($State.pilotDevice.managedDeviceId)"
+            $pilotRows = @($rows | Where-Object {
+                [string] $_.id -clike "*$statusSuffix" -and
+                [string] $_.deviceDisplayName -ceq [string] $State.pilotDevice.deviceName
+            })
+            if ($pilotRows.Count -ne 1 -or [string] $pilotRows[0].status -inotmatch '^(succeeded|remediated)$' -or
+                [DateTimeOffset] $pilotRows[0].lastReportedDateTime -lt [DateTimeOffset] $statusProfile.lastModifiedDateTime) {
+                $failures.Add("profile:$($spec.id):fresh-device-status")
+                $requiredProfilesDelivered = $false
+            }
         }
     }
     return [pscustomobject] [ordered]@{

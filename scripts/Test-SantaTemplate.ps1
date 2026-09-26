@@ -10,7 +10,7 @@ $profileResult = Test-SantaProfileSet
 if ($LASTEXITCODE -ne 0) { throw 'Semantic mobileconfig validation failed.' }
 $plan = Get-Content -LiteralPath (Join-Path $root 'out/deployment-plan.json') -Raw | ConvertFrom-Json
 if ($plan.mode -ne 'what-if' -or $plan.performsMutation) { throw 'Deployment plan is not mutation-free.' }
-if ($plan.packageVerification.state -ne 'missing' -or -not $plan.packageVerification.uploadBlocked) { throw 'Unverified package upload is not blocked.' }
+if ($plan.packageVerification.state -ne 'verified' -or $plan.packageVerification.uploadBlocked) { throw 'Vendored package and macOS verification receipt do not match the lock.' }
 if (@($plan.operations | Where-Object { $_.order -lt 60 -and $_.action -ne 'create-or-update-custom-profile' }).Count -ne 0) { throw 'Package or assignment appears before the readiness gate.' }
 if ($plan.rollback.available) { throw 'Rollback must fail closed until a prior verified package lock exists.' }
 $cleanupOrders = @($plan.cleanup.order)
@@ -19,4 +19,4 @@ Test-SantaPackageVerificationReceipt -Path (Join-Path $root 'tests/fixtures/pack
 $cleanupPlan = Get-SantaProfileCleanupPlan -ReceiptPath (Join-Path $root 'tests/fixtures/intune/profile-receipt.json')
 if ($cleanupPlan.performsMutation -or @($cleanupPlan.operations).Count -ne 5) { throw 'Receipt-bound cleanup plan is invalid.' }
 $fixtureResult = Invoke-SyncFixture -Path (Join-Path $root 'tests/fixtures/sync/clean-sync.json')
-[pscustomobject]@{ lock = 'valid'; profiles = $profileResult.profiles.Count; plan = 'what-if'; packageUpload = 'blocked'; cleanup = 'what-if'; syncFixture = $fixtureResult.postflight } | Format-List
+[pscustomobject]@{ lock = 'valid'; profiles = $profileResult.profiles.Count; plan = 'what-if'; packageUpload = 'verification-ready; device gate still required'; cleanup = 'what-if'; syncFixture = $fixtureResult.postflight } | Format-List

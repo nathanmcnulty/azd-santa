@@ -164,12 +164,20 @@ Describe 'Mutation boundary' {
         $plan.mode | Should -Be 'what-if'
         $plan.performsMutation | Should -BeFalse
         $plan.authorizationRequiredForApply | Should -BeTrue
-        $plan.packageVerification.state | Should -Be 'missing'
-        $plan.packageVerification.uploadBlocked | Should -BeTrue
+        $plan.packageVerification.state | Should -Be 'verified'
+        $plan.packageVerification.uploadBlocked | Should -BeFalse
         (@($plan.operations | Where-Object action -eq 'create-upload-commit-required-pkg'))[0].order | Should -BeGreaterThan 60
-        (@($plan.operations | Where-Object action -eq 'create-upload-commit-required-pkg'))[0].blocked | Should -BeTrue
+        (@($plan.operations | Where-Object action -eq 'create-upload-commit-required-pkg'))[0].blocked | Should -BeFalse
         $plan.rollback.available | Should -BeFalse
         @($plan.cleanup.order) | Should -Be @(10,20,30,40,50)
+
+        & (Join-Path $script:root 'scripts/New-DeploymentPlan.ps1') -Organization 'Contoso' `
+            -PackagePath (Join-Path $TestDrive 'missing.pkg') `
+            -PackageVerificationReceiptPath (Join-Path $TestDrive 'missing.json') `
+            -OutputPath (Join-Path $TestDrive 'missing-plan.json')
+        $missingPlan = Get-Content -Raw (Join-Path $TestDrive 'missing-plan.json') | ConvertFrom-Json
+        $missingPlan.packageVerification.state | Should -Be 'missing'
+        $missingPlan.packageVerification.uploadBlocked | Should -BeTrue
     }
 
     It 'keeps the Intune apply script guarded and free of device-code fallback' {
@@ -232,6 +240,16 @@ Describe 'Mutation boundary' {
         $result.profileStatusRowCount | Should -Be 4
         $result.requiredProfilesDelivered | Should -BeTrue
         $result.deliveryReadiness | Should -BeTrue
+    }
+
+    It 'rejects stale or foreign per-device status after a profile update' {
+        $state = Get-Content -Raw (Join-Path $script:root 'tests/fixtures/intune/profile-status-success.json') | ConvertFrom-Json
+        $state.profiles[3].lastModifiedDateTime = '2026-09-21T19:56:00Z'
+        $state.profiles[0].deviceStatuses[0].id = 'mock_33333333-3333-4333-8333-333333333331_88888888-8888-4888-8888-888888888888'
+        $result = Test-SantaIntuneProfileReport -State $state
+        $result.deliveryReadiness | Should -BeFalse
+        $result.failures | Should -Contain 'profile:configuration:fresh-device-status'
+        $result.failures | Should -Contain 'profile:system-extension:fresh-device-status'
     }
 
     It 'rejects foreign assignment, failed exact-device state, and missing exact-device state' {
@@ -303,6 +321,8 @@ Describe 'Guarded Intune package apply' {
         $scriptText | Should -Match 'summary\.deliveryReadiness'
         $scriptText | Should -Match "publishingState -ne 'published'"
         $scriptText | Should -Match 'Assignment read-back did not match the exact required pilot target'
+        $scriptText | Should -Match 'verified-existing'
+        $scriptText | Should -Match 'Test-ExactRequiredAssignment'
     }
 }
 
@@ -336,6 +356,7 @@ Describe 'Managed endpoint health channels' {
         $azure | Should -Match 'postprovision:'
         $post | Should -Match 'AZD_SANTA_DEPLOY_INTUNE_HEALTH_SCRIPT'
         $post | Should -Match 'AZD_SANTA_DEPLOY_INTUNE_PROFILES'
+        $post | Should -Match 'AZD_SANTA_DEPLOY_INTUNE_PACKAGE'
         $post | Should -Match 'AZD_SANTA_PUBLISH_LIVE_RESPONSE_LIBRARY'
         $post | Should -Match 'AZD_SANTA_RUN_LIVE_RESPONSE_HEALTH'
         $post | Should -Match 'AZD_SANTA_MDE_MACHINE_ID'

@@ -27,6 +27,30 @@ function Invoke-GraphJson {
     }
     Invoke-MgGraphRequest @parameters
 }
+function Test-ExactRequiredAssignment {
+    param([Parameter(Mandatory)][object] $Assignment, [Parameter(Mandatory)][string] $GroupId)
+    $target = $Assignment.target
+    if ($Assignment.intent -ne 'required' -or -not $target -or $target.'@odata.type' -ne '#microsoft.graph.groupAssignmentTarget' -or $target.groupId -ne $GroupId) { return $false }
+    $filterId = $target.PSObject.Properties['deviceAndAppManagementAssignmentFilterId']
+    $filterType = $target.PSObject.Properties['deviceAndAppManagementAssignmentFilterType']
+    return (-not $filterId -or -not $filterId.Value) -and (-not $filterType -or $filterType.Value -in @($null, 'none'))
+}
+function Write-PackageReceipt {
+    param([Parameter(Mandatory)][object] $App, [Parameter(Mandatory)][object] $File, [Parameter(Mandatory)][object] $Assignment, [Parameter(Mandatory)][string] $Action)
+    $receipt = [ordered]@{
+        schemaVersion = '1.0'
+        appliedAt = [DateTimeOffset]::UtcNow.ToString('o')
+        tenantId = $TenantId
+        account = $context.Account
+        action = $Action
+        app = [ordered]@{ id = $App.id; displayName = $App.displayName; publishingState = $App.publishingState; committedContentVersion = $App.committedContentVersion; contentFileId = $File.id; uploadState = $File.uploadState }
+        package = [ordered]@{ sha256 = [string]$lock.package.sha256; verificationReceipt = $PackageVerificationReceiptPath }
+        assignment = [ordered]@{ id = $Assignment.id; intent = $Assignment.intent; groupId = $PilotGroupId; groupDisplayName = $group.displayName; memberId = $members.value[0].id; memberDisplayName = $members.value[0].displayName }
+    }
+    New-Item -ItemType Directory -Path (Split-Path -Parent $ReceiptPath) -Force | Out-Null
+    [IO.File]::WriteAllText($ReceiptPath, (($receipt | ConvertTo-Json -Depth 20) + [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
+    return $receipt
+}
 
 function Wait-ContentFileState {
     param([Parameter(Mandatory)][string] $Uri, [Parameter(Mandatory)][string] $Stage)
@@ -135,10 +159,11 @@ Connect-MgGraph -TenantId $TenantId -Scopes @('DeviceManagementApps.ReadWrite.Al
 $context = Get-MgContext
 if ($context.TenantId -ne $TenantId -or $context.Account -ne $ExpectedAccount) { throw "Authenticated context does not match the authorized tenant/account: $($context.Account) / $($context.TenantId)" }
 
-$group = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/v1.0/groups/${PilotGroupId}?`$select=id,displayName"
+$group = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/v1.0/groups/${PilotGroupId}?`$select=id,displayName,securityEnabled,mailEnabled,groupTypes,membershipRule"
 if ($group.displayName -ne $ExpectedPilotGroupName) { throw "Pilot group display name mismatch: $($group.displayName)" }
+if (-not $group.securityEnabled -or $group.mailEnabled -or 'DynamicMembership' -in @($group.groupTypes) -or $group.membershipRule) { throw 'Pilot group must be a static security group.' }
 $members = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/v1.0/groups/$PilotGroupId/members?`$select=id,displayName,deviceId,operatingSystem"
-if (@($members.value).Count -ne 1 -or $members.value[0].displayName -ne $ExpectedDeviceName -or $members.value[0].operatingSystem -notin @('macOS', 'MacMDM')) { throw 'Pilot group is not the exact one-device macOS target.' }
+if (@($members.value).Count -ne 1 -or $members.value[0].'@odata.type' -ne '#microsoft.graph.device' -or $members.value[0].displayName -ne $ExpectedDeviceName -or $members.value[0].operatingSystem -notin @('macOS', 'MacMDM')) { throw 'Pilot group is not the exact one-device macOS target.' }
 
 $escapedName = $displayName.Replace("'", "''")
 $existing = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?`$filter=displayName eq '$escapedName'"
@@ -162,11 +187,31 @@ $appBody = [ordered]@{
     roleScopeTagIds = @('0')
 }
 $existingApps = @($existing.value)
-if ($existingApps.Count -eq 1 -and $existingApps[0].notes -eq $ownershipMarker -and -not $existingApps[0].isAssigned -and -not $existingApps[0].committedContentVersion) {
-    $app = $existingApps[0]
-}
-elseif ($existingApps.Count -gt 0) {
+if ($existingApps.Count -gt 1) {
     throw "An app named '$displayName' already exists and is not an uncommitted template-owned object; refusing to overwrite or duplicate it."
+}
+if ($existingApps.Count -eq 1) {
+    $app = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($existingApps[0].id)"
+    if ($app.'@odata.type' -ne '#microsoft.graph.macOSPkgApp' -or $app.displayName -ne $displayName -or
+        $app.notes -ne $ownershipMarker -or $app.owner -ne 'azd-santa' -or
+        $app.primaryBundleId -ne $lock.package.bundleIdentifier -or $app.primaryBundleVersion -ne $lock.package.bundleShortVersion) {
+        throw "Existing app '$($app.id)' does not match the locked template-owned package."
+    }
+    $readback = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($app.id)/assignments"
+    if ($app.committedContentVersion) {
+        if ($app.publishingState -ne 'published' -or @($readback.value).Count -ne 1 -or
+            -not (Test-ExactRequiredAssignment -Assignment $readback.value[0] -GroupId $PilotGroupId)) {
+            throw "Published app '$($app.id)' is not in the exact required pilot state."
+        }
+        $contentFiles = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($app.id)/microsoft.graph.macOSPkgApp/contentVersions/$($app.committedContentVersion)/files"
+        if (@($contentFiles.value).Count -ne 1 -or $contentFiles.value[0].name -ne $lock.package.assetName -or
+            [long]$contentFiles.value[0].size -ne [long]$lock.package.size -or $contentFiles.value[0].uploadState -ne 'commitFileSuccess') {
+            throw "Published app '$($app.id)' does not have the expected committed package file."
+        }
+        Write-PackageReceipt -App $app -File $contentFiles.value[0] -Assignment $readback.value[0] -Action 'verified-existing' | ConvertTo-Json -Depth 20
+        return
+    }
+    if (@($readback.value).Count -ne 0 -or $app.isAssigned) { throw "Uncommitted app '$($app.id)' already has assignments." }
 }
 else {
     $app = Invoke-GraphJson -Method POST -Uri 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps' -Body $appBody
@@ -215,17 +260,5 @@ $assignment = Invoke-GraphJson -Method POST -Uri "https://graph.microsoft.com/be
     target = [ordered]@{ '@odata.type' = '#microsoft.graph.groupAssignmentTarget'; groupId = $PilotGroupId }
 })
 $readback = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($app.id)/assignments"
-if (@($readback.value).Count -ne 1 -or $readback.value[0].intent -ne 'required' -or $readback.value[0].target.groupId -ne $PilotGroupId) { throw 'Assignment read-back did not match the exact required pilot target.' }
-
-$receipt = [ordered]@{
-    schemaVersion = '1.0'
-    appliedAt = [DateTimeOffset]::UtcNow.ToString('o')
-    tenantId = $TenantId
-    account = $context.Account
-    app = [ordered]@{ id = $app.id; displayName = $app.displayName; publishingState = $app.publishingState; committedContentVersion = $app.committedContentVersion; contentFileId = $file.id; uploadState = $file.uploadState }
-    package = [ordered]@{ sha256 = [string]$lock.package.sha256; verificationReceipt = $PackageVerificationReceiptPath }
-    assignment = [ordered]@{ id = $assignment.id; intent = $assignment.intent; groupId = $PilotGroupId; groupDisplayName = $group.displayName; memberId = $members.value[0].id; memberDisplayName = $members.value[0].displayName }
-}
-New-Item -ItemType Directory -Path (Split-Path -Parent $ReceiptPath) -Force | Out-Null
-[IO.File]::WriteAllText($ReceiptPath, (($receipt | ConvertTo-Json -Depth 20) + [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
-$receipt
+if (@($readback.value).Count -ne 1 -or -not (Test-ExactRequiredAssignment -Assignment $readback.value[0] -GroupId $PilotGroupId)) { throw 'Assignment read-back did not match the exact required pilot target.' }
+Write-PackageReceipt -App $app -File $file -Assignment $readback.value[0] -Action 'uploaded' | ConvertTo-Json -Depth 20
