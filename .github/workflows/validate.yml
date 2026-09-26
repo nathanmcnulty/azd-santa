@@ -21,6 +21,7 @@ jobs:
         run: |
           /bin/zsh -n ./scripts/Test-SantaEndpoint.sh
           /bin/bash -n ./scripts/live-response/Get-SantaHealth.sh
+          /bin/bash -n ./scripts/live-response/Get-SantaProfileState.sh
 
   validate:
     strategy:

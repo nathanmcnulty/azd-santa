@@ -111,7 +111,8 @@ try {
         action = [ordered]@{ id = $action.id; status = $completed.status; scriptName = $ScriptName }
         result = $result
     } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
-    Write-Host "Live Response health check passed for $ExpectedMachineName. Result: $ResultPath" -ForegroundColor Green
+    $completedLabel = if ($ScriptName -eq 'Get-SantaHealth.sh') { 'Live Response health check passed' } else { 'Live Response diagnostic completed' }
+    Write-Host "$completedLabel for $ExpectedMachineName. Result: $ResultPath" -ForegroundColor Green
 } finally {
     if ($ownsClient) { $client.Dispose() }
 }

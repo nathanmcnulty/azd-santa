@@ -175,7 +175,7 @@ foreach ($item in $preflight) {
     } else {
         $remote = $item.remote
     }
-    if (-not $item.assigned) {
+    if (-not $item.assigned -or $action -eq 'update') {
         $assignmentBody = @{ assignments = @(@{ '@odata.type' = '#microsoft.graph.deviceConfigurationAssignment'; target = @{ '@odata.type' = '#microsoft.graph.groupAssignmentTarget'; groupId = $PilotGroupId } }) }
         Invoke-GraphJson -Method POST -Uri "/v1.0/deviceManagement/deviceConfigurations/$($remote.id)/assign" -Body $assignmentBody | Out-Null
     }

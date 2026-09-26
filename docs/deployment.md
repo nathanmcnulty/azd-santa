@@ -49,7 +49,7 @@ The guarded profile-only apply command is:
   -Apply -Confirm
 ```
 
-Without `-Apply`, it only prints a what-if summary and does not authenticate. With `-Apply`, it uses a normal WAM/browser Microsoft Graph connection, verifies the tenant/account/group and exact single macOS device, preflights all existing assignments before any mutation, and refuses display-name collisions or broader assignments. Existing payload changes require the separate `-AllowProfileUpdate` switch after reviewing the drift; an unchanged profile is only verified, not patched. Exact object IDs are recorded under `.azure/azd-santa/`. Its package status is deliberately `unknown`: profile publication cannot prove the package is absent, so this receipt cannot authorize a cleanup plan by itself.
+Without `-Apply`, it only prints a what-if summary and does not authenticate. With `-Apply`, it uses a normal WAM/browser Microsoft Graph connection, verifies the tenant/account/group and exact single macOS device, preflights all existing assignments before any mutation, and refuses display-name collisions or broader assignments. Existing payload changes require the separate `-AllowProfileUpdate` switch after reviewing the drift; an unchanged profile is only verified, not patched. After an approved update, the publisher reasserts the same exact pilot assignment and verifies read-back. Exact object IDs are recorded under `.azure/azd-santa/`. Its package status is deliberately `unknown`: profile publication cannot prove the package is absent, so this receipt cannot authorize a cleanup plan by itself.
 
 Collect current assignment and per-profile device status without changing Intune or requesting a device sync:
 
@@ -158,6 +158,13 @@ permissions. The Defender publisher uses Azure CLI's cached browser/WAM session,
 the legacy `https://api.securitycenter.microsoft.com` token audience required by
 the current API, and the `https://api.security.microsoft.com` REST endpoint. It
 requires `Library.Manage`; automatic execution requires `Machine.LiveResponse`.
+
+When Intune has not reported a revised configuration profile,
+`scripts/live-response/Get-SantaProfileState.sh` can be published through the
+same guarded Defender library publisher and run against the exact Mac. It
+reports only whether macOS lists Santa's configuration payload and the stable
+inner payload UUID; it does not print other installed profiles or replace
+Intune's per-device delivery evidence.
 
 After Intune has processed the assignment, collect its exact-device execution
 result without changing tenant state. `postprovision` does this once; this

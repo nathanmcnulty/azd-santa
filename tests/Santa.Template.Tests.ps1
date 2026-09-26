@@ -201,6 +201,7 @@ Describe 'Mutation boundary' {
         $scriptText | Should -Match 'ExpectedDeviceName'
         $scriptText | Should -Match 'AllowProfileUpdate'
         $scriptText | Should -Match 'No Intune changes were made'
+        $scriptText | Should -Match "-not \`$item.assigned -or \`$action -eq 'update'"
     }
 
     It 'builds cleanup only from exact receipt object IDs in reverse profile order' {
@@ -337,6 +338,13 @@ Describe 'Guarded Intune package apply' {
 }
 
 Describe 'Managed endpoint health channels' {
+    It 'keeps the remote profile diagnostic read-only and scoped to Santa identifiers' {
+        $diagnostic = Get-Content -Raw (Join-Path $script:root 'scripts/live-response/Get-SantaProfileState.sh')
+        $diagnostic | Should -Match 'profiles show -type configuration'
+        $diagnostic | Should -Match '6E70B113-0DD0-4A3D-8A8B-43BC077071ED'
+        $diagnostic | Should -Not -Match 'profiles (install|remove)|systemextensionsctl (reset|uninstall)'
+    }
+
     It 'uses the consented legacy Defender audience and exact-machine Live Response binding' {
         $publisher = Get-Content -Raw (Join-Path $script:root 'scripts/Publish-SantaLiveResponseScript.ps1')
         $runner = Get-Content -Raw (Join-Path $script:root 'scripts/Invoke-SantaLiveResponseHealth.ps1')

@@ -36,6 +36,12 @@ offline results.
   then stopped before any upload because Intune had not yet reported a fresh
   configuration-profile status. The Intune and Defender objects are independent
   of the Azure resource group and are not removed by `azd down`.
+- A read-only Defender Live Response profile diagnostic on 2026-09-26 found
+  other Santa-related profile text, but not the Santa configuration identifier
+  or either expected configuration payload UUID in macOS's profile inventory.
+  The exact Intune configuration assignment was reasserted and another pilot
+  sync requested; fresh device delivery remains unproven. Santa's independent
+  Live Response health check still passed.
 
 ## Selected release
 
