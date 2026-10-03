@@ -1,0 +1,193 @@
+{
+  "schemaVersion": "1.0",
+  "solutionId": "azd-santa",
+  "status": "implemented",
+  "coverage": "partial",
+  "reviewedOn": "2026-10-02",
+  "requirements": [
+    {
+      "resource": "https://graph.microsoft.com",
+      "kind": "delegated",
+      "permission": "DeviceManagementConfiguration.ReadWrite.All",
+      "principal": "deployment-operator",
+      "phase": "deployment",
+      "feature": "intune-profiles",
+      "defaultEnabled": true,
+      "scope": "tenant",
+      "rationale": "Required by the recorded project capability.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Invoke-SantaIntuneProfiles.ps1",
+          "sha256": "13c7bad5155aec57deba3dcbaaf0bfd24128da172272583685c4ca14c05883a8"
+        }
+      ]
+    },
+    {
+      "resource": "https://graph.microsoft.com",
+      "kind": "delegated",
+      "permission": "Group.Read.All",
+      "principal": "deployment-operator",
+      "phase": "deployment",
+      "feature": "intune-profiles",
+      "defaultEnabled": true,
+      "scope": "tenant",
+      "rationale": "Required by the recorded project capability.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Invoke-SantaIntuneProfiles.ps1",
+          "sha256": "13c7bad5155aec57deba3dcbaaf0bfd24128da172272583685c4ca14c05883a8"
+        }
+      ]
+    },
+    {
+      "resource": "https://graph.microsoft.com",
+      "kind": "delegated",
+      "permission": "DeviceManagementApps.ReadWrite.All",
+      "principal": "deployment-operator",
+      "phase": "deployment",
+      "feature": "intune-package",
+      "defaultEnabled": true,
+      "scope": "tenant",
+      "rationale": "Required by the recorded project capability.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Invoke-SantaIntunePackage.ps1",
+          "sha256": "07fa1cf846279be1a1bcdde2a5071a6626d00a64245f09339fae1c73a5881089"
+        }
+      ]
+    },
+    {
+      "resource": "https://graph.microsoft.com",
+      "kind": "delegated",
+      "permission": "Group.Read.All",
+      "principal": "deployment-operator",
+      "phase": "deployment",
+      "feature": "intune-package",
+      "defaultEnabled": true,
+      "scope": "tenant",
+      "rationale": "Required by the recorded project capability.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Invoke-SantaIntunePackage.ps1",
+          "sha256": "07fa1cf846279be1a1bcdde2a5071a6626d00a64245f09339fae1c73a5881089"
+        }
+      ]
+    },
+    {
+      "resource": "https://graph.microsoft.com",
+      "kind": "delegated",
+      "permission": "DeviceManagementManagedDevices.Read.All",
+      "principal": "deployment-operator",
+      "phase": "deployment",
+      "feature": "intune-package",
+      "defaultEnabled": true,
+      "scope": "tenant",
+      "rationale": "Required by the recorded project capability.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Invoke-SantaIntunePackage.ps1",
+          "sha256": "07fa1cf846279be1a1bcdde2a5071a6626d00a64245f09339fae1c73a5881089"
+        }
+      ]
+    },
+    {
+      "resource": "https://graph.microsoft.com",
+      "kind": "delegated",
+      "permission": "Device.Read.All",
+      "principal": "deployment-operator",
+      "phase": "deployment",
+      "feature": "intune-package",
+      "defaultEnabled": true,
+      "scope": "tenant",
+      "rationale": "Required by the recorded project capability.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Invoke-SantaIntunePackage.ps1",
+          "sha256": "07fa1cf846279be1a1bcdde2a5071a6626d00a64245f09339fae1c73a5881089"
+        }
+      ]
+    },
+    {
+      "resource": "https://graph.microsoft.com",
+      "kind": "delegated",
+      "permission": "DeviceManagementConfiguration.Read.All",
+      "principal": "discovery-operator",
+      "phase": "discovery",
+      "feature": "core",
+      "defaultEnabled": true,
+      "scope": "tenant",
+      "rationale": "Required by the recorded project capability.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
+          "sha256": "f744459a45051678b5e341b511d89df9001f480ce4ce627a702d543236076f2f"
+        }
+      ]
+    },
+    {
+      "resource": "https://graph.microsoft.com",
+      "kind": "delegated",
+      "permission": "DeviceManagementManagedDevices.Read.All",
+      "principal": "discovery-operator",
+      "phase": "discovery",
+      "feature": "core",
+      "defaultEnabled": true,
+      "scope": "tenant",
+      "rationale": "Required by the recorded project capability.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
+          "sha256": "f744459a45051678b5e341b511d89df9001f480ce4ce627a702d543236076f2f"
+        }
+      ]
+    },
+    {
+      "resource": "https://graph.microsoft.com",
+      "kind": "delegated",
+      "permission": "Device.Read.All",
+      "principal": "discovery-operator",
+      "phase": "discovery",
+      "feature": "core",
+      "defaultEnabled": true,
+      "scope": "tenant",
+      "rationale": "Required by the recorded project capability.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
+          "sha256": "f744459a45051678b5e341b511d89df9001f480ce4ce627a702d543236076f2f"
+        }
+      ]
+    },
+    {
+      "resource": "https://graph.microsoft.com",
+      "kind": "delegated",
+      "permission": "Group.Read.All",
+      "principal": "discovery-operator",
+      "phase": "discovery",
+      "feature": "core",
+      "defaultEnabled": true,
+      "scope": "tenant",
+      "rationale": "Required by the recorded project capability.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
+          "sha256": "f744459a45051678b5e341b511d89df9001f480ce4ce627a702d543236076f2f"
+        }
+      ]
+    }
+  ],
+  "gaps": [
+    "Azure RBAC scopes, operator/consent roles, cleanup, and optional connector permissions still need a full review.",
+    "Intune app upload, health-script collection, Defender publishing, sync-service runtime, and cleanup need full review."
+  ]
+}
