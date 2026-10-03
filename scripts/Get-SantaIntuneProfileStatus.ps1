@@ -16,6 +16,39 @@ function Invoke-GraphRead {
     param([Parameter(Mandatory)][string] $Uri)
     return Invoke-MgGraphRequest -Method GET -Uri $Uri -OutputType PSObject
 }
+function Get-SantaDeviceStatuses {
+    param([Parameter(Mandatory)][string] $ObjectId, [Parameter(Mandatory)][uri] $GraphBaseUri)
+    if ($GraphBaseUri.Scheme -cne 'https' -or $GraphBaseUri.UserInfo -or
+        $GraphBaseUri.AbsolutePath -cne '/' -or $GraphBaseUri.Fragment) {
+        throw 'The selected Graph environment did not provide an HTTPS origin.'
+    }
+    $expectedPath = "/v1.0/deviceManagement/deviceConfigurations/$ObjectId/deviceStatuses"
+    $uri = "${expectedPath}?`$top=100"
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    $rows = [System.Collections.Generic.List[object]]::new()
+    for ($page = 0; $page -lt 1000; $page++) {
+        if (-not $seen.Add($uri)) { throw "Device status pagination cycled for profile '$ObjectId'." }
+        $result = Invoke-GraphRead -Uri $uri
+        if ($null -eq $result -or $null -eq $result.PSObject.Properties['value'] -or $result.value -isnot [array]) {
+            throw "Device status page for profile '$ObjectId' did not contain an array."
+        }
+        foreach ($row in $result.value) {
+            if ($null -eq $row -or $row -isnot [psobject]) { throw "Device status page for profile '$ObjectId' contained an invalid row." }
+            $rows.Add($row)
+        }
+        $nextLink = $result.PSObject.Properties['@odata.nextLink']
+        if (-not $nextLink -or [string]::IsNullOrWhiteSpace([string]$nextLink.Value)) { return $rows.ToArray() }
+        [uri]$nextUri = $null
+        if (-not [uri]::TryCreate([string]$nextLink.Value, [UriKind]::Absolute, [ref]$nextUri) -or
+            $nextUri.Scheme -cne 'https' -or $nextUri.Host -cne $GraphBaseUri.Host -or
+            $nextUri.Port -ne $GraphBaseUri.Port -or $nextUri.UserInfo -or $nextUri.Fragment -or
+            $nextUri.AbsolutePath -ine $expectedPath) {
+            throw "Device status continuation URL for profile '$ObjectId' is outside the expected Graph collection."
+        }
+        $uri = $nextUri.AbsoluteUri
+    }
+    throw "Device status pagination exceeded 1000 pages for profile '$ObjectId'."
+}
 function Test-ExactPilotAssignment {
     param([Parameter(Mandatory)][object] $Assignment, [Parameter(Mandatory)][string] $GroupId)
     $target = $Assignment.target
@@ -60,6 +93,9 @@ if ($context.Account -ine $ExpectedAccount) { throw "Authenticated account '$($c
 foreach ($requiredScope in $requiredScopes) {
     if ($requiredScope -notin $context.Scopes) { throw "Missing required delegated scope '$requiredScope'." }
 }
+$graphEnvironment = @(Get-MgEnvironment | Where-Object Name -CEQ $context.Environment)
+if ($graphEnvironment.Count -ne 1) { throw "The selected Graph environment '$($context.Environment)' is unavailable." }
+$graphBaseUri = [uri] $graphEnvironment[0].GraphEndpoint
 
 $group = Invoke-GraphRead -Uri "/v1.0/groups/$($receipt.pilotGroup.id)?`$select=id,displayName"
 if ([string] $group.id -cne [string] $receipt.pilotGroup.id -or [string] $group.displayName -cne [string] $receipt.pilotGroup.displayName) {
@@ -125,7 +161,7 @@ foreach ($spec in @($manifest.profiles | Sort-Object order)) {
     $exactAssignment = @($assignments.value).Count -eq 1 -and (-not $nextLink -or -not $nextLink.Value) -and
         (Test-ExactPilotAssignment -Assignment $assignments.value[0] -GroupId $receipt.pilotGroup.id)
     $overview = Invoke-GraphRead -Uri "/v1.0/deviceManagement/deviceConfigurations/${objectId}/deviceStatusOverview"
-    $statuses = Invoke-GraphRead -Uri "/v1.0/deviceManagement/deviceConfigurations/${objectId}/deviceStatuses?`$top=100"
+    $statuses = Get-SantaDeviceStatuses -ObjectId $objectId -GraphBaseUri $graphBaseUri
     $report.profiles += [ordered]@{
         id = [string] $spec.id
         required = [bool] $spec.required
@@ -144,7 +180,7 @@ foreach ($spec in @($manifest.profiles | Sort-Object order)) {
             pendingCount = [int] $overview.pendingCount
             notApplicableCount = [int] $overview.notApplicableCount
         }
-        deviceStatuses = @($statuses.value | ForEach-Object {
+        deviceStatuses = @($statuses | ForEach-Object {
             [ordered]@{
                 id = [string] $_.id
                 deviceDisplayName = [string] $_.deviceDisplayName
