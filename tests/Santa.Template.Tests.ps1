@@ -293,6 +293,84 @@ Describe 'Mutation boundary' {
         $scriptText | Should -Match "DeviceManagementManagedDevices.Read.All"
         $scriptText | Should -Not -Match "(?i)-Method\s+(POST|PATCH|DELETE)|syncDevice|UseDevice(Code|Authentication)"
     }
+
+    It 'includes a pilot status from the second Graph page in readiness evidence' {
+        $path = Join-Path $script:root 'scripts/Get-SantaIntuneProfileStatus.ps1'
+        $tokens = $null
+        $errors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+        $errors | Should -BeNullOrEmpty
+        $collector = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-SantaDeviceStatuses' }, $true)
+        $collector | Should -Not -BeNullOrEmpty
+        & {
+            Set-StrictMode -Version Latest
+            . ([scriptblock]::Create($collector.Extent.Text))
+            $profileId = '33333333-3333-4333-8333-333333333331'
+            $deviceId = '77777777-7777-4777-8777-777777777777'
+            $script:statusUris = [System.Collections.Generic.List[string]]::new()
+            function Invoke-GraphRead {
+                param([string] $Uri)
+                $script:statusUris.Add($Uri)
+                if ($script:statusUris.Count -eq 1) {
+                    return [pscustomobject]@{
+                        value = @([pscustomobject]@{ id = 'other-device'; deviceDisplayName = 'Other Mac'; status = 'succeeded'; lastReportedDateTime = '2026-09-21T19:55:00Z' })
+                        '@odata.nextLink' = "https://graph.microsoft.us/v1.0/deviceManagement/deviceConfigurations/$profileId/deviceStatuses?`$skiptoken=second"
+                    }
+                }
+                return [pscustomobject]@{
+                    value = @([pscustomobject]@{ id = "mock_${profileId}_$deviceId"; deviceDisplayName = 'Pilot-Mac'; status = 'succeeded'; lastReportedDateTime = '2026-09-21T19:55:00Z' })
+                }
+            }
+            $rows = @(Get-SantaDeviceStatuses -ObjectId $profileId -GraphBaseUri 'https://graph.microsoft.us')
+            $rows.Count | Should -Be 2
+            $script:statusUris[0] | Should -Be ('/v1.0/deviceManagement/deviceConfigurations/{0}/deviceStatuses?$top=100' -f $profileId)
+            $script:statusUris[1] | Should -Match 'graph.microsoft.us/v1.0/.+skiptoken=second'
+            $state = Get-Content -Raw (Join-Path $script:root 'tests/fixtures/intune/profile-status-success.json') | ConvertFrom-Json
+            $state.profiles[0].deviceStatuses = $rows
+            (Test-SantaIntuneProfileReport -State $state).deliveryReadiness | Should -BeTrue
+        }
+    }
+
+    It 'rejects an off-Graph device-status continuation before making a second request' {
+        $path = Join-Path $script:root 'scripts/Get-SantaIntuneProfileStatus.ps1'
+        $tokens = $null
+        $errors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+        $collector = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-SantaDeviceStatuses' }, $true)
+        & {
+            . ([scriptblock]::Create($collector.Extent.Text))
+            $script:statusRequestCount = 0
+            function Invoke-GraphRead {
+                param([string] $Uri)
+                $script:statusRequestCount++
+                return [pscustomobject]@{ value = @(); '@odata.nextLink' = 'https://example.invalid/steal' }
+            }
+            { Get-SantaDeviceStatuses -ObjectId '33333333-3333-4333-8333-333333333331' -GraphBaseUri 'https://graph.microsoft.com' } | Should -Throw '*outside the expected Graph collection*'
+            $script:statusRequestCount | Should -Be 1
+        }
+    }
+
+    It 'rejects a device-status continuation cycle without writing partial evidence' {
+        $path = Join-Path $script:root 'scripts/Get-SantaIntuneProfileStatus.ps1'
+        $tokens = $null
+        $errors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+        $collector = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-SantaDeviceStatuses' }, $true)
+        & {
+            . ([scriptblock]::Create($collector.Extent.Text))
+            $script:statusRequestCount = 0
+            function Invoke-GraphRead {
+                param([string] $Uri)
+                $script:statusRequestCount++
+                return [pscustomobject]@{
+                    value = @()
+                    '@odata.nextLink' = 'https://graph.microsoft.com/v1.0/deviceManagement/deviceConfigurations/33333333-3333-4333-8333-333333333331/deviceStatuses?$skiptoken=same'
+                }
+            }
+            { Get-SantaDeviceStatuses -ObjectId '33333333-3333-4333-8333-333333333331' -GraphBaseUri 'https://graph.microsoft.com' } | Should -Throw '*cycled*'
+            $script:statusRequestCount | Should -Be 2
+        }
+    }
 }
 
 Describe 'Provider-neutral evidence contracts' {
