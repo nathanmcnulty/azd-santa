@@ -1,0 +1,218 @@
+{
+  "schemaVersion": "1.0.0",
+  "repository": "nathanmcnulty/azd-santa",
+  "sourceRevision": "bc9c9a4124796a11db677aea90c038727da46f4f",
+  "capturedAt": "2026-10-04",
+  "items": [
+    {
+      "id": "SANTA-001",
+      "title": "Reconcile this backlog with current source and active work",
+      "kind": "discovery",
+      "priority": "P1",
+      "status": "done",
+      "wave": 0,
+      "problem": "Plans and implementation evidence are spread across files; the captured source can change while other tasks work.",
+      "scope": [
+        "docs/backlog.json",
+        "docs/backlog.md",
+        "Existing roadmap, execution status, open issues and pull requests (read-only)"
+      ],
+      "acceptance": [
+        "Classify each candidate as implemented, still open, superseded or awaiting evidence; retain source links and reasons.",
+        "Inspect dirty state, remotes, worktrees and local environment presence without reading secrets; avoid duplicate work with active owners.",
+        "Resolve the actual offline validation commands and record exact current default-branch/working-tree provenance; do not copy historical live passes to newer code."
+      ],
+      "validation": [
+        "git status --short",
+        "git remote -v",
+        "git worktree list --porcelain",
+        "Read the applicable instructions and validation workflow; read gh issue list and gh pr list for the named repository using nathanmcnulty. Do not create or modify issues/PRs."
+      ],
+      "dependencies": [],
+      "authorization": "local-only",
+      "components": [],
+      "sources": [
+        "README.md",
+        "EXECUTION_PLAN.md",
+        "https://github.com/nathanmcnulty/azd-santa/pull/23",
+        "https://github.com/nathanmcnulty/azd-santa/issues/24",
+        "https://github.com/nathanmcnulty/azd-santa/pull/25"
+      ],
+      "evidence": [
+        "Reconciled reviewed tracking tip 47242ce384f98e80b6b6f218d13388bc0ee02d54 against freshly fetched origin/main bc9c9a4124796a11db677aea90c038727da46f4f in a clean owned worktree. No dirty canonical bytes, source files or unrelated branch history were copied.",
+        "Current main adds pull request #25, which closes issue #24 and resolves the paginated profile-status read defect. The repository has no open issues; open dependency pull request #23 does not overlap these tracking paths. SANTA-002 remains proposed because the source fix does not prove effective Monitor-profile delivery on the test Mac.",
+        "Items SANTA-002, SANTA-003, SANTA-004, SANTA-005, SANTA-006 remain proposed because their existing acceptance gates are not satisfied by the current source changes alone.",
+        "Exact current-source offline validation generated a mutation-free what-if plan, validated five MONITOR profiles and package/cleanup fixtures, passed 39/39 Pester tests, and left committed generated profiles unchanged. No package upload, assignment, Graph/Azure mutation or real-Mac endpoint operation occurred."
+      ],
+      "blocker": null,
+      "claim": null
+    },
+    {
+      "id": "SANTA-002",
+      "title": "Close the Monitor-mode macOS profile-delivery evidence gate",
+      "kind": "verification",
+      "priority": "P1",
+      "status": "proposed",
+      "wave": 2,
+      "problem": "Package/local health and portal assignment status do not establish effective profile receipt on the test Mac.",
+      "scope": [
+        "docs/",
+        "scripts/",
+        "tests/"
+      ],
+      "acceptance": [
+        "Record required profile receipt, PPPC/system extension, background service, santactl state and pinned PKG version on the selected Mac.",
+        "Missing or pending per-device evidence remains pending; no inference from successful upload or status fixtures.",
+        "Preserve one-device Monitor mode and current pilot ownership; Lockdown and broader assignments remain separately authorized."
+      ],
+      "validation": [
+        "./scripts/Test-SantaTemplate.ps1",
+        "Invoke-Pester ./tests -CI",
+        "With separate authorization collect real-Mac evidence and per-device Intune profile status; retain redacted evidence outside Git."
+      ],
+      "dependencies": [],
+      "authorization": "tenant-write",
+      "components": [],
+      "sources": [
+        "README.md",
+        "AGENTS.md"
+      ],
+      "evidence": [],
+      "blocker": null
+    },
+    {
+      "id": "SANTA-003",
+      "title": "Evaluate managed/existing-server sync profiles before custom Azure hosting",
+      "kind": "discovery",
+      "priority": "P2",
+      "status": "proposed",
+      "wave": 3,
+      "problem": "Santa native sync is required for scalable rules; custom Azure hosting is only an advanced candidate.",
+      "scope": [
+        "docs/",
+        "config/",
+        "azd-permissions.json"
+      ],
+      "acceptance": [
+        "Document Workshop and compatible existing-server setup with version/protocol evidence and secret boundaries.",
+        "Azure-native service stays a scoped protocol/security spike until compatibility and lifecycle are proven.",
+        "Baseline remains usable without Azure compute, GitHub, Azure DevOps or sync; no component adds a mandatory dependency."
+      ],
+      "validation": [
+        "From the solution root run ./scripts/Test-SantaTemplate.ps1",
+        "Run focused tests for changed behavior from tests/; fixtures do not prove live-service or endpoint behavior."
+      ],
+      "dependencies": [],
+      "authorization": "local-only",
+      "components": [],
+      "sources": [
+        "README.md"
+      ],
+      "evidence": [],
+      "blocker": null
+    },
+    {
+      "id": "SANTA-004",
+      "title": "Design deterministic Git-reviewed rule candidates",
+      "kind": "discovery",
+      "priority": "P2",
+      "status": "proposed",
+      "wave": 3,
+      "problem": "Optional telemetry must never directly authorize allow rules.",
+      "scope": [
+        "docs/",
+        "config/",
+        "tests/"
+      ],
+      "acceptance": [
+        "Normalized events produce deterministic candidate manifests with evidence digests, exact rules, expiry and human approval.",
+        "GitHub/Azure DevOps transports remain optional adapters and cannot publish telemetry-derived rules automatically.",
+        "Define conflict, rollback and Monitor-to-Lockdown gates with real endpoint proof."
+      ],
+      "validation": [
+        "From the solution root run ./scripts/Test-SantaTemplate.ps1",
+        "Run focused tests for changed behavior from tests/; fixtures do not prove live-service or endpoint behavior."
+      ],
+      "dependencies": [
+        "nathanmcnulty/azd-santa:SANTA-003"
+      ],
+      "authorization": "local-only",
+      "components": [],
+      "sources": [
+        "README.md"
+      ],
+      "evidence": [],
+      "blocker": null
+    },
+    {
+      "id": "SANTA-005",
+      "title": "Evaluate deployment validation and optional health notification contracts",
+      "kind": "discovery",
+      "priority": "P2",
+      "status": "proposed",
+      "wave": 2,
+      "problem": "Intune/real-Mac readiness needs richer evidence than control-plane success.",
+      "scope": [
+        "scripts/",
+        "docs/",
+        "azd-components.lock.json"
+      ],
+      "acceptance": [
+        "Represent package availability, assignment, pending profile and actual Mac health separately.",
+        "Candidate receipt adoption must bind target/source and remain redacted; no fabricated endpoint pass.",
+        "Optional notification contracts do not introduce Azure resources into the deployment-only baseline."
+      ],
+      "validation": [
+        "From the solution root run ./scripts/Test-SantaTemplate.ps1",
+        "Run focused tests for changed behavior from tests/; fixtures do not prove live-service or endpoint behavior."
+      ],
+      "dependencies": [],
+      "authorization": "local-only",
+      "components": [
+        "deployment-validation",
+        "deployment-receipt",
+        "notification-contracts"
+      ],
+      "sources": [
+        "README.md",
+        "AGENTS.md"
+      ],
+      "evidence": [],
+      "blocker": null
+    },
+    {
+      "id": "SANTA-006",
+      "title": "Evaluate delegated Graph session coordinator for Intune publishing",
+      "kind": "discovery",
+      "priority": "P2",
+      "status": "proposed",
+      "wave": 1,
+      "problem": "The registered Santa consumer has no component locks; its Graph bootstrap is a candidate for compatible delegated-auth reuse.",
+      "scope": [
+        "scripts/",
+        "tests/",
+        "azd-components.lock.json (new if absent)"
+      ],
+      "acceptance": [
+        "Compare the actual Intune publisher session shape with graph-delegated-authentication 0.1.1.",
+        "Preserve exact-tenant scope/token proof and one-device Monitor mode; do not broaden permissions or start device-code authentication.",
+        "Keep Santa package/profile receipt semantics solution-owned and retain a compute-free baseline."
+      ],
+      "validation": [
+        "./scripts/Test-SantaTemplate.ps1",
+        "Invoke-Pester ./tests -CI",
+        "With separate authorization collect real-Mac evidence and per-device Intune profile status; retain redacted evidence outside Git."
+      ],
+      "dependencies": [],
+      "authorization": "local-only",
+      "components": [
+        "graph-delegated-authentication"
+      ],
+      "sources": [
+        "README.md"
+      ],
+      "evidence": [],
+      "blocker": null
+    }
+  ]
+}
