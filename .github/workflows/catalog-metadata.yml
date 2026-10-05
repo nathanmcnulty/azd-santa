@@ -12,6 +12,6 @@ permissions:
 jobs:
   catalog:
     name: azd catalog metadata
-    uses: nathanmcnulty/azd-reference/.github/workflows/catalog-metadata.yml@0b79d2e1e1c920a13cede11d42c72b799cc2310c
+    uses: nathanmcnulty/azd-reference/.github/workflows/catalog-metadata.yml@06d22bcf2ff819f8c0bfa58d6c67decbb9076c0b
     permissions:
       contents: read
