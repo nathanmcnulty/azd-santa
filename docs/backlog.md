@@ -184,7 +184,7 @@ Review SANTA-002 against the current repository state. Its status or authorizati
 
 - **Kind:** discovery
 - **Priority:** P2
-- **Status:** proposed
+- **Status:** done
 - **Wave:** 2
 - **Authorization:** local-only
 - **Blocker:** _none_
@@ -225,10 +225,16 @@ Intune/real-Mac readiness needs richer evidence than control-plane success.
 
 - README.md
 - AGENTS.md
+- docs/artifact-inspection.md
+- scripts/Inspect-SantaArtifacts.ps1
+- tests/Santa.ArtifactInspection.Tests.ps1
 
 **Evidence:**
 
-- _none_
+- 2026-10-11 source-only discovery/adaptation against Santa main9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa and immutable Reference df93f3ea099780c3767068ecf6b6ab44af8f7440. Local inspector represents package artifact availability, saved profile assignment, required-profile status and saved Mac-health artifact conformance independently; currentMacReadiness remains pending even when all four checks conform. See docs/artifact-inspection.md.
+- Adopted exact vendored deployment-validation1.1.1 core check/report/schema files with an immutable hash lock. Management evidence binding is deferred because it requires an Azure subscription absent from the compute-free baseline. Candidate deployment-receipt0.2.1 replacement and notification-contracts1.0.0 producer/transport adoption are technically deferred; existing publishers, Graph scopes, cleanup/ownership receipts, Monitor one-device guards and optional compute remain unchanged.
+- PowerShell7.6.6 registered New-DeploymentPlan/Test-SantaTemplate validation and full91/91 Pester cases passed, including55 unchanged baseline cases and36 inspector cases. Actual CLI/helper fixtures cover independent missing/pending domains, target/source byte binding, malformed/oversize/foreign/stale/future/duplicate/type inputs, privacy canaries, zero network/auth/CLI dispatch, preserved input bytes, real private-copy package corruption and vendor-drift refusal. A real Git checkout with core.autocrlf=true preserves all three immutable vendor hashes and runs the actual inspector after adding the missing LF rule for PowerShell manifests. All artifact checks stay distinct from current service or endpoint proof.
+- Discovery acceptance completed locally; SANTA-002 retains real-Mac/profile/package delivery evidence and separate authorization. No authentication, Graph/Azure/Defender call, assignment, package upload, notification, remediation, resource creation, cleanup or collector authenticity/current endpoint pass is claimed. Partial source-hashed azd-permissions.json inventories existing manually invoked Graph paths and gaps, not approval to grant authority.
 
 **Review and authorization note:**
 

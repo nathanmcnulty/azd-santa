@@ -1,0 +1,205 @@
+{
+  "schemaVersion": "1.0",
+  "solutionId": "azd-santa",
+  "status": "implemented",
+  "coverage": "partial",
+  "reviewedOn": "2026-10-11",
+  "requirements": [
+    {
+      "resource": "Microsoft Graph",
+      "kind": "delegated",
+      "permission": "DeviceManagementApps.ReadWrite.All",
+      "principal": "Selected interactive operator",
+      "phase": "deployment",
+      "feature": "intune-package-publication",
+      "defaultEnabled": false,
+      "scope": "Explicit selected tenant and one-device Santa pilot",
+      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Invoke-SantaIntunePackage.ps1",
+          "sha256": "07fa1cf846279be1a1bcdde2a5071a6626d00a64245f09339fae1c73a5881089",
+          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntunePackage.ps1"
+        }
+      ]
+    },
+    {
+      "resource": "Microsoft Graph",
+      "kind": "delegated",
+      "permission": "Group.Read.All",
+      "principal": "Selected interactive operator",
+      "phase": "deployment",
+      "feature": "intune-package-publication",
+      "defaultEnabled": false,
+      "scope": "Explicit selected tenant and one-device Santa pilot",
+      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Invoke-SantaIntunePackage.ps1",
+          "sha256": "07fa1cf846279be1a1bcdde2a5071a6626d00a64245f09339fae1c73a5881089",
+          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntunePackage.ps1"
+        }
+      ]
+    },
+    {
+      "resource": "Microsoft Graph",
+      "kind": "delegated",
+      "permission": "DeviceManagementManagedDevices.Read.All",
+      "principal": "Selected interactive operator",
+      "phase": "deployment",
+      "feature": "intune-package-publication",
+      "defaultEnabled": false,
+      "scope": "Explicit selected tenant and one-device Santa pilot",
+      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Invoke-SantaIntunePackage.ps1",
+          "sha256": "07fa1cf846279be1a1bcdde2a5071a6626d00a64245f09339fae1c73a5881089",
+          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntunePackage.ps1"
+        }
+      ]
+    },
+    {
+      "resource": "Microsoft Graph",
+      "kind": "delegated",
+      "permission": "Device.Read.All",
+      "principal": "Selected interactive operator",
+      "phase": "deployment",
+      "feature": "intune-package-publication",
+      "defaultEnabled": false,
+      "scope": "Explicit selected tenant and one-device Santa pilot",
+      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Invoke-SantaIntunePackage.ps1",
+          "sha256": "07fa1cf846279be1a1bcdde2a5071a6626d00a64245f09339fae1c73a5881089",
+          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntunePackage.ps1"
+        }
+      ]
+    },
+    {
+      "resource": "Microsoft Graph",
+      "kind": "delegated",
+      "permission": "DeviceManagementConfiguration.ReadWrite.All",
+      "principal": "Selected interactive operator",
+      "phase": "deployment",
+      "feature": "intune-profile-publication",
+      "defaultEnabled": false,
+      "scope": "Explicit selected tenant and one-device Santa pilot",
+      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Invoke-SantaIntuneProfiles.ps1",
+          "sha256": "13c7bad5155aec57deba3dcbaaf0bfd24128da172272583685c4ca14c05883a8",
+          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntuneProfiles.ps1"
+        }
+      ]
+    },
+    {
+      "resource": "Microsoft Graph",
+      "kind": "delegated",
+      "permission": "Group.Read.All",
+      "principal": "Selected interactive operator",
+      "phase": "deployment",
+      "feature": "intune-profile-publication",
+      "defaultEnabled": false,
+      "scope": "Explicit selected tenant and one-device Santa pilot",
+      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Invoke-SantaIntuneProfiles.ps1",
+          "sha256": "13c7bad5155aec57deba3dcbaaf0bfd24128da172272583685c4ca14c05883a8",
+          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntuneProfiles.ps1"
+        }
+      ]
+    },
+    {
+      "resource": "Microsoft Graph",
+      "kind": "delegated",
+      "permission": "DeviceManagementConfiguration.Read.All",
+      "principal": "Selected interactive operator",
+      "phase": "discovery",
+      "feature": "intune-profile-status",
+      "defaultEnabled": false,
+      "scope": "Explicit selected tenant and one-device Santa pilot",
+      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
+          "sha256": "f6a99ad9cb9ea90f31a1f04f6b52df515263a7f27cb6fa53db4a24193ea91282",
+          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
+        }
+      ]
+    },
+    {
+      "resource": "Microsoft Graph",
+      "kind": "delegated",
+      "permission": "DeviceManagementManagedDevices.Read.All",
+      "principal": "Selected interactive operator",
+      "phase": "discovery",
+      "feature": "intune-profile-status",
+      "defaultEnabled": false,
+      "scope": "Explicit selected tenant and one-device Santa pilot",
+      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
+          "sha256": "f6a99ad9cb9ea90f31a1f04f6b52df515263a7f27cb6fa53db4a24193ea91282",
+          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
+        }
+      ]
+    },
+    {
+      "resource": "Microsoft Graph",
+      "kind": "delegated",
+      "permission": "Device.Read.All",
+      "principal": "Selected interactive operator",
+      "phase": "discovery",
+      "feature": "intune-profile-status",
+      "defaultEnabled": false,
+      "scope": "Explicit selected tenant and one-device Santa pilot",
+      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
+          "sha256": "f6a99ad9cb9ea90f31a1f04f6b52df515263a7f27cb6fa53db4a24193ea91282",
+          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
+        }
+      ]
+    },
+    {
+      "resource": "Microsoft Graph",
+      "kind": "delegated",
+      "permission": "Group.Read.All",
+      "principal": "Selected interactive operator",
+      "phase": "discovery",
+      "feature": "intune-profile-status",
+      "defaultEnabled": false,
+      "scope": "Explicit selected tenant and one-device Santa pilot",
+      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
+          "sha256": "f6a99ad9cb9ea90f31a1f04f6b52df515263a7f27cb6fa53db4a24193ea91282",
+          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
+        }
+      ]
+    }
+  ],
+  "gaps": [
+    "Local artifact inspection adds no Graph, Azure, connector or recipient permission; catalog display metadata and this manifest do not authorize grants.",
+    "Minimum read sufficiency, tenant consent, Intune licensing and effective current target authority are not proven by requested scope metadata or local artifacts.",
+    "Defender Live Response, Intune health-script publication/status, optional compute/sync hosting and cleanup permissions still need a complete source-specific review; existing behavior is unchanged.",
+    "Candidate deployment-receipt replacement, authenticated observer provenance and optional notification transports are deferred; no permissions for those future paths are claimed."
+  ]
+}

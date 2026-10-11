@@ -36,6 +36,34 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Select PowerShell 7.6.6
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = 'Windows' ]; then
+            runtime="$(cygpath -u "$RUNNER_TEMP")/powershell-7.6.6"
+            archive="$runtime.zip"
+            mkdir "$runtime"
+            curl --fail --location --output "$archive" 'https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/PowerShell-7.6.6-win-x64.zip'
+            echo "02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c860  $archive" | sha256sum --check
+            python -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$archive" "$runtime"
+            cygpath -w "$runtime" >> "$GITHUB_PATH"
+          else
+            runtime="$RUNNER_TEMP/powershell-7.6.6"
+            archive="$runtime.tar.gz"
+            mkdir "$runtime"
+            curl --fail --location --output "$archive" 'https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-linux-x64.tar.gz'
+            echo "ddbc4a2d113bbd46d283cfedcbcd117a70caefd7673f41f2b4e0000badf103bc  $archive" | sha256sum --check
+            tar -xzf "$archive" -C "$runtime"
+            chmod +x "$runtime/pwsh"
+            echo "$runtime" >> "$GITHUB_PATH"
+          fi
+
+      - name: Assert selected PowerShell runtime
+        run: |
+          if ($PSVersionTable.PSVersion -ne [version]'7.6.6' -or -not [Environment]::Is64BitProcess) {
+            throw "Expected 64-bit PowerShell 7.6.6; observed $($PSVersionTable.PSVersion)."
+          }
       - name: Install test runner
         run: Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
 
