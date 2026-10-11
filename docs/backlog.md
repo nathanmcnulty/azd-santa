@@ -73,7 +73,7 @@ Review SANTA-001 against the current repository state. Its status or authorizati
 
 - **Kind:** discovery
 - **Priority:** P2
-- **Status:** proposed
+- **Status:** done
 - **Wave:** 1
 - **Authorization:** local-only
 - **Blocker:** _none_
@@ -112,10 +112,16 @@ The registered Santa consumer has no component locks; its Graph bootstrap is a c
 **Sources:**
 
 - README.md
+- docs/graph-coordinator-assessment.md
+- scripts/Invoke-SantaIntunePackage.ps1
+- scripts/Invoke-SantaIntuneProfiles.ps1
+- tests/Santa.GraphCompatibility.Tests.ps1
 
 **Evidence:**
 
-- _none_
+- 2026-10-11 source-only assessment at Santa 82c17ed961fad5f38499f8b212a2889ece249b97 compared both actual publishers against immutable Reference a29e222181ce8cdce5de148cf88e39bd3202cf91 graph-delegated-authentication 0.1.1; package Process lifetime and profile interaction/replacement/probe policy gaps technically defer runtime adoption. See docs/graph-coordinator-assessment.md.
+- PowerShell 7.6.6&colon; registered Test-SantaTemplate validation passed; full Pester 55/55 passed, zero skipped/not-run, including unchanged hash-bound coordinator mocks and both actual publisher no-Apply paths with zero context/auth/Graph dispatch and no receipts. Package bytes/stored verification receipt were checked; profile status input is synthetic.
+- Assessment completed without publisher/runtime/permission/component-lock changes. Existing tenant/account gates, scope sets, Monitor one-Mac guards, receipt semantics and compute-free baseline remain unchanged. No live authentication, grants, Intune delivery or real-Mac readiness is claimed.
 
 **Review and authorization note:**
 
