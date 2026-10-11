@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "environmentName",
+    "tenantId",
+    "pilotGroupId",
+    "entraObjectId",
+    "aadDeviceId",
+    "managedDeviceId",
+    "release"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "environmentName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$(?![\\s\\S])"
+    },
+    "tenantId": {
+      "$ref": "#/$defs/guid"
+    },
+    "pilotGroupId": {
+      "$ref": "#/$defs/guid"
+    },
+    "entraObjectId": {
+      "$ref": "#/$defs/guid"
+    },
+    "aadDeviceId": {
+      "$ref": "#/$defs/guid"
+    },
+    "managedDeviceId": {
+      "$ref": "#/$defs/guid"
+    },
+    "release": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32
+    }
+  },
+  "$defs": {
+    "guid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$(?![\\s\\S])",
+      "maxLength": 36
+    }
+  }
+}
