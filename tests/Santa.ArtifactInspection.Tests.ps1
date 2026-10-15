@@ -175,6 +175,24 @@ Describe 'Actual private-copy integrity boundaries' {
         Import-Module (Join-Path $script:root 'scripts/Santa.ArtifactInspection.psm1') -Force
         (Get-Check (Invoke-SantaArtifactInspection) package).status | Should -Be 'pass'
     }
+    It 'refuses unsupported component <Field> before artifact evaluation' -ForEach @(
+        @{Field='version';Value='1.1.1'},
+        @{Field='sourceRevision';Value='df93f3ea099780c3767068ecf6b6ab44af8f7440'}
+    ) {
+        $path = Join-Path $script:copy 'azd-components.lock.json'
+        $original = [IO.File]::ReadAllBytes($path)
+        try {
+            $lock = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+            $lock.components[0].$Field = $Value
+            Save-InspectionJson $path $lock
+            $caught = $null
+            try { & (Join-Path $script:copy 'scripts/Inspect-SantaArtifacts.ps1') -Plan } catch { $caught = $_ }
+            $caught | Should -Not -BeNullOrEmpty
+            $caught.Exception.Message | Should -BeExactly 'SantaArtifactInspectionFailed'
+            $caught.Exception.InnerException | Should -BeNullOrEmpty
+            (Get-Variable SantaInspectionDispatches -Scope Global -ValueOnly) | Should -Be 0
+        } finally { [IO.File]::WriteAllBytes($path, $original) }
+    }
     It 'refuses real vendor byte drift before evaluating any user artifact through the actual CLI with a fixed outer error' {
         $vendor=Join-Path $script:copy 'scripts/vendor/Azd.DeploymentValidation/Azd.DeploymentValidation.psm1'
         [IO.File]::AppendAllText($vendor,"`n# CANARY_VENDOR_SECRET",[Text.UTF8Encoding]::new($false))

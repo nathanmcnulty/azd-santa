@@ -64,11 +64,14 @@ jobs:
           if ($PSVersionTable.PSVersion -ne [version]'7.6.6' -or -not [Environment]::Is64BitProcess) {
             throw "Expected 64-bit PowerShell 7.6.6; observed $($PSVersionTable.PSVersion)."
           }
+          $PSVersionTable.PSVersion
       - name: Install test runner
-        run: Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
+        run: Install-Module Pester -RequiredVersion 6.2.0 -Force -Scope CurrentUser
 
       - name: Generate and validate offline artifacts
         run: |
+          Import-Module Pester -RequiredVersion 6.2.0 -Force
+          Get-Module Pester | Select-Object Name, Version, Path
           ./scripts/New-DeploymentPlan.ps1 -Organization 'Contoso'
           ./scripts/Test-SantaTemplate.ps1
           Invoke-Pester ./tests -CI

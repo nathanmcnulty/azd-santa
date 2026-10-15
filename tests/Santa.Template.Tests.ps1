@@ -1,3 +1,4 @@
+#Requires -Version 7.6
 BeforeAll {
     $script:root = Split-Path -Parent $PSScriptRoot
     Import-Module (Join-Path $script:root 'scripts/Santa.Template.psm1') -Force

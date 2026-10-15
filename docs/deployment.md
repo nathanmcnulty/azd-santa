@@ -1,5 +1,10 @@
 # Offline deployment preparation
 
+Management commands and AZD PowerShell hooks require PowerShell 7.6 or later.
+Native zsh/Bash endpoint and Live Response scripts keep their macOS interpreters;
+PowerShell is not an endpoint prerequisite. Package verification on macOS also
+requires PowerShell 7.6+ and the existing Apple verification tools.
+
 This slice prepares exact artifacts and a mutation-free Intune plan. Live profile and PKG deployment can be explicitly enabled in `azd up`; the standalone apply commands remain guarded by `-Apply` and PowerShell confirmation. PKG upload still waits for exact-device profile readiness.
 
 AZD provisions one tagged, otherwise empty resource group to run its normal

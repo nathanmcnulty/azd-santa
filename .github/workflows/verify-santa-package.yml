@@ -13,6 +13,38 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Select PowerShell 7.6.6
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$RUNNER_TEMP/powershell-7.6.6"
+          archive="$runtime.tar.gz"
+          case "$(uname -m)" in
+            x86_64)
+              architecture='x64'
+              sha256='e325ed9f666894eb39a5ea52800b602da2fb4242bbe9747ceddb39cdc66de805'
+              ;;
+            arm64)
+              architecture='arm64'
+              sha256='6df833d094ebac1c1a74340d7b3437f4aaf5e03ce640484a1c4359f3ce8b3db1'
+              ;;
+            *) echo 'Unsupported macOS architecture' >&2; exit 1 ;;
+          esac
+          mkdir "$runtime"
+          curl --fail --location --output "$archive" "https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-$architecture.tar.gz"
+          echo "$sha256  $archive" | shasum -a 256 --check
+          tar -xzf "$archive" -C "$runtime"
+          chmod +x "$runtime/pwsh"
+          echo "$runtime" >> "$GITHUB_PATH"
+
+      - name: Assert selected PowerShell runtime
+        shell: pwsh
+        run: |
+          if ($PSVersionTable.PSVersion -ne [version]'7.6.6' -or -not [Environment]::Is64BitProcess) {
+            throw "Expected 64-bit PowerShell 7.6.6; observed $($PSVersionTable.PSVersion)."
+          }
+          $PSVersionTable.PSVersion
+
       - name: Verify immutable package
         shell: pwsh
         run: |

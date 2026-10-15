@@ -1,3 +1,4 @@
+#Requires -Version 7.6
 [CmdletBinding()]
 param(
     [string] $ReceiptPath = (Join-Path (Split-Path -Parent $PSScriptRoot) '.azure/azd-santa/intune-profiles-receipt.json'),

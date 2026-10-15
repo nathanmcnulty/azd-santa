@@ -80,9 +80,25 @@ cd azd-santa
 azd hooks run preprovision
 ```
 
+## Management and development prerequisites
+
+Maintained PowerShell management scripts and modules require PowerShell **7.6 or
+later** on a supported management host. Development tests require **Pester 6.2 or
+later**; CI installs and imports exactly Pester 6.2.0 and selects hash-verified
+64-bit PowerShell 7.6.6. Import the intended Pester version before running tests.
+
+The Mac endpoint evidence collector remains a native zsh script, and the
+self-contained Intune/Defender scripts remain native Bash. They do not require
+PowerShell on the endpoint. Acquiring a new verified PKG still requires macOS
+and its Apple verification tools, with PowerShell 7.6+ for Get-SantaPackage.ps1.
+
 For direct local validation, run the scripts from this checkout:
 
 ```powershell
+Install-Module Pester -RequiredVersion 6.2.0 -Scope CurrentUser
+Import-Module Pester -RequiredVersion 6.2.0 -Force
+$PSVersionTable.PSVersion
+Get-Module Pester | Select-Object Name, Version, Path
 ./scripts/New-SantaProfiles.ps1 -Organization 'Example Corp'
 ./scripts/New-DeploymentPlan.ps1 -Organization 'Example Corp' -PilotGroupId '<pilot-group-object-id>'
 ./scripts/Test-SantaTemplate.ps1

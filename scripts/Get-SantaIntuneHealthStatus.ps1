@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#Requires -Version 7.6
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string] $TenantId,

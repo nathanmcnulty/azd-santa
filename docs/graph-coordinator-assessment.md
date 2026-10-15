@@ -69,9 +69,10 @@ schema, freshness, identity and exact-device readiness checks against synthetic
 status input. It does not perform new macOS signing verification. Existing tests cover Monitor,
 one-device guards, generated profiles, solution receipts and compute-free planning.
 
-Run on PowerShell 7.6 or later:
+For current development, run on PowerShell 7.6 or later with Pester 6.2 or later:
 
 ```powershell
+Import-Module Pester -RequiredVersion 6.2.0 -Force
 ./scripts/New-DeploymentPlan.ps1 -Organization 'Contoso'
 ./scripts/Test-SantaTemplate.ps1
 Invoke-Pester ./tests -CI
