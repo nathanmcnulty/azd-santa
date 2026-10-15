@@ -44,8 +44,8 @@ function Assert-SantaInspectionComponent {
     $lock = Get-Content -LiteralPath (Join-Path $script:Root 'azd-components.lock.json') -Raw | ConvertFrom-Json
     $components = @($lock.components)
     if ($lock.manifestVersion -cne '1.0' -or $components.Count -ne 1 -or $components[0].id -cne 'deployment-validation' -or
-        $components[0].version -cne '1.1.1' -or $components[0].sourceRepository -cne 'https://github.com/nathanmcnulty/azd-reference' -or
-        $components[0].sourceRevision -cne 'df93f3ea099780c3767068ecf6b6ab44af8f7440') { throw 'ComponentContractMismatch' }
+        $components[0].version -cne '2.0.0' -or $components[0].sourceRepository -cne 'https://github.com/nathanmcnulty/azd-reference' -or
+        $components[0].sourceRevision -cne 'fbb521e468ed129f951e7e13ecf0134986fdbd75') { throw 'ComponentContractMismatch' }
     $targets = @('scripts/vendor/Azd.DeploymentValidation/Azd.DeploymentValidation.psd1',
         'scripts/vendor/Azd.DeploymentValidation/Azd.DeploymentValidation.psm1',
         'scripts/vendor/Azd.DeploymentValidation/deployment-validation.schema.json')

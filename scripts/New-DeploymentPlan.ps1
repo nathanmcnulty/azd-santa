@@ -1,3 +1,4 @@
+#Requires -Version 7.6
 [CmdletBinding()]
 param(
     [string] $Organization = $(if ($env:SANTA_ORGANIZATION) { $env:SANTA_ORGANIZATION } else { 'Contoso' }),

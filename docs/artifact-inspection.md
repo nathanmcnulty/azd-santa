@@ -22,7 +22,23 @@ For optional endpoint artifact inspection, use `-EndpointEvidencePath` with the 
 
 Profile status has the same 24-hour saved-artifact freshness bound and explicit UTC/offset requirement, plus the existing exact-set/per-device/status-after-profile-modification checks. Matching status JSON remains a saved assertion. A pending required profile, foreign target, missing/unsupported record, stale/future time, digest mismatch or invalid type produces a closed warning, never a fresh service or endpoint pass. Optional notification-profile status cannot stand in for a required profile. Existing publisher and cleanup receipts are not rewritten or treated as authenticated evidence.
 
-## Component decisions at immutable Reference df93f3ea099780c3767068ecf6b6ab44af8f7440
+## Current validation component
+
+The consumed deployment-validation bundle is now 2.0.0, synchronized through
+Reference's Sync-AzdComponent.ps1 from immutable revision
+fbb521e468ed129f951e7e13ecf0134986fdbd75 (Reference draft PR #99).
+The lock and runtime guard bind exactly that revision and its three file hashes.
+This adopts the PowerShell 7.6 minimum while keeping the existing schema 1.0
+artifact report, privacy checks and pending current-Mac-readiness boundary.
+Reference #99 must land before this consumer migration is merged.
+
+The table below records the original assessment. Deferred receipt/notification
+adoption and the frozen Graph assessment fixture remain unchanged; they are not
+new runtime dependencies. Historical test counts and receipt snapshots are
+retained as evidence. The permission inventory still cites its immutable source
+snapshot; this baseline change makes no scope, authentication or grant changes.
+
+## Original component decisions at immutable Reference df93f3ea099780c3767068ecf6b6ab44af8f7440
 
 | Component | Decision and compatibility |
 | --- | --- |
@@ -37,3 +53,5 @@ The baseline remains usable without Azure compute, GitHub, Azure DevOps, sync or
 SANTA-005 is a local discovery/adaptation item: separate the four domains, compare/adopt/defer components with target/source/privacy constraints, and preserve the resource-free notification baseline. The new inspector gives that assessment an executable consumer. SANTA-002 still needs separately authorized real-Mac and Intune evidence. Monitor mode, one-device targeting, package/publisher/collector/cleanup behavior and existing functional artifacts are unchanged. Hosted CI selects hash-pinned 64-bit PowerShell 7.6.6 before running PowerShell on both Windows and Linux. Local tests and CI do not establish live service or endpoint acceptance.
 
 Immutable component sources: [validation1.1.1](https://github.com/nathanmcnulty/azd-reference/blob/df93f3ea099780c3767068ecf6b6ab44af8f7440/components/powershell/deployment-validation/component.json), [candidate receipt0.2.1](https://github.com/nathanmcnulty/azd-reference/blob/df93f3ea099780c3767068ecf6b6ab44af8f7440/components/powershell/deployment-receipt/component.json), [notification contracts1.0.0](https://github.com/nathanmcnulty/azd-reference/blob/df93f3ea099780c3767068ecf6b6ab44af8f7440/components/contracts/notification-contracts/component.json).
+
+Current consumed source: [deployment-validation 2.0.0](https://github.com/nathanmcnulty/azd-reference/blob/fbb521e468ed129f951e7e13ecf0134986fdbd75/components/powershell/deployment-validation/component.json).

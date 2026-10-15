@@ -30,6 +30,9 @@
 
 - Preserve Monitor mode and the one-device pilot boundary unless the user
   separately authorizes broader Intune deployment or Lockdown promotion.
+- Require PowerShell 7.6+ for maintained management code and Pester 6.2+ for
+  development tests. Select/import the intended versions and record them. Native
+  macOS zsh/Bash endpoint scripts keep their platform contracts.
 - Start with offline validation. Run `./scripts/Test-SantaTemplate.ps1` and
   `Invoke-Pester ./tests -CI` for repository changes.
 - Do not upload the package, broaden assignments, publish rules, enable a sync
