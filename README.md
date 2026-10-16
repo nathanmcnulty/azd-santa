@@ -131,6 +131,12 @@ the [Phase 0 evidence snapshot](docs/phase-0-evidence.md).
 
 ## Primary references
 
+Optional sync and rule work is documented separately in the
+[sync-provider setup and qualification guide](docs/sync-profiles.md) and the
+[offline rule-candidate draft guide](docs/candidate-drafts.md). The local draft
+generator does not publish rules or change the deployment baseline. Provider/Mac
+qualification, approval and publication remain tracked in the backlog.
+
 - [Santa repository](https://github.com/northpolesec/santa)
 - [Santa deployment: getting started](https://northpole.dev/deployment/getting-started/)
 - [Install the Santa package](https://northpole.dev/deployment/install-package/)
