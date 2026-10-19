@@ -7,6 +7,10 @@ accounts, grants, ingress, device credentials, profiles or rules were created.
 The default Intune-only baseline remains compute-free, Monitor, one device, and
 byte-for-byte unchanged. This document is not an exact-target execution packet.
 
+For the subsequent minimal-total-cost community and optional Workshop direction,
+see [the research addendum](community-and-workshop.md). It preserves this spike's
+historical test claims and does not qualify a production implementation.
+
 ## Decision before implementation
 
 **Go:** an original, loopback-only public-v1 contract/security model, plus the
