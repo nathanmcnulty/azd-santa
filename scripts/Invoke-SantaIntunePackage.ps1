@@ -9,11 +9,14 @@ param(
     [Parameter(Mandatory)][string] $ExpectedPilotGroupName,
     [Parameter(Mandatory)][string] $ExpectedDeviceName,
     [Parameter(Mandatory)][string] $ExpectedAccount,
+    [ValidateSet('Default','NormalBrowser')][string] $AuthenticationMode = 'Default',
+    [string] $GraphClientId,
     [string] $ReceiptPath = (Join-Path (Split-Path -Parent $PSScriptRoot) '.azure/azd-santa/intune-package-receipt.json'),
     [switch] $Apply
 )
 
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSScriptRoot 'Santa.GraphSession.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Santa.Template.psm1') -Force
 $lock = Get-SantaLock
 $displayName = "Santa $($lock.release.tag) (azd-santa pilot)"
@@ -156,9 +159,7 @@ if (-not $Apply) {
 }
 if (-not $PSCmdlet.ShouldProcess("Intune tenant $TenantId, group $PilotGroupId", "Upload and require $displayName")) { return }
 
-Connect-MgGraph -TenantId $TenantId -Scopes @('DeviceManagementApps.ReadWrite.All','Group.Read.All','DeviceManagementManagedDevices.Read.All','Device.Read.All') -ContextScope Process -NoWelcome
-$context = Get-MgContext
-if ($context.TenantId -ne $TenantId -or $context.Account -ne $ExpectedAccount) { throw "Authenticated context does not match the authorized tenant/account: $($context.Account) / $($context.TenantId)" }
+$context = Initialize-SantaGraphSession -TenantId $TenantId -ExpectedAccount $ExpectedAccount -Scopes @('DeviceManagementApps.ReadWrite.All','Group.Read.All','DeviceManagementManagedDevices.Read.All','Device.Read.All') -ContextScope Process -ProbeUri "/v1.0/groups/${PilotGroupId}?`$select=id" -AuthenticationMode $AuthenticationMode -GraphClientId $GraphClientId
 
 $group = Invoke-GraphJson -Method GET -Uri "https://graph.microsoft.com/v1.0/groups/${PilotGroupId}?`$select=id,displayName,securityEnabled,mailEnabled,groupTypes,membershipRule"
 if ($group.displayName -ne $ExpectedPilotGroupName) { throw "Pilot group display name mismatch: $($group.displayName)" }
