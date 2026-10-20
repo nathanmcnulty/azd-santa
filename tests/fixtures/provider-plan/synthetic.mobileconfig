@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>PayloadType</key><string>Configuration</string>
+<key>PayloadContent</key><array><dict>
+<key>PayloadType</key><string>com.northpolesec.santa</string>
+<key>ClientMode</key><integer>1</integer>
+<key>SyncBaseURL</key><string>https://synthetic-provider.invalid/santa/</string>
+<key>SyncExtraHeaders</key><dict><key>Authorization</key><string>Bearer SYNTHETIC-CANARY-NOT-A-CREDENTIAL</string></dict>
+</dict></array></dict></plist>
