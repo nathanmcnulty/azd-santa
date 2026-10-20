@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "clientVersion", "clientSourceCommit", "providerRevision", "protocol", "authMode", "authHeaderName", "secretReferenceId", "profileSha256", "baselineSha256", "reviewEvidenceSha256", "evidenceKind", "configurationDisposition"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "clientVersion": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "clientSourceCommit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "providerRevision": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "protocol": {"const": "public-v1-json"},
+    "authMode": {"const": "header-token"},
+    "authHeaderName": {"enum": ["Authorization", "Zentral-Authorization"]},
+    "secretReferenceId": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$"},
+    "profileSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "baselineSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "reviewEvidenceSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "evidenceKind": {"enum": ["synthetic-fixture", "offline-source-review"]},
+    "configurationDisposition": {"const": "replace-owned-preserve-baseline"}
+  }
+}

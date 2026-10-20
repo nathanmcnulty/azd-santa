@@ -104,3 +104,10 @@ the exact enrollment/token/certificate selected for this pilot, after confirming
 it is not shared. Verify server rule/configuration rollback and effective client
 state independently; do not assume that disabling sync removes previously
 downloaded rules. Preserve SANTA-002 and the broader live gates until proven.
+
+## Offline planning helper
+
+The default-off [provider-profile planner](provider-profile-planning.md) can
+validate a restricted, privately supplied synthetic or reviewed profile and
+produce a non-mutating replacement plan. It neither selects a provider nor
+publishes a profile, and cannot establish native compatibility.
