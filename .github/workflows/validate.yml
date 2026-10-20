@@ -22,6 +22,7 @@ jobs:
           /bin/zsh -n ./scripts/Test-SantaEndpoint.sh
           /bin/bash -n ./scripts/live-response/Get-SantaHealth.sh
           /bin/bash -n ./scripts/live-response/Get-SantaProfileState.sh
+          /bin/bash ./tests/Test-SantaProfileState.sh
 
   validate:
     strategy:
@@ -58,6 +59,11 @@ jobs:
             chmod +x "$runtime/pwsh"
             echo "$runtime" >> "$GITHUB_PATH"
           fi
+
+      - name: Test profile inventory on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash ./tests/Test-SantaProfileState.sh
 
       - name: Assert selected PowerShell runtime
         run: |
