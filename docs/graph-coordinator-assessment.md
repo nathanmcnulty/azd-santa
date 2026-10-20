@@ -86,3 +86,13 @@ The assessment run on PowerShell 7.6.6 passed the registered offline validator a
 all 55 Pester tests (39 existing and 16 compatibility tests), with zero failures,
 skips or not-run tests. Generated profiles remained unchanged. Publication and
 independent review are separate gates; this result does not claim component adoption.
+
+## Issue #34 reconciliation
+
+The 0.1.1 adoption deferral remains in force. The separately reviewed
+[Santa session validator](graph-session-recovery.md) preserves both existing
+lifetimes and validates only an existing operator-established context. It does
+not call Connect-MgGraph or change persistent WAM preferences: the SDK can retry
+with device code internally and its option getter can return stale in-memory
+state. Automated browser initialization remains blocked, so issue #34 is partial.
+This does not import/fork the assessment fixture or change scopes or consent.
