@@ -90,9 +90,9 @@ independent review are separate gates; this result does not claim component adop
 ## Issue #34 reconciliation
 
 The 0.1.1 adoption deferral remains in force. The separately reviewed
-[Santa session validator](graph-session-recovery.md) preserves both existing
-lifetimes and validates only an existing operator-established context. It does
-not call Connect-MgGraph or change persistent WAM preferences: the SDK can retry
-with device code internally and its option getter can return stale in-memory
-state. Automated browser initialization remains blocked, so issue #34 is partial.
-This does not import/fork the assessment fixture or change scopes or consent.
+[Santa session adapter](graph-session-recovery.md) preserves both existing
+lifetimes, reuses valid contexts and automatically connects when none exists.
+It does not change persistent WAM preferences. It never explicitly requests device
+code, but accepts the SDK's fallback and valid delegated DeviceCode contexts under
+the operator's chosen automatic-login policy. The immutable coordinator fixture
+and lock remain unchanged. Native host sign-in remains a separate validation gate.

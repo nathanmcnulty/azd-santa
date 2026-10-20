@@ -1,27 +1,26 @@
 # Graph session validation and browser recovery
 
-This is a bounded partial fix for issue #34. Santa reuses a compatible existing
-Graph context and gives actionable sign-in guidance. Automated browser bootstrap
-remains blocked by the SDK limitations below; this does not claim to close #34.
+Santa reuses a compatible Graph context first. When no context exists, it calls
+supported `Connect-MgGraph` automatically with the caller's original scopes,
+selected tenant, Global environment and original session lifetime. The returned
+identity and scopes are verified before the selected pilot-group read probe.
+Dry-run publishers still require no authentication. Existing incompatible contexts
+are refused with actionable errors rather than silently replaced.
 
-All five Intune collectors/publishers now require the operator to establish the
-session **before** running them, in the same PowerShell process. They no longer
-call `Connect-MgGraph` or read/change SDK authentication preferences internally.
-This is a behavioral/UX tradeoff requiring operator approval before adoption:
-working automatic-login paths also become manual prerequisites. It is not an
-unconditional usability improvement. Retaining automatic Connect would preserve
-convenience but cannot satisfy a strict no-device-code guarantee with this SDK.
-This deliberate change prevents automatic session replacement and the SDK's
-implicit device-code fallback during connection. Dry-run publishers still require
-no authentication. Publication/status receipts and exact-device checks are unchanged.
+Santa never explicitly requests device-code authentication. If the SDK falls back
+to device code after another sign-in mechanism fails, that supported fallback is
+accepted. An existing valid delegated DeviceCode context is also accepted. This
+implements the operator's preference for automatic login, without claiming a
+strict no-device-code guarantee. Santa does not read or change persisted SDK WAM
+preferences. Publication/status receipts and exact-device checks are unchanged.
 
 ## Existing session contract
 
 A context must match the selected tenant/account, Global Graph environment,
-delegated `InteractiveBrowser` credential type, existing scope set and lifetime.
+delegated `InteractiveBrowser` or `DeviceCode` credential type, existing scope set and lifetime.
 A selected pilot-group GET checks request usability. Wrong tenant/account/client,
 missing scopes, incompatible lifetime/type, failed authentication and forbidden
-access produce distinct diagnostics; no failure triggers reconnect or more scopes.
+access produce distinct diagnostics; no probe failure triggers reconnect or more scopes. A failed automatic connection is reported without retry loops.
 SDK metadata and a successful GET are not independent cryptographic token proof or
 proof of every downstream permission. Only Global is supported; package/health
 paths already use absolute Global URLs.
@@ -41,9 +40,8 @@ Obtain any missing permission only through a separately approved operator proces
 
 ## User-run normal-browser route
 
-1. Open a supported interactive PowerShell 7.6+ terminal. For the ordinary broker
-   route, establish the selected tenant/account, existing scopes and lifetime using
-   the SDK's documented sign-in flow. Run Santa in that same process.
+1. Open a supported interactive PowerShell 7.6+ terminal. Run Santa normally for automatic SDK sign-in, selecting the intended account when
+   prompted. An already established compatible session can also be reused.
 2. If WAM reports a window-handle failure, the documented normal-browser route
    requires an **existing approved custom application** and Graph SDK 2.35.1 or
    later. The default Graph application cannot disable WAM this way. This change
@@ -57,10 +55,9 @@ Obtain any missing permission only through a separately approved operator proces
    that `Get-MgGraphOption` is an in-memory projection loaded when the SDK session
    initializes, and can be stale after another process changes the file. Santa
    deliberately does not automate this global setting or claim exact restoration.
-4. **Abort if the SDK presents a device-code prompt.** It can internally fall back
-   after a browser-open failure even without `-UseDeviceCode`. Setting that switch
-   to false is not a no-fallback guarantee. Do not use Azure CLI or unrelated
-   resource tokens as substitutes. Investigate the host/browser failure instead.
+4. The SDK may internally fall back to device code after a browser-open failure.
+   This is allowed as a last resort; Santa never passes `-UseDeviceCode` itself.
+   Do not use Azure CLI or unrelated resource tokens as substitutes.
 5. After a successful user-run browser sign-in, require explicit context validation
    by adding these parameters to the Santa script:
 
@@ -68,12 +65,11 @@ Obtain any missing permission only through a separately approved operator proces
    -AuthenticationMode NormalBrowser -GraphClientId '<existing approved custom app ID>'
    ```
 
-   This validates the matching custom app, InteractiveBrowser credential and strict
+   This validates the matching custom app, accepted delegated credential type and strict
    boolean `WamEnabled=false` metadata. That SDK property reflects the current
    preference, so it is not independent proof of the UI used to obtain a token.
-   Restoring the preference before this check may invalidate the check. It does
-   not initiate login or change any
-   option. Missing/unknown metadata is rejected, rather than assuming browser use.
+   Restoring the preference before this check may invalidate the check. If no context exists it initiates the same supported connection using the selected
+   custom app, but never changes any option. Missing/unknown metadata is rejected, rather than assuming browser use.
 
 ## Shared component and permission provenance
 
@@ -81,7 +77,8 @@ The [SANTA-006 assessment](graph-coordinator-assessment.md) remains applicable.
 Its immutable 0.1.1 coordinator requires CurrentUser, so direct adoption would
 change the package/health Process lifetime. It also does not solve the SDK's
 internal fallback or stale persisted-option problem. This small solution adapter
-validates existing sessions only; it neither imports nor forks the coordinator.
+reuses or establishes sessions while preserving caller lifetimes; it neither imports
+nor forks the coordinator.
 The fixture and immutable component lock stay unchanged.
 
 No scope, role or consent feature changed. `azd-permissions.json` therefore remains
@@ -90,17 +87,19 @@ not expanded to imply new access. Solution-owned receipts are unchanged.
 
 ## Evidence and remaining gates
 
-Offline Pester fixtures cover context reuse, identity/scope/lifetime refusal,
-DeviceCode rejection, normal-browser context validation, WAM/probe errors and
-unchanged null/false/true or stale persisted preference scenarios. Every SDK
-operation is mocked; zero connection and option calls are asserted on all paths.
-Since no options are changed, restoration is not needed on success or failure.
+Offline Pester fixtures cover context reuse, automatic connection and returned
+identity checks, identity/scope/lifetime refusal, accepted SDK device-code fallback,
+normal-browser metadata validation, redacted WAM/probe errors and unchanged
+nullable or stale persisted preference scenarios. Every SDK operation is mocked;
+zero option reads/writes are asserted. Since no options are changed, restoration
+is not needed on success or failure.
 
 Actual Microsoft sign-in in the selected native host remains a separate human-run
-validation gate. Automated browser initialization requires a supported SDK contract
-that can prohibit device-code fallback; none is used or claimed here. CI cannot
-prove host sign-in usability or Intune delivery. Issue #33 owns native endpoint
-qualification.
+validation gate. CI cannot prove host sign-in usability or Intune delivery. The
+manual custom-app browser route remains necessary when this host cannot complete
+normal SDK login; automatic global WAM preference changes are intentionally absent.
+Issue #33 owns native endpoint qualification. This source fix does not claim that
+native host or endpoint qualification is complete.
 
 Primary references:
 

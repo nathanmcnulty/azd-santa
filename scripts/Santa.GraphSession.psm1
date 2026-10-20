@@ -13,21 +13,38 @@ function Initialize-SantaGraphSession {
         [string] $GraphClientId
     )
     $ErrorActionPreference = 'Stop'
-    # No Connect-MgGraph here: the SDK can internally fall back to device code.
-    # No Set-MgGraphOption here: its persisted value can differ from its cached
-    # Get-MgGraphOption projection. Authentication remains an operator-run gate.
+    # Reuse first. Never mutate the SDK's persisted user-wide WAM preference.
+    if ($GraphClientId) {
+        $parsedClient = [guid]::Empty
+        if (-not [guid]::TryParse($GraphClientId, [ref]$parsedClient) -or $parsedClient -eq [guid]::Empty) { throw 'SantaGraph.InvalidClient: GraphClientId must identify an existing approved application.' }
+    }
+    if ($AuthenticationMode -eq 'NormalBrowser' -and (-not $GraphClientId -or $GraphClientId -ieq '14d82eec-204b-4c2f-b7e8-296a70dab67e')) {
+        throw 'SantaGraph.BrowserUnverified: Select an existing approved custom GraphClientId and configure the documented browser route before using NormalBrowser.'
+    }
     try { $context = Get-MgContext -ErrorAction Stop }
     catch { throw 'SantaGraph.AuthenticationFailed: The SDK context could not be inspected. Check the installed SDK in a supported interactive host.' }
     if ($null -eq $context) {
-        throw 'SantaGraph.SignInRequired: No Graph session exists. Establish the exact tenant/account and required scopes in a supported interactive PowerShell host, then rerun in that same session. For WAM window-handle errors see docs/graph-session-recovery.md for the explicit user-run custom-app browser route. Do not use device code or an Azure CLI resource token.'
+        $connect = @{ TenantId = [string]$TenantId; Scopes = $Scopes; ContextScope = $ContextScope; Environment = 'Global'; NoWelcome = $true; ErrorAction = 'Stop' }
+        if ($GraphClientId) { $connect.ClientId = $GraphClientId }
+        try {
+            Connect-MgGraph @connect | Out-Null
+            $context = Get-MgContext -ErrorAction Stop
+        }
+        catch {
+            if ($_.Exception.Message -match '(?i)window handle|\bWAM\b|broker') {
+                throw 'SantaGraph.WindowHandle: Broker authentication is unavailable in this host. Use a supported interactive terminal or the approved custom-app browser route in docs/graph-session-recovery.md. No authentication preference was changed.'
+            }
+            throw 'SantaGraph.AuthenticationFailed: Graph sign-in did not complete. Retry in a supported interactive host with the intended tenant/account and approved scopes. No authentication preference was changed.'
+        }
+        if ($null -eq $context) { throw 'SantaGraph.AuthenticationFailed: Graph sign-in returned no context. Retry in a supported interactive host.' }
     }
     if ([string]$context.TenantId -ine [string]$TenantId) { throw 'SantaGraph.WrongTenant: Select the intended tenant explicitly in a supported host.' }
     if ([string]$context.Account -ine $ExpectedAccount) { throw 'SantaGraph.WrongAccount: Select the intended operator explicitly in a supported host.' }
     if ([string]$context.AuthType -cne 'Delegated' -or [string]$context.Environment -cne 'Global' -or [string]$context.ContextScope -cne $ContextScope) {
         throw 'SantaGraph.IncompatibleContext: Delegated Global Graph context with the selected session lifetime is required; no existing context was replaced.'
     }
-    if (-not $context.PSObject.Properties['TokenCredentialType'] -or [string]$context.TokenCredentialType -cne 'InteractiveBrowser') {
-        throw 'SantaGraph.UnsupportedCredential: An InteractiveBrowser context is required; device-code and supplied-token contexts are not accepted.'
+    if (-not $context.PSObject.Properties['TokenCredentialType'] -or [string]$context.TokenCredentialType -cnotin @('InteractiveBrowser','DeviceCode')) {
+        throw 'SantaGraph.UnsupportedCredential: An interactive delegated SDK context is required; supplied-token and unknown credential contexts are not accepted.'
     }
     foreach ($scope in $Scopes) {
         if ($scope -notin @($context.Scopes)) { throw "SantaGraph.MissingScope: Required delegated scope '$scope' is missing. Obtain separately authorized access; this adapter will not add consent." }

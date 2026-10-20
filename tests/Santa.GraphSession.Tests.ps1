@@ -2,7 +2,7 @@
 BeforeDiscovery { Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'scripts/Santa.GraphSession.psm1') -Force }
 BeforeAll {
     function global:Get-MgContext { [CmdletBinding()] param() throw 'Unmocked context' }
-    function global:Connect-MgGraph { throw 'Sign-in is forbidden in this adapter' }
+    function global:Connect-MgGraph { [CmdletBinding()] param($TenantId,$Scopes,$ContextScope,$Environment,$ClientId,[switch]$NoWelcome) throw 'Unmocked sign-in' }
     function global:Invoke-MgGraphRequest { [CmdletBinding()] param($Method,$Uri,$OutputType) throw 'Unmocked Graph request' }
     function global:Get-MgGraphOption { throw 'Option inspection is forbidden in this adapter' }
     function global:Set-MgGraphOption { throw 'Option changes are forbidden in this adapter' }
@@ -19,6 +19,7 @@ Describe 'Santa cached Graph session validation' {
                 AuthType = 'Delegated'; Environment = 'Global'; ContextScope = 'Process'; TokenCredentialType = 'InteractiveBrowser'; WamEnabled = $false
                 Scopes = @('Group.Read.All'); ClientId = '00000000-0000-0000-0000-000000000002'
             }
+            $script:connectCalls = 0
             $script:parameters = @{
                 TenantId = $context.TenantId; ExpectedAccount = $context.Account; Scopes = @('Group.Read.All'); ContextScope = 'Process'
                 ProbeUri = '/v1.0/groups/00000000-0000-0000-0000-000000000003?$select=id'
@@ -30,7 +31,7 @@ Describe 'Santa cached Graph session validation' {
             Mock Set-MgGraphOption { throw 'Forbidden option write' }
         }
         AfterEach {
-            Should -Invoke Connect-MgGraph -Times 0 -Exactly
+            Should -Invoke Connect-MgGraph -Times $script:connectCalls -Exactly
             Should -Invoke Get-MgGraphOption -Times 0 -Exactly
             Should -Invoke Set-MgGraphOption -Times 0 -Exactly
         }
@@ -39,10 +40,83 @@ Describe 'Santa cached Graph session validation' {
             $result.Account | Should -Be 'operator@example.test'
             Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -ParameterFilter { $Method -eq 'GET' -and $Uri -eq $script:parameters.ProbeUri }
         }
-        It 'provides an explicit user-run browser route when context is absent' {
-            $script:context = $null
-            { Initialize-SantaGraphSession @script:parameters } | Should -Throw '*SantaGraph.SignInRequired*user-run custom-app browser route*'
+        It 'automatically connects an absent session and verifies the resulting context' {
+            $script:connectedContext = $script:context
+            $script:context = $null; $script:connectCalls = 1
+            Mock Connect-MgGraph { $script:context = $script:connectedContext }
+            (Initialize-SantaGraphSession @script:parameters).Account | Should -Be 'operator@example.test'
+            Should -Invoke Connect-MgGraph -Times 1 -Exactly -ParameterFilter {
+                $TenantId -eq $script:parameters.TenantId -and $ContextScope -eq 'Process' -and $Environment -eq 'Global' -and $Scopes.Count -eq 1 -and $Scopes[0] -eq 'Group.Read.All' -and $NoWelcome
+            }
+        }
+        It 'passes an approved custom client and preserves CurrentUser when connecting' {
+            $script:connectedContext = $script:context; $script:connectedContext.ContextScope = 'CurrentUser'
+            $script:parameters.ContextScope = 'CurrentUser'; $script:parameters.GraphClientId = $script:context.ClientId
+            $script:context = $null; $script:connectCalls = 1
+            Mock Connect-MgGraph { $script:context = $script:connectedContext }
+            (Initialize-SantaGraphSession @script:parameters).ContextScope | Should -Be 'CurrentUser'
+            Should -Invoke Connect-MgGraph -Times 1 -Exactly -ParameterFilter { $ContextScope -eq 'CurrentUser' -and $ClientId -eq $script:parameters.GraphClientId }
+        }
+        It 'rejects a missing post-connect context before the probe' {
+            $script:context = $null; $script:connectCalls = 1
+            Mock Connect-MgGraph { }
+            { Initialize-SantaGraphSession @script:parameters } | Should -Throw '*SantaGraph.AuthenticationFailed*no context*'
             Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly
+        }
+        It 'rejects an invalid selected client before attempting sign-in' {
+            $script:context = $null
+            { Initialize-SantaGraphSession @script:parameters -GraphClientId 'invalid' } | Should -Throw '*SantaGraph.InvalidClient*'
+        }
+        It 'accepts SDK device-code fallback without explicitly requesting it' {
+            $script:connectedContext = $script:context; $script:connectedContext.TokenCredentialType = 'DeviceCode'
+            $script:context = $null; $script:connectCalls = 1
+            Mock Connect-MgGraph { $script:context = $script:connectedContext }
+            (Initialize-SantaGraphSession @script:parameters).TokenCredentialType | Should -Be 'DeviceCode'
+        }
+        It 'validates the identity returned by automatic sign-in' {
+            $script:connectedContext = $script:context; $script:connectedContext.Account = 'other@example.test'
+            $script:context = $null; $script:connectCalls = 1
+            Mock Connect-MgGraph { $script:context = $script:connectedContext }
+            { Initialize-SantaGraphSession @script:parameters } | Should -Throw '*SantaGraph.WrongAccount*'
+            Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly
+        }
+        It 'rejects incompatible automatically returned contexts before the probe' -ForEach @(
+            @{ Field = 'TenantId'; Value = '00000000-0000-0000-0000-000000000099'; Expected = 'WrongTenant' },
+            @{ Field = 'ClientId'; Value = '00000000-0000-0000-0000-000000000099'; Expected = 'WrongClient' },
+            @{ Field = 'Scopes'; Value = @('User.Read'); Expected = 'MissingScope' },
+            @{ Field = 'ContextScope'; Value = 'CurrentUser'; Expected = 'IncompatibleContext' }
+        ) {
+            $script:parameters.GraphClientId = $script:context.ClientId
+            $script:connectedContext = $script:context; $script:connectedContext.$Field = $Value
+            $script:context = $null; $script:connectCalls = 1
+            Mock Connect-MgGraph { $script:context = $script:connectedContext }
+            { Initialize-SantaGraphSession @script:parameters } | Should -Throw "*SantaGraph.$Expected*"
+            Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly
+        }
+        It 'automatically connects NormalBrowser with the selected custom client' {
+            $script:parameters.GraphClientId = $script:context.ClientId
+            $script:parameters.AuthenticationMode = 'NormalBrowser'
+            $script:connectedContext = $script:context
+            $script:context = $null; $script:connectCalls = 1
+            Mock Connect-MgGraph { $script:context = $script:connectedContext }
+            (Initialize-SantaGraphSession @script:parameters).WamEnabled | Should -BeFalse
+            Should -Invoke Connect-MgGraph -Times 1 -Exactly -ParameterFilter { $ClientId -eq $script:parameters.GraphClientId }
+        }
+        It 'gives redacted sign-in failures and WAM recovery guidance' -ForEach @(
+            @{ Message = 'window handle private-canary'; Expected = 'WindowHandle' },
+            @{ Message = 'private-canary'; Expected = 'AuthenticationFailed' }
+        ) {
+            $script:context = $null; $script:connectCalls = 1; $script:failure = $Message
+            Mock Connect-MgGraph { throw $script:failure }
+            try { Initialize-SantaGraphSession @script:parameters; throw 'Expected refusal' }
+            catch {
+                $_.Exception.Message | Should -Match "SantaGraph.$Expected"
+                $_.Exception.Message | Should -Not -Match 'private-canary'
+            }
+        }
+        It 'reuses a valid device-code context' {
+            $script:context.TokenCredentialType = 'DeviceCode'
+            (Initialize-SantaGraphSession @script:parameters).TokenCredentialType | Should -Be 'DeviceCode'
         }
         It 'refuses wrong tenant instead of replacing it' {
             $script:context.TenantId = '00000000-0000-0000-0000-000000000099'
@@ -72,8 +146,8 @@ Describe 'Santa cached Graph session validation' {
             { Initialize-SantaGraphSession @script:parameters -GraphClientId '00000000-0000-0000-0000-000000000099' } | Should -Throw '*SantaGraph.WrongClient*'
             Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly
         }
-        It 'rejects device-code, supplied-token or unknown credential contexts before the probe' -ForEach @(
-            @{ Credential = 'DeviceCode' }, @{ Credential = 'UserProvidedAccessToken' }, @{ Credential = '' }
+        It 'rejects supplied-token or unknown credential contexts before the probe' -ForEach @(
+            @{ Credential = 'UserProvidedAccessToken' }, @{ Credential = '' }
         ) {
             $script:context.TokenCredentialType = $Credential
             { Initialize-SantaGraphSession @script:parameters } | Should -Throw '*SantaGraph.UnsupportedCredential*'

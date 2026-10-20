@@ -191,7 +191,7 @@ Describe 'Mutation boundary' {
         $missingPlan.packageVerification.uploadBlocked | Should -BeTrue
     }
 
-    It 'keeps the Intune apply script guarded and free of device-code fallback' {
+    It 'keeps the Intune apply script guarded and free of explicit device-code requests' {
         $scriptText = Get-Content -Raw (Join-Path $script:root 'scripts/Invoke-SantaIntuneProfiles.ps1')
         $scriptText | Should -Match 'if \(-not \$Apply\)'
         $scriptText | Should -Match 'ShouldProcess'
@@ -288,7 +288,7 @@ Describe 'Mutation boundary' {
         $result.failures | Should -Contain 'pilot-device:binding'
     }
 
-    It 'keeps the status collector read-only and free of device-code fallback' {
+    It 'keeps the status collector read-only and free of explicit device-code requests' {
         $scriptText = Get-Content -Raw (Join-Path $script:root 'scripts/Get-SantaIntuneProfileStatus.ps1')
         $scriptText | Should -Match "DeviceManagementConfiguration.Read.All"
         $scriptText | Should -Match "DeviceManagementManagedDevices.Read.All"
@@ -397,7 +397,7 @@ Describe 'Provider-neutral evidence contracts' {
 }
 
 Describe 'Guarded Intune package apply' {
-    It 'has an explicit apply boundary and no device-code authentication fallback' {
+    It 'has an explicit apply boundary and no explicit device-code authentication requests' {
         $scriptText = Get-Content -Raw (Join-Path $script:root 'scripts/Invoke-SantaIntunePackage.ps1')
         $scriptText | Should -Match '\[switch\]\s+\$Apply'
         $scriptText | Should -Match 'SupportsShouldProcess'
