@@ -185,6 +185,20 @@ class Handler(BaseHTTPRequestHandler):
         pass  # Do not log path, authorization or raw payload.
 
     def reply(self, status, body):
+        # The local harness sends its request before reading a rejection. Drain
+        # at most one bounded body (including the one-byte oversize test) so
+        # Windows does not reset the socket with the HTTP rejection unread.
+        # Never decode it or grow the accepted JSON limit for this transport fix.
+        if self.command == 'POST' and not getattr(self, 'body_consumed', False):
+            lengths = self.headers.get_all('Content-Length', [])
+            try:
+                size = int(lengths[0]) if len(lengths) == 1 else -1
+                if 0 <= size <= MAX_BYTES + 1 and not self.headers.get('Transfer-Encoding'):
+                    self.connection.settimeout(2)
+                    self.rfile.read(size)
+            except (ValueError, OSError):
+                pass
+            self.body_consumed = True
         request_id = secrets.token_hex(8)
         self.server.model.audit.append((request_id, status))
         del self.server.model.audit[:-128]
@@ -196,6 +210,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Connection', 'close')
         self.end_headers()
         self.wfile.write(raw)
+        self.wfile.flush()
         self.close_connection = True
 
     def send_error(self, code, message=None, explain=None):
@@ -226,6 +241,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get('Content-Type') != 'application/json':
             return self.reply(415, {})
         try:
+            self.body_consumed = True
             raw = self.rfile.read(length)
             if len(raw) != length:
                 raise ValueError('truncated request')
