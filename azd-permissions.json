@@ -3,8 +3,39 @@
   "solutionId": "azd-santa",
   "status": "implemented",
   "coverage": "partial",
-  "reviewedOn": "2026-10-19",
+  "reviewedOn": "2026-10-22",
   "requirements": [
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/deployments/* and Microsoft.Resources/subscriptions/resourceGroups/write; Microsoft.Compute/virtualMachines/write, Microsoft.Compute/disks/write and Microsoft.Network resource write/join actions for the isolated VM lab",
+      "principal": "Selected interactive deployment operator (existing permissions only)",
+      "phase": "deployment",
+      "feature": "synthetic-vm-lab",
+      "defaultEnabled": false,
+      "scope": "Explicit selected subscription deployment and rg-azd-santa-vm-<environment>; no role assignment or workload identity is created",
+      "rationale": "Optional nested azd project provisions a synthetic-only test host, disk and isolated network. This inventories operations, not consent or authorization to grant Contributor. A minimal custom deployment role has not been established.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/vm/infra/main.bicep", "sha256": "7d9d449156555d8bb4170a0531149bbe3f0ca305f92bdc8ce4f29ed2e437f487" },
+        { "path": "experiments/vm/infra/host.bicep", "sha256": "2b2575e9383ce3e4044100fc22d9ab3c69c101a7277e4ffab6c095fca7251059" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "principal": "Selected interactive lab operator (existing permissions only)",
+      "phase": "deployment",
+      "feature": "synthetic-vm-lab",
+      "defaultEnabled": false,
+      "scope": "Explicit selected subscription and tagged rg-azd-santa-vm-<environment>/vm-santa-lab only",
+      "rationale": "Run Command is privileged guest execution. The opt-in test helper transports original fixture sources and records synthetic disk receipts; it performs no Intune or device enrollment operation.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/vm/Test-VmLab.ps1", "sha256": "fb438ceaed22a25bc948a6143e223fe5809156b4422d9783180fbe5c9cbad645" }
+      ]
+    },
     {
       "resource": "Microsoft Graph",
       "kind": "delegated",
@@ -197,6 +228,7 @@
     }
   ],
   "gaps": [
+    "The optional VM lab inventories deployment and privileged Run Command operations but does not establish a least-privilege custom role. VM restart, deallocate/start and lab-group deletion need their corresponding ARM actions; no grants are created. No real sync server, device credential, operator API, telemetry backend or backup service is deployed.",
     "The optional local SQLite durability spike adds no cloud/API permission and is not a runtime storage selection. Production persistent state, restore anchors, revocation/deletion ledgers and their exact identities/data roles remain unqualified; synthetic fixture labels grant no publication authority.",
     "Local artifact inspection adds no Graph, Azure, connector or recipient permission; catalog display metadata and this manifest do not authorize grants.",
     "Minimum read sufficiency, tenant consent, Intune licensing and effective current target authority are not proven by requested scope metadata or local artifacts.",
