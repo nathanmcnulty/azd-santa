@@ -13,7 +13,7 @@
       "phase": "deployment",
       "feature": "synthetic-vm-lab",
       "defaultEnabled": false,
-      "scope": "Explicit selected subscription deployment and rg-azd-santa-vm-<environment>; no role assignment or workload identity is created",
+      "scope": "Explicit selected subscription deployment and rg-azd-santa-vm-<environment>; the template requests no role assignment or workload identity",
       "rationale": "Optional nested azd project provisions a synthetic-only test host, disk and isolated network. This inventories operations, not consent or authorization to grant Contributor. A minimal custom deployment role has not been established.",
       "evidenceState": "code",
       "evidence": [
@@ -228,6 +228,7 @@
     }
   ],
   "gaps": [
+    "Live sub-mvp inventory found an environment-added system-assigned VM identity and AzurePolicyforLinux extension absent from this template. Existing subscription policy appears responsible; a direct principal role lookup returned no entries, but full effective authority and policy ownership are not audited here. Preserve these environment-managed resources rather than removing them as drift.",
     "The optional VM lab inventories deployment and privileged Run Command operations but does not establish a least-privilege custom role. VM restart, deallocate/start and lab-group deletion need their corresponding ARM actions; no grants are created. No real sync server, device credential, operator API, telemetry backend or backup service is deployed.",
     "The optional local SQLite durability spike adds no cloud/API permission and is not a runtime storage selection. Production persistent state, restore anchors, revocation/deletion ledgers and their exact identities/data roles remain unqualified; synthetic fixture labels grant no publication authority.",
     "Local artifact inspection adds no Graph, Azure, connector or recipient permission; catalog display metadata and this manifest do not authorize grants.",

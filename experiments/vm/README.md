@@ -19,7 +19,9 @@ The user selected VM-first testing followed by a Container Apps comparison.
   endpoint. Ubuntu's own SSH daemon may listen inside the guest but is blocked
   by the NSG.
 - Standard IPv4 public IP for **explicit outbound** agent/update access, not
-  ingress. No NAT gateway, Bastion, role assignment or managed identity.
+  ingress. The template requests no NAT gateway, Bastion, role assignment or
+  managed identity. Subscription policies can add compliance resources; see the
+  observed runtime identity below.
 - Run Command uses the existing operator's Azure authorization and executes as
   root. This is privileged execution, not an untrusted upload API.
 - No real device identifiers, credentials, certificates or telemetry are sent.
@@ -128,6 +130,12 @@ Follow-ups: [server qualification #45](https://github.com/nathanmcnulty/azd-sant
 - Bicep compiled; subscription validation succeeded with no nested-template
   short-circuit; `azd provision` succeeded. Image exactVersion and Trusted Launch
   settings were read back; NSG readback confirmed priority-100 deny-all inbound.
+- Post-deployment inventory also found a system-assigned VM identity and a
+  successful `Microsoft.GuestConfiguration/AzurePolicyforLinux` extension, neither
+  declared by this template. This appears to be existing subscription-policy
+  behavior; the activity log records a separate service principal deploying the
+  extension. They were preserved. A direct role-assignment lookup for the VM
+  principal returned no entries; this is not a full effective-authority audit.
 - First guest execution correctly failed on a missing JSON fixture; the helper
   did not confuse Azure command acceptance with test success. Upload layout was
   corrected to include that fixture at its repository-relative path.
