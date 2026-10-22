@@ -260,6 +260,10 @@ as asserted. Never expose `http.server` to production ingress.
 
 ## Bounded next steps and stopping gates
 
+An optional [local durability continuation](sync-durability-spike.md) now tests
+synthetic snapshot/report/revocation restart behavior. It is not a production
+database adapter, selected Azure storage service or native interoperability proof.
+
 1. Independently review exact source trace, model and final diff; run offline suite
    and registered HTTP harness; leave a draft PR. No implementation selection is
    implicit in that receipt.
