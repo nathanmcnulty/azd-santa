@@ -24,6 +24,7 @@ from urllib.parse import urlsplit
 import pyotp
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth.signals import user_logged_in
 from django.core import mail, signing
 from django.core.management import call_command
 from django.db import close_old_connections
@@ -227,8 +228,17 @@ class OperatorRequests(unittest.TestCase):
         self.assertNotEqual(first.session['verification_token'], second.session['verification_token'])
         self.get(first, 'accounts:verify_totp'); self.get(second, 'accounts:verify_totp')
         code = pyotp.TOTP(devices[0].secret).now()
-        self.assertEqual(self.post(first, 'accounts:verify_totp', {'verification_code': code}).status_code, 302)
-        self.assertEqual(self.post(second, 'accounts:verify_totp', {'verification_code': code}).status_code, 403)
+        successes = []
+        def recorded_login(sender, request, user, **kwargs):
+            self.assertIs(request.session.get('mfa_authenticated'), True)
+            successes.append(user.pk)
+        user_logged_in.connect(recorded_login, weak=False)
+        try:
+            self.assertEqual(self.post(first, 'accounts:verify_totp', {'verification_code': code}).status_code, 302)
+            self.assertEqual(self.post(second, 'accounts:verify_totp', {'verification_code': code}).status_code, 403)
+        finally:
+            user_logged_in.disconnect(recorded_login)
+        self.assertEqual(successes, [user.pk])
         self.assertEqual(self.get(first, 'accounts:profile').status_code, 200)
         self.assertNotIn(policy.PROOF, second.session)
 
@@ -386,9 +396,20 @@ class OperatorRequests(unittest.TestCase):
                 return self.post(clients[index], 'accounts:verify_webauthn', {'token_response': assertion}).status_code
             finally:
                 close_old_connections()
-        with patch.object(policy, '_challenge', side_effect=preloaded), ThreadPoolExecutor(max_workers=2) as executor:
-            results = list(executor.map(authenticate, (0, 1)))
+        successes = []
+        def recorded_login(sender, request, user, **kwargs):
+            if user.pk == expected_user_pk:
+                self.assertIs(request.session.get('mfa_authenticated'), True)
+                successes.append(user.pk)
+        expected_user_pk = user.pk
+        user_logged_in.connect(recorded_login, weak=False)
+        try:
+            with patch.object(policy, '_challenge', side_effect=preloaded), ThreadPoolExecutor(max_workers=2) as executor:
+                results = list(executor.map(authenticate, (0, 1)))
+        finally:
+            user_logged_in.disconnect(recorded_login)
         self.assertEqual(sorted(results), [302, 403])
+        self.assertEqual(successes, [user.pk])
         authorized = [self.get(client, 'accounts:profile').status_code == 200 for client in clients]
         self.assertEqual(authorized.count(True), 1)
 

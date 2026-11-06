@@ -136,10 +136,11 @@ def challenge_nonce():
     return secrets.token_urlsafe(32)
 
 
-def complete_mfa(request, user, device, code=None, *, verification_token):
+def prepare_mfa(request, user, device, code=None, *, verification_token):
+    """Accept the factor before Django emits its successful-login signal."""
     fresh_user = get_user_model().objects.get(pk=user.pk)
-    if (not _local(fresh_user, request) or device is None
-            or request.session.get('_auth_user_hash') != fresh_user.get_session_auth_hash()):
+    if (not _local(fresh_user) or device is None
+            or getattr(user, 'backend', None) != LOCAL_BACKEND):
         logout(request)
         raise PermissionDenied('Sign in again')
     factors = _factors(fresh_user)
@@ -178,7 +179,12 @@ def complete_mfa(request, user, device, code=None, *, verification_token):
         if not accepted:
             logout(request)
             raise PermissionDenied('Use a new verification code and sign in again')
-    request.session[PROOF] = dict(_stamp(fresh_user), issued=time.time(), factors=_digest(factors))
+    return fresh_user, dict(_stamp(fresh_user), issued=time.time(), factors=_digest(factors))
+
+
+def complete_mfa(request, proof):
+    """Attach the accepted request-local proof after Django rotates the session."""
+    request.session[PROOF] = proof
     request.session['mfa_authenticated'] = True
     for key in (ENROLL, SEED, 'verification_token', 'webauthn_challenge'):
         request.session.pop(key, None)

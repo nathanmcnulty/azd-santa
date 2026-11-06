@@ -14,7 +14,7 @@ INPUTS = {
 }
 OUTPUTS = {
     'server/server/settings.py': '8569481c18962c007698dc4492c2ea402eb49ec2fb1d44249274866642fcfb68',
-    'server/accounts/views/auth.py': '2226fbffc415966c97b23e6e16d3a568ca7a4af6779f76f0877b700f2d61720a',
+    'server/accounts/views/auth.py': 'c5b6d224a95c3c0ab89c12b24f1971d18af27548ea67461f3598721a14fc0c5c',
     'server/accounts/forms.py': '768fa8e8537f8d77ef223334a60454afb538d4b040ad7d746258f7b05ea9ac2a',
     'server/accounts/views/user.py': 'cdf2706180277a9eee695cf1a6aca561b2f941bec0dd7b7d690085590d19440c',
     'server/accounts/middleware.py': '0728dff4626a67bec29895bd1a1037e5c4f720f30c8ef436219be39a25c8885a',
@@ -30,16 +30,22 @@ PATCHES = {
     )],
     'server/accounts/views/auth.py': [
         ('from accounts.events import post_failed_verification_event',
-         'from azd_santa_operator import begin_enrollment, complete_mfa, challenge_nonce\nfrom accounts.events import post_failed_verification_event'),
+         'from azd_santa_operator import begin_enrollment, prepare_mfa, complete_mfa, challenge_nonce, LOCAL_BACKEND\nfrom accounts.events import post_failed_verification_event'),
         ('token = signing.dumps({"auth_backend": user.backend,',
          'token = signing.dumps({"auth_backend": user.backend,\n                                       "azd_auth_hash": user.get_session_auth_hash(),\n                                       "azd_nonce": challenge_nonce(),'),
         ('        self.request.session["mfa_authenticated"] = True\n',
-         '        verification_token = self.request.session["verification_token"]\n        self.request.session["mfa_authenticated"] = True\n'),
+         '        verification_token = self.request.session["verification_token"]\n'
+         '        try:\n'
+         '            accepted_user, proof = prepare_mfa(self.request, form.user, form.verified_device, form.cleaned_data.get("verification_code"), verification_token=verification_token)\n'
+         '        except PermissionDenied:\n'
+         '            post_failed_verification_event(self.request, form)\n'
+         '            raise\n'
+         '        self.request.session["mfa_authenticated"] = True\n'),
         ('                auth_login(request, form.get_user())\n',
          '                auth_login(request, form.get_user())\n                begin_enrollment(request, form.get_user())\n'),
         ('        auth_login(self.request, form.user)  # form.user has the backend (carried by the token from the login view)\n',
-         '        auth_login(self.request, form.user)  # form.user has the backend (carried by the token from the login view)\n'
-         '        complete_mfa(self.request, form.user, form.verified_device, form.cleaned_data.get("verification_code"), verification_token=verification_token)\n'),
+         '        auth_login(self.request, accepted_user, backend=LOCAL_BACKEND)\n'
+         '        complete_mfa(self.request, proof)\n'),
     ],
     'server/accounts/forms.py': [
         ('class AddTOTPForm(forms.Form):',
