@@ -5,6 +5,10 @@ Describe 'Private server qualification tooling' {
         $output = & python (Join-Path $root 'tests/test_security_store.py') 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
     }
+    It 'guards fresh Santa-only qualification without switching existing projects' {
+        $output = & python (Join-Path $root 'tests/test_santa_profile_qualification.py') 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
+    }
     It 'checks private operator recovery packaging without claiming runtime acceptance' {
         $output = & python (Join-Path $root 'tests/test_operator_recovery_package.py') 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")

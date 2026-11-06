@@ -141,6 +141,11 @@ class OperatorRequests(TransactionTestCase):
         client.get(response['Location'], secure=True)
         self.assertEqual(self.post(client, reverse('accounts:verify_totp'), dict(verification_code=pyotp.TOTP(seed).now())).status_code, 302)
         self.assertEqual(client.get(reverse('accounts:profile'), secure=True).status_code, 200)
+        # The isolated test DB is still empty of Santa configurations. Exercise
+        # its authenticated real template, including the optional Jamf link.
+        from zentral.contrib.santa.models import Configuration
+        self.assertEqual(Configuration.objects.count(), 0)
+        self.assertEqual(client.get(reverse('santa:index'), secure=True).status_code, 200)
 
     def test_any_existing_human_blocks_bootstrap_including_inactive_and_remote(self):
         for flags in ({'is_active': False}, {'is_remote': True}, {}):
