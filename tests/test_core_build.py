@@ -78,7 +78,7 @@ class CoreBuildTests(unittest.TestCase):
         (source / "server").mkdir()
         (source / "zentral").mkdir()
         (source / "ee").mkdir()
-        (source / "Dockerfile").write_text(UPSTREAM_DOCKERFILE, encoding="utf-8")
+        (source / "Dockerfile").write_bytes(UPSTREAM_DOCKERFILE.encode("utf-8"))
         (source / "LICENSE").write_bytes(UPSTREAM_LICENSE)
         docker_hash = hashlib.sha256((source / "Dockerfile").read_bytes()).hexdigest()
         license_hash = hashlib.sha256((source / "LICENSE").read_bytes()).hexdigest()
@@ -117,6 +117,14 @@ class CoreBuildTests(unittest.TestCase):
         return source, docker_hash, license_hash
 
     def test_render_removes_non_core_stages_and_ee_copy(self) -> None:
+        self.assertEqual(
+            core_build.UPSTREAM_DOCKERFILE_SHA256,
+            "dd06e76e0b325684c0c07734cfb1b951218678fb454b8af18e719f309c2e94e1",
+        )
+        self.assertEqual(
+            core_build.UPSTREAM_LICENSE_SHA256,
+            "00f43b4775da6dcbe63d20b3b2c36e616f35af5595d02c590278e75d9d86793c",
+        )
         rendered = core_build.render_core_dockerfile(UPSTREAM_DOCKERFILE, UPSTREAM_LICENSE)
         self.assertIn("ARG APP_ENV=core", rendered)
         self.assertIn("FROM base-builder AS core-builder", rendered)
@@ -176,7 +184,7 @@ class CoreBuildTests(unittest.TestCase):
             (source / "server").mkdir()
             (source / "zentral").mkdir()
             (source / "ee").mkdir()
-            (source / "Dockerfile").write_text(UPSTREAM_DOCKERFILE, encoding="utf-8")
+            (source / "Dockerfile").write_bytes(UPSTREAM_DOCKERFILE.encode("utf-8"))
             (source / "LICENSE").write_bytes(UPSTREAM_LICENSE)
             docker_hash = hashlib.sha256((source / "Dockerfile").read_bytes()).hexdigest()
             license_hash = hashlib.sha256((source / "LICENSE").read_bytes()).hexdigest()
