@@ -20,6 +20,8 @@ $lock = Get-Content (Join-Path $PSScriptRoot 'zentral-source.lock.json') -Raw | 
 if ($lock.commit -notmatch '^[0-9a-f]{40}$') { throw 'Invalid source pin.' }
 $encoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'prepare_source.py')))
 $coreEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'prepare_core_build.py')))
+$mfaEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'prepare_operator_mfa.py')))
+$policyEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'operator_mfa.py')))
 $script = @"
 set -eu
 umask 077
@@ -37,6 +39,10 @@ with path.open('xb') as output:
     output.write(base64.b64decode('$encoded'))
 with path.with_name('prepare_core_build.py').open('xb') as output:
     output.write(base64.b64decode('$coreEncoded'))
+with path.with_name('prepare_operator_mfa.py').open('xb') as output:
+    output.write(base64.b64decode('$mfaEncoded'))
+with path.with_name('operator_mfa.py').open('xb') as output:
+    output.write(base64.b64decode('$policyEncoded'))
 PY
 python3 "`$root/prepare_source.py" "`$root/source-$($lock.commit)"
 python3 "`$root/prepare_core_build.py" --source "`$root/source-$($lock.commit)/zentral-$($lock.commit)" --output "`$root/source-$($lock.commit)/zentral-$($lock.commit)/Dockerfile.core"

@@ -37,6 +37,9 @@ image retains the exact upstream LICENSE and source/build notices.
 The derived Santa sync view also carries a modification notice for the original
 continuing-credential guard; its exact upstream and resulting hashes are recorded
 in the image. Enrollment quota is kept separate from continuing device authority.
+The operator-MFA experiment similarly marks its reviewed settings, authentication,
+form and password-policy integration changes in the affected Apache/core files.
+The separately installed operator policy module is original Unlicense code.
 
 Zentral's [licensing scheme](https://github.com/zentralopensource/zentral/blob/88e67b3ce49033aab028029937a6e14f7c489073/LICENSE)
 separately covers `ee/` and explicitly marked files with evaluation terms. Those

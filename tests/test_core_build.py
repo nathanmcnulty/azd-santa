@@ -238,6 +238,13 @@ class StoreProvisioningSerializer(StoreSerializer):
 
 
 class CoreBuildTests(unittest.TestCase):
+    def setUp(self):
+        # These small fixtures isolate the existing core derivation. Operator
+        # policy packaging and actual Django behavior have separate acceptance.
+        layer = mock.patch.object(core_build, '_operator_layer', return_value=('pass\n', 'a' * 64))
+        layer.start()
+        self.addCleanup(layer.stop)
+
     def _source(self, root: Path) -> tuple[Path, str, str, str]:
         source = root / "zentral"
         source.mkdir()
@@ -330,6 +337,8 @@ class CoreBuildTests(unittest.TestCase):
             UPSTREAM_REGISTRY,
             UPSTREAM_STORES_BACKENDS,
             UPSTREAM_STORES_SERIALIZERS,
+            operator_program='pass\n',
+            operator_module_sha256='a' * 64,
         )
         self.assertIn("ARG APP_ENV=core", rendered)
         self.assertIn("FROM base-builder AS core-builder", rendered)
