@@ -177,5 +177,14 @@ open until these end-to-end delivery gates are actually verified.
   `50e6be64ec5fa78122fabc334ef4f47065aba54758ffed8fa24e4df3bdeee846`.
   A post-probe sample used approximately 1.6 GiB of container memory in total;
   no fleet-scale or peak-load capacity claim follows from that sample.
-  Reboot, backup/restore, mandatory MFA, credential lifecycle, native Mac behavior
-  and equivalent Container Apps operation remain open gates.
+- Actual Azure restart completed successfully. Boot ID changed from
+  `7730f5ff-f8de-4032-9091-ac703d1b3239` to
+  `be42f48c-6769-49b0-ab7a-7d928fc87d32`. After explicit manual resume with
+  store/consumer readiness checks, database state (including credentials/rule
+  ledger/postflight/counters) matched the pre-reboot readback exactly, and the
+  same two indexed events remained. `record_persistence.py` compares these gates
+  before sending any additional sync traffic; it cannot initialize the fixture.
+  This proves private restart persistence, not automatic service recovery.
+
+Backup/restore, mandatory MFA (#51), credential lifecycle (#52), native Mac
+behavior (#33) and equivalent Container Apps operation (#46) remain open gates.
