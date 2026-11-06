@@ -5,6 +5,10 @@ Describe 'Private server qualification tooling' {
         $output = & python (Join-Path $root 'tests/test_operator_recovery_package.py') 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
     }
+    It 'bounds the real-server decoder and hash-bound integration offline' {
+        $output = & python (Join-Path $root 'tests/test_santa_request_limits.py') 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
+    }
     It 'checks operator policy package integrity without claiming real MFA acceptance' {
         $output = & python (Join-Path $root 'tests/test_operator_mfa_package.py') 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")

@@ -24,6 +24,8 @@ $mfaEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSSc
 $policyEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'operator_mfa.py')))
 $recoveryEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'prepare_operator_recovery.py')))
 $recoveryPolicyEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'operator_recovery.py')))
+$limitsBuildEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'prepare_request_limits.py')))
+$limitsEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'santa_request_limits.py')))
 $script = @"
 set -eu
 umask 077
@@ -49,6 +51,10 @@ with path.with_name('prepare_operator_recovery.py').open('xb') as output:
     output.write(base64.b64decode('$recoveryEncoded'))
 with path.with_name('operator_recovery.py').open('xb') as output:
     output.write(base64.b64decode('$recoveryPolicyEncoded'))
+with path.with_name('prepare_request_limits.py').open('xb') as output:
+    output.write(base64.b64decode('$limitsBuildEncoded'))
+with path.with_name('santa_request_limits.py').open('xb') as output:
+    output.write(base64.b64decode('$limitsEncoded'))
 PY
 python3 "`$root/prepare_source.py" "`$root/source-$($lock.commit)"
 python3 "`$root/prepare_core_build.py" --source "`$root/source-$($lock.commit)/zentral-$($lock.commit)" --output "`$root/source-$($lock.commit)/zentral-$($lock.commit)/Dockerfile.core"

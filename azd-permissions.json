@@ -17,7 +17,7 @@
       "rationale": "Privileged nonproduction evaluation installs Docker tooling, acquires checksum-verified upstream source and submits a bounded private build. It performs no real device enrollment, tenant grant, image publication or production deployment.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/Start-ZentralQualification.ps1", "sha256": "ef3ca43085843680835c012d6e7be3443df972cb1fc1b9f991a3f973d278d50a" },
+        { "path": "experiments/server/Start-ZentralQualification.ps1", "sha256": "e281e33a9a4d370b4c48850ddffb30eaebba6c2c81136fc9afde3f46775b392b" },
         { "path": "experiments/server/bootstrap-host.sh", "sha256": "0dc1df0e859ccb5874b95816c61738e12c09ccb526f7daf9768f86210f1ddddd" }
       ]
     },
