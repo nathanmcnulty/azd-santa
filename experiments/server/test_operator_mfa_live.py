@@ -19,6 +19,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from unittest.mock import patch
+from urllib.parse import urlsplit
 
 import pyotp
 from django.conf import settings
@@ -178,7 +179,8 @@ class OperatorRequests(unittest.TestCase):
                 user.set_password(secrets.token_urlsafe(30)); user.save()
             response = self.get(client, 'accounts:add_totp')
             self.assertEqual(response.status_code, 302)
-            self.assertEqual(response['Location'], reverse('login'))
+            location = urlsplit(response['Location'])
+            self.assertEqual((location.scheme, location.netloc, location.path), ('', '', reverse('login')))
 
     def test_pending_challenge_expires_and_password_reset_invalidates_it(self):
         for scenario in ('expiry', 'password-change'):
