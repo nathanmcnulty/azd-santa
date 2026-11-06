@@ -22,6 +22,11 @@ jobs:
           /bin/zsh -n ./scripts/Test-SantaEndpoint.sh
           /bin/bash -n ./scripts/live-response/Get-SantaHealth.sh
           /bin/bash -n ./scripts/live-response/Get-SantaProfileState.sh
+          /bin/bash -n ./experiments/server/bootstrap-host.sh
+          /bin/bash -n ./experiments/server/diagnose-host.sh
+          /bin/bash -n ./experiments/server/inspect-build.sh
+          /bin/bash -n ./experiments/server/rebuild-core.sh
+          /bin/bash -n ./experiments/server/resume-runtime.sh
 
   validate:
     strategy:

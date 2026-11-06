@@ -34,7 +34,9 @@ def json_text(value):
     return json.dumps(value, indent=2, sort_keys=True) + '\n'
 
 
-def prepare(source, image, lock, destination):
+def prepare(source, image, lock, destination, variant='upstream-evaluation'):
+    if variant not in ('upstream-evaluation', 'core-experiment'):
+        raise ValueError('Unknown evaluation image variant')
     source = Path(source).resolve(strict=True)
     if not source.is_dir() or not IMAGE_ID.fullmatch(image):
         raise ValueError('A source directory and local sha256 image ID are required')
@@ -128,14 +130,19 @@ def prepare(source, image, lock, destination):
         'scope': 'synthetic-loopback-evaluation-only', 'upstream_commit': COMMIT,
         'upstream_source': SOURCE_URL, 'checked_source_files': SOURCE_HASHES,
         'local_image_id': image, 'dependency_images': lock,
-        'limitations': ['Not a core-only image or production license clearance',
+        'declared_image_variant': variant,
+        'limitations': ['Image variant is a caller declaration, not production license clearance',
                         'Caller must verify full source archive and build binding',
                         'Memory caps are test constraints, not proven sizing',
                         'No real device enrollment, public TLS or device authentication'],
     }))
+    variant_notice = (
+        'Core derivation claimed; verify actual image contents and dependency licenses.\n'
+        if variant == 'core-experiment' else
+        'The standard upstream image includes ee/ under its evaluation license.\n')
     write_new(destination / 'EVALUATION-ONLY.txt',
               f'Private synthetic Zentral evaluation only. Source: {SOURCE_URL}\n'
-              'The upstream image includes ee/ under its evaluation license.\n'
+              + variant_notice +
               'Do not publish this image or treat it as a core-only production package.\n'
               'No real devices, public ingress or production credentials.\n'
               'HTTP is loopback-only; generated payload HTTPS URLs are not qualified.\n'
@@ -148,10 +155,11 @@ def main():
     parser.add_argument('--image', required=True)
     parser.add_argument('--lock', required=True)
     parser.add_argument('--destination', required=True)
+    parser.add_argument('--variant', choices=('upstream-evaluation', 'core-experiment'), default='upstream-evaluation')
     args = parser.parse_args()
     with open(args.lock, encoding='utf-8') as stream:
         lock = json.load(stream)
-    prepare(args.source, args.image, lock, args.destination)
+    prepare(args.source, args.image, lock, args.destination, args.variant)
     print('Prepared private synthetic evaluation; no service started.')
 
 

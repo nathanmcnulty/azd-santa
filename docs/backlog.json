@@ -336,7 +336,13 @@
         "Original loopback-only public-v1 subset models bounded synthetic authentication, compressed JSON, replay handling, immutable paging and empty/rollback refusal. This is not a production server, native Santa test, permission grant or deployment.",
         "Offline template validation passed on PowerShell 7.6.6/Pester 6.2.0 with 112/112 repository tests, including the registered 20-case local HTTP harness. Canonical permission schema and backlog rendering checks passed; generated baseline profiles remain unchanged. Native/Azure qualification, deployment and publication are not authorized or completed."
       ],
-      "blocker": null
+      "blocker": null,
+      "claim": {
+        "owner": "codex-santa-backend-coordinator",
+        "worktree": "E:/azd-santa-worktrees/durable-spike-20261022",
+        "baseRevision": "7b396fd4f8eda7b970d7294b525d8cfcd2c627cc",
+        "startedAt": "2026-11-06T19:28:04Z"
+      }
     }
   ]
 }

@@ -128,6 +128,13 @@ class ZentralEvaluation(unittest.TestCase):
         self.prepare()
         self.assertNotEqual(first, self.read('compose.json')['name'])
 
+    def test_core_variant_is_declared_not_license_clearance(self):
+        with patch.dict(generator.SOURCE_HASHES, self.hashes, clear=True):
+            generator.prepare(self.source, self.image, self.lock, self.destination, 'core-experiment')
+        self.assertEqual(self.read('provenance.json')['declared_image_variant'], 'core-experiment')
+        self.assertIn('verify actual image contents', (self.destination / 'EVALUATION-ONLY.txt').read_text())
+        self.assertNotIn('image includes ee/', (self.destination / 'EVALUATION-ONLY.txt').read_text())
+
     @unittest.skipIf(os.name == 'nt', 'POSIX container configuration access')
     def test_restrictive_umask_keeps_nonsecret_container_config_readable(self):
         previous = os.umask(0o077)

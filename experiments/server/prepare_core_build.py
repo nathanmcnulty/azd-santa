@@ -25,7 +25,14 @@ UPSTREAM_LICENSE_SHA256 = "00f43b4775da6dcbe63d20b3b2c36e616f35af5595d02c590278e
 UPSTREAM_REGISTRY_SHA256 = "d216a4a58acb8258794bd67db64dec5f6a69ebfe8d93d5ebbe1b702e88704cca"
 CORE_REGISTRY_SHA256 = "2c2aceac8fb47a73a418b471a87e0a47e2c852a7f57e7022e27f400aa79b261f"
 REGISTRY_PATH = "server/realms/backends/registry.py"
+UPSTREAM_STORES_BACKENDS_SHA256 = "7db6c71eb508bce42d92803c9dc83799fd7d5dbacec577a47f98aaf06b0a5d4a"
+CORE_STORES_BACKENDS_SHA256 = "3a61216f59b69808a926e7063737004fc0b60d4e8642427f22323eca61a7a09b"
+STORES_BACKENDS_PATH = "zentral/core/stores/backends/all.py"
+UPSTREAM_STORES_SERIALIZERS_SHA256 = "8fb0083e1b2e867372a5f3b7bfbe037d1903aa77ef09308ae7db47beab4cef3d"
+CORE_STORES_SERIALIZERS_SHA256 = "85c7f6dfc6a8ccfdd5aef35827d9d4aa5baa3b557d84caec53d56bffd01abb66"
+STORES_SERIALIZERS_PATH = "zentral/core/stores/serializers.py"
 
+# Apache-2.0 upstream snapshot at the pin above; see THIRD_PARTY_NOTICES.md.
 UPSTREAM_REGISTRY = b"""from realms.backends.ldap import LDAPRealmBackend
 from realms.backends.openidc import OpenIDConnectRealmBackend
 from realms.backends.saml import SAMLRealmBackend
@@ -45,6 +52,33 @@ backend_classes = {
     "ldap": LDAPRealmBackend,
 }
 """
+
+STORES_BACKENDS_REMOVED_LINES = (
+    b'    Datadog = "DATADOG", "Datadog"\n',
+    b'    Panther = "PANTHER", "Panther"\n',
+    b'    Snowflake = "SNOWFLAKE", "Snowflake"\n',
+    b'    Splunk = "SPLUNK", "Splunk"\n',
+    b'    SumoLogic = "SUMO_LOGIC", "Sumo Logic"\n',
+)
+STORES_SERIALIZERS_REMOVED_LINES = (
+    b"from zentral.core.stores.backends.datadog import DatadogStoreSerializer\n",
+    b"from zentral.core.stores.backends.panther import PantherStoreSerializer\n",
+    b"from zentral.core.stores.backends.snowflake import SnowflakeStoreSerializer\n",
+    b"from zentral.core.stores.backends.splunk import SplunkStoreSerializer\n",
+    b"from zentral.core.stores.backends.sumo_logic import SumoLogicStoreSerializer\n",
+    b'    datadog_kwargs = DatadogStoreSerializer(source="get_datadog_kwargs", required=False, allow_null=True)\n',
+    b'    panther_kwargs = PantherStoreSerializer(source="get_panther_kwargs", required=False, allow_null=True)\n',
+    b'    snowflake_kwargs = SnowflakeStoreSerializer(source="get_snowflake_kwargs", required=False, allow_null=True)\n',
+    b'    splunk_kwargs = SplunkStoreSerializer(source="get_splunk_kwargs", required=False, allow_null=True)\n',
+    b'    sumo_logic_kwargs = SumoLogicStoreSerializer(source="get_sumo_logic_kwargs", required=False, allow_null=True)\n',
+    b'            "datadog_kwargs",\n',
+    b'            "panther_kwargs",\n',
+    b'            "snowflake_kwargs",\n',
+    b'            "splunk_kwargs",\n',
+    b'            "sumo_logic_kwargs",\n',
+)
+STORES_BACKENDS_NOTICE = b"# Modified by azd-santa: optional enterprise store backends omitted; core backends retained.\n"
+STORES_SERIALIZERS_NOTICE = b"# Modified by azd-santa: optional enterprise store backends and serializer fields omitted; core backends retained.\n"
 
 
 def _sha256(path: Path) -> str:
@@ -67,6 +101,63 @@ def narrow_core_registry(registry_bytes: bytes, *, expected_sha256: str = UPSTRE
     if hashlib.sha256(CORE_REGISTRY_NARROWED).hexdigest() != CORE_REGISTRY_SHA256:
         raise ValueError("internal narrowed registry hash does not match its reviewed value")
     return CORE_REGISTRY_NARROWED
+
+
+def narrow_core_store_file(
+    file_bytes: bytes,
+    *,
+    expected_sha256: str,
+    output_sha256: str,
+    removed_lines: tuple[bytes, ...],
+    notice: bytes,
+    label: str,
+) -> bytes:
+    """Remove only reviewed EE store lines from one exact upstream core file."""
+
+    actual_sha256 = hashlib.sha256(file_bytes).hexdigest()
+    if actual_sha256 != expected_sha256.lower():
+        raise ValueError(
+            f"unexpected {label} input: expected {expected_sha256}, got {actual_sha256}"
+        )
+    narrowed = file_bytes
+    for line in removed_lines:
+        if narrowed.count(line) != 1:
+            raise ValueError(f"unexpected {label} shape; expected one reviewed line")
+        narrowed = narrowed.replace(line, b"", 1)
+    narrowed = notice + narrowed
+    actual_output_sha256 = hashlib.sha256(narrowed).hexdigest()
+    if actual_output_sha256 != output_sha256.lower():
+        raise ValueError(
+            f"internal narrowed {label} hash mismatch: "
+            f"expected {output_sha256}, got {actual_output_sha256}"
+        )
+    return narrowed
+
+
+def narrow_core_store_backends(file_bytes: bytes, *, expected_sha256: str = UPSTREAM_STORES_BACKENDS_SHA256) -> bytes:
+    return narrow_core_store_file(
+        file_bytes,
+        expected_sha256=expected_sha256,
+        output_sha256=CORE_STORES_BACKENDS_SHA256,
+        removed_lines=STORES_BACKENDS_REMOVED_LINES,
+        notice=STORES_BACKENDS_NOTICE,
+        label="core store backend registry",
+    )
+
+
+def narrow_core_store_serializers(
+    file_bytes: bytes,
+    *,
+    expected_sha256: str = UPSTREAM_STORES_SERIALIZERS_SHA256,
+) -> bytes:
+    return narrow_core_store_file(
+        file_bytes,
+        expected_sha256=expected_sha256,
+        output_sha256=CORE_STORES_SERIALIZERS_SHA256,
+        removed_lines=STORES_SERIALIZERS_REMOVED_LINES,
+        notice=STORES_SERIALIZERS_NOTICE,
+        label="core store serializers",
+    )
 
 
 def _git_head(source_root: Path) -> str:
@@ -102,6 +193,8 @@ def validate_source(
     expected_dockerfile_sha256: str = UPSTREAM_DOCKERFILE_SHA256,
     expected_license_sha256: str = UPSTREAM_LICENSE_SHA256,
     expected_registry_sha256: str = UPSTREAM_REGISTRY_SHA256,
+    expected_stores_backends_sha256: str = UPSTREAM_STORES_BACKENDS_SHA256,
+    expected_stores_serializers_sha256: str = UPSTREAM_STORES_SERIALIZERS_SHA256,
 ) -> None:
     """Fail closed unless *source_root* is the reviewed upstream checkout."""
 
@@ -116,6 +209,8 @@ def validate_source(
         source_root / "zentral",
         source_root / "ee",
         source_root / REGISTRY_PATH,
+        source_root / STORES_BACKENDS_PATH,
+        source_root / STORES_SERIALIZERS_PATH,
     )
     missing = [str(path.relative_to(source_root)) for path in required if not path.exists()]
     if missing:
@@ -156,6 +251,20 @@ def validate_source(
             f"expected {expected_registry_sha256}, got {actual_registry_sha256}"
         )
 
+    actual_stores_backends_sha256 = _sha256(source_root / STORES_BACKENDS_PATH)
+    if actual_stores_backends_sha256 != expected_stores_backends_sha256.lower():
+        raise ValueError(
+            "unexpected core store backend registry SHA256: "
+            f"expected {expected_stores_backends_sha256}, got {actual_stores_backends_sha256}"
+        )
+
+    actual_stores_serializers_sha256 = _sha256(source_root / STORES_SERIALIZERS_PATH)
+    if actual_stores_serializers_sha256 != expected_stores_serializers_sha256.lower():
+        raise ValueError(
+            "unexpected core store serializers SHA256: "
+            f"expected {expected_stores_serializers_sha256}, got {actual_stores_serializers_sha256}"
+        )
+
 
 def _replace_once(text: str, old: str, new: str, label: str) -> str:
     if text.count(old) != 1:
@@ -182,13 +291,63 @@ def _registry_transform_script(registry_bytes: bytes, expected_sha256: str) -> s
     )
 
 
+def _store_transform_script(
+    stores_backends_bytes: bytes,
+    stores_serializers_bytes: bytes,
+    *,
+    stores_backends_sha256: str,
+    stores_serializers_sha256: str,
+) -> str:
+    backends = narrow_core_store_backends(stores_backends_bytes, expected_sha256=stores_backends_sha256)
+    serializers = narrow_core_store_serializers(
+        stores_serializers_bytes,
+        expected_sha256=stores_serializers_sha256,
+    )
+    removed_lines_b64 = lambda lines: "[" + ", ".join(
+        f"b64decode('{base64.b64encode(line).decode('ascii')}')" for line in lines
+    ) + "]"
+    return (
+        "from base64 import b64decode\n"
+        "from hashlib import sha256\n"
+        "from pathlib import Path\n"
+        "def narrow(path, expected_sha256, output_sha256, removed_lines, notice):\n"
+        "    actual = path.read_bytes()\n"
+        "    if sha256(actual).hexdigest() != expected_sha256: raise RuntimeError(f'{path} input hash mismatch')\n"
+        "    narrowed = actual\n"
+        "    for line in removed_lines:\n"
+        "        if narrowed.count(line) != 1: raise RuntimeError(f'{path} input shape mismatch')\n"
+        "        narrowed = narrowed.replace(line, b'', 1)\n"
+        "    narrowed = notice + narrowed\n"
+        "    if sha256(narrowed).hexdigest() != output_sha256: raise RuntimeError(f'{path} output hash mismatch')\n"
+        "    path.write_bytes(narrowed)\n"
+        "narrow(\n"
+        f"    Path('/zentral/{STORES_BACKENDS_PATH}'),\n"
+        f"    '{stores_backends_sha256}',\n"
+        f"    '{CORE_STORES_BACKENDS_SHA256}',\n"
+        f"    {removed_lines_b64(STORES_BACKENDS_REMOVED_LINES)},\n"
+        f"    b64decode('{base64.b64encode(STORES_BACKENDS_NOTICE).decode('ascii')}'),\n"
+        ")\n"
+        "narrow(\n"
+        f"    Path('/zentral/{STORES_SERIALIZERS_PATH}'),\n"
+        f"    '{stores_serializers_sha256}',\n"
+        f"    '{CORE_STORES_SERIALIZERS_SHA256}',\n"
+        f"    {removed_lines_b64(STORES_SERIALIZERS_REMOVED_LINES)},\n"
+        f"    b64decode('{base64.b64encode(STORES_SERIALIZERS_NOTICE).decode('ascii')}'),\n"
+        ")\n"
+    )
+
+
 def render_core_dockerfile(
     upstream_dockerfile: str,
     upstream_license: bytes,
     upstream_registry: bytes,
+    upstream_stores_backends: bytes,
+    upstream_stores_serializers: bytes,
     *,
     license_sha256: str = UPSTREAM_LICENSE_SHA256,
     registry_sha256: str = UPSTREAM_REGISTRY_SHA256,
+    stores_backends_sha256: str = UPSTREAM_STORES_BACKENDS_SHA256,
+    stores_serializers_sha256: str = UPSTREAM_STORES_SERIALIZERS_SHA256,
 ) -> str:
     """Render the reviewed Dockerfile shape with only the core runtime stage."""
 
@@ -196,6 +355,14 @@ def render_core_dockerfile(
         raise ValueError("upstream Dockerfile no longer has the reviewed EE copy boundary")
     registry_transform_b64 = base64.b64encode(
         _registry_transform_script(upstream_registry, registry_sha256).encode("utf-8")
+    ).decode("ascii")
+    stores_transform_b64 = base64.b64encode(
+        _store_transform_script(
+            upstream_stores_backends,
+            upstream_stores_serializers,
+            stores_backends_sha256=stores_backends_sha256,
+            stores_serializers_sha256=stores_serializers_sha256,
+        ).encode("utf-8")
     ).decode("ascii")
 
     rendered = _replace_once(
@@ -274,6 +441,17 @@ def render_core_dockerfile(
         "COPY ./server /zentral/server\n" + registry_transform,
         "core registry transform anchor",
     )
+    stores_transform = (
+        "RUN printf '%s' '" + stores_transform_b64 + "' | base64 -d > /tmp/prepare_core_stores.py \\\n"
+        "    && python /tmp/prepare_core_stores.py \\\n"
+        "    && rm /tmp/prepare_core_stores.py\n"
+    )
+    rendered = _replace_once(
+        rendered,
+        "COPY ./zentral /zentral/zentral\n",
+        "COPY ./zentral /zentral/zentral\n" + stores_transform,
+        "core stores transform anchor",
+    )
     rendered = _replace_once(
         rendered,
         "RUN printf \"version = \\\"\\\"\\\"$APP_VERSION\\\"\\\"\\\"\\n\" > /zentral/server/base/deployment.py\n",
@@ -282,6 +460,8 @@ def render_core_dockerfile(
         "    && test -d /zentral/server/accounts \\\n"
         "    && test -d /zentral/server/realms \\\n"
         "    && test -d /zentral/zentral/contrib/santa \\\n"
+        "    && test -f /zentral/zentral/core/stores/backends/all.py \\\n"
+        "    && test -f /zentral/zentral/core/stores/serializers.py \\\n"
         "    && printf '%s\\n' \\\n"
         "        'UNOFFICIAL CORE-ONLY DERIVED BUILD' \\\n"
         f"        'Zentral source commit: {UPSTREAM_COMMIT}' \\\n"
@@ -290,9 +470,14 @@ def render_core_dockerfile(
         f"        'Upstream LICENSE SHA256: {UPSTREAM_LICENSE_SHA256}' \\\n"
         f"        'Core registry input SHA256: {registry_sha256}' \\\n"
         f"        'Core registry output SHA256: {CORE_REGISTRY_SHA256}' \\\n"
+        f"        'Core stores backend registry input SHA256: {stores_backends_sha256}' \\\n"
+        f"        'Core stores backend registry output SHA256: {CORE_STORES_BACKENDS_SHA256}' \\\n"
+        f"        'Core stores serializers input SHA256: {stores_serializers_sha256}' \\\n"
+        f"        'Core stores serializers output SHA256: {CORE_STORES_SERIALIZERS_SHA256}' \\\n"
         "        'The upstream ee tree is intentionally omitted; no EE functionality is included.' \\\n"
         "        'The core registry was narrowed to LDAP; EE OIDC and SAML backends are unavailable.' \\\n"
-        "        'The only source transformation is the reviewed core registry narrowing; review licensing before production use.' \\\n"
+        "        'Core store registry and serializer files were narrowed to Apache/core backends; EE store backends are unavailable.' \\\n"
+        "        'The only source transformations are the reviewed registry and core store narrowings; review licensing before production use.' \\\n"
         "        > /usr/share/doc/zentral/CORE_BUILD_NOTICE.txt\n",
         "runtime assertion and build notice anchor",
     )
@@ -309,6 +494,16 @@ def render_core_dockerfile(
         raise ValueError("derived Dockerfile lacks core-runner")
     if "COPY ./server /zentral/server\nRUN printf '%s' '" not in rendered:
         raise ValueError("derived Dockerfile lacks the core registry transform")
+    if "COPY ./zentral /zentral/zentral\nRUN printf '%s' '" not in rendered:
+        raise ValueError("derived Dockerfile lacks the core stores transform")
+    rendered += (
+        "\n# azd-santa: test actual non-root access, not only root path existence.\n"
+        "RUN python -c \"from pathlib import Path; "
+        "[Path(p).read_bytes() for p in "
+        "('/zentral/server/server/settings.py', "
+        "'/zentral/server/realms/backends/registry.py', "
+        "'/zentral/zentral/contrib/santa/public_views.py')]\"\n"
+    )
     return rendered
 
 
@@ -325,6 +520,8 @@ def derive_core_dockerfile(source_root: Path, output_path: Path) -> Path:
         expected_dockerfile_sha256=UPSTREAM_DOCKERFILE_SHA256,
         expected_license_sha256=UPSTREAM_LICENSE_SHA256,
         expected_registry_sha256=UPSTREAM_REGISTRY_SHA256,
+        expected_stores_backends_sha256=UPSTREAM_STORES_BACKENDS_SHA256,
+        expected_stores_serializers_sha256=UPSTREAM_STORES_SERIALIZERS_SHA256,
     )
     try:
         output_path.relative_to(source_root)
@@ -336,8 +533,12 @@ def derive_core_dockerfile(source_root: Path, output_path: Path) -> Path:
         (source_root / "Dockerfile").read_text(encoding="utf-8"),
         (source_root / "LICENSE").read_bytes(),
         (source_root / REGISTRY_PATH).read_bytes(),
+        (source_root / STORES_BACKENDS_PATH).read_bytes(),
+        (source_root / STORES_SERIALIZERS_PATH).read_bytes(),
         license_sha256=UPSTREAM_LICENSE_SHA256,
         registry_sha256=UPSTREAM_REGISTRY_SHA256,
+        stores_backends_sha256=UPSTREAM_STORES_BACKENDS_SHA256,
+        stores_serializers_sha256=UPSTREAM_STORES_SERIALIZERS_SHA256,
     )
     with output_path.open("x", encoding="utf-8", newline="\n") as stream:
         stream.write(rendered)
