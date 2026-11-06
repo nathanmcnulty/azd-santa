@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import importlib.util
 import subprocess
 from pathlib import Path
 
@@ -373,6 +374,8 @@ def render_core_dockerfile(
     upstream_stores_backends: bytes,
     upstream_stores_serializers: bytes,
     *,
+    operator_program: str,
+    operator_module_sha256: str,
     license_sha256: str = UPSTREAM_LICENSE_SHA256,
     registry_sha256: str = UPSTREAM_REGISTRY_SHA256,
     stores_backends_sha256: str = UPSTREAM_STORES_BACKENDS_SHA256,
@@ -481,6 +484,12 @@ def render_core_dockerfile(
         "    && python /tmp/prepare_sync_guard.py \\\n"
         "    && rm /tmp/prepare_sync_guard.py\n"
     )
+    operator_b64 = base64.b64encode(operator_program.encode('utf-8')).decode('ascii')
+    stores_transform += (
+        "RUN printf '%s' '" + operator_b64 + "' | base64 -d > /tmp/prepare_operator_mfa.py \\\n"
+        "    && python /tmp/prepare_operator_mfa.py \\\n"
+        "    && rm /tmp/prepare_operator_mfa.py\n"
+    )
     rendered = _replace_once(
         rendered,
         "COPY ./zentral /zentral/zentral\n",
@@ -514,6 +523,8 @@ def render_core_dockerfile(
         "        'Core store registry and serializer files were narrowed to Apache/core backends; EE store backends are unavailable.' \\\n"
         f"        'Santa sync view input SHA256: {UPSTREAM_SYNC_VIEW_SHA256}' \\\n"
         f"        'Santa sync view output SHA256: {CORE_SYNC_VIEW_SHA256}' \\\n"
+        f"        'Original operator MFA module SHA256: {operator_module_sha256}' \\\n"
+        "        'Core authentication/settings/forms integrate mandatory local operator MFA; human API tokens are denied.' \\\n"
         "        'An original sync credential guard enforces revocation/expiry without charging enrollment quota.' \\\n"
         "        'Source transformations are the reviewed registry/store narrowings and sync credential guard; review licensing before production use.' \\\n"
         "        > /usr/share/doc/zentral/CORE_BUILD_NOTICE.txt\n",
@@ -540,9 +551,18 @@ def render_core_dockerfile(
         "[Path(p).read_bytes() for p in "
         "('/zentral/server/server/settings.py', "
         "'/zentral/server/realms/backends/registry.py', "
+        "'/zentral/server/azd_santa_operator.py', "
         "'/zentral/zentral/contrib/santa/public_views.py')]\"\n"
     )
     return rendered
+
+
+def _operator_layer(source_root):
+    helper = Path(__file__).with_name('prepare_operator_mfa.py')
+    spec = importlib.util.spec_from_file_location('prepare_operator_mfa', helper)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.docker_program(source_root, Path(__file__).with_name('operator_mfa.py'))
 
 
 def derive_core_dockerfile(source_root: Path, output_path: Path) -> Path:
@@ -567,12 +587,15 @@ def derive_core_dockerfile(source_root: Path, output_path: Path) -> Path:
         raise ValueError("output must be an absent path inside the upstream build context") from exc
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    operator_program, operator_sha = _operator_layer(source_root)
     rendered = render_core_dockerfile(
         (source_root / "Dockerfile").read_text(encoding="utf-8"),
         (source_root / "LICENSE").read_bytes(),
         (source_root / REGISTRY_PATH).read_bytes(),
         (source_root / STORES_BACKENDS_PATH).read_bytes(),
         (source_root / STORES_SERIALIZERS_PATH).read_bytes(),
+        operator_program=operator_program,
+        operator_module_sha256=operator_sha,
         license_sha256=UPSTREAM_LICENSE_SHA256,
         registry_sha256=UPSTREAM_REGISTRY_SHA256,
         stores_backends_sha256=UPSTREAM_STORES_BACKENDS_SHA256,

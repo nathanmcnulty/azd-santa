@@ -1,6 +1,10 @@
 #Requires -Version 7.6
 Describe 'Private server qualification tooling' {
     BeforeAll { $root = Split-Path $PSScriptRoot -Parent }
+    It 'checks operator policy package integrity without claiming real MFA acceptance' {
+        $output = & python (Join-Path $root 'tests/test_operator_mfa_package.py') 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
+    }
     It 'passes the offline pinned archive acquisition tests' {
         $output = & python (Join-Path $root 'tests/test_source_acquisition.py') 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
