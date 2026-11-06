@@ -26,8 +26,12 @@ if __name__ == '__main__':
     parser.add_argument('--compose', required=True)
     parser.add_argument('--fixture', required=True)
     parser.add_argument('--image', required=True)
+    parser.add_argument('--project-name', action='store_true')
     args = parser.parse_args()
     compose, digest = validate_selection(args.compose, args.fixture, args.image)
     if compose.parent != Path('/var/lib/azd-santa-qualification/runtime-fixed'):
         raise ValueError('Only the dedicated private qualification runtime is supported')
-    print('SANTA_EXPLICIT_RUNTIME_BINDING_OK ' + digest)
+    if args.project_name:
+        print(json.loads(compose.read_text())['name'])
+    else:
+        print('SANTA_EXPLICIT_RUNTIME_BINDING_OK ' + digest)

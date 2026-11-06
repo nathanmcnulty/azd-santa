@@ -73,6 +73,8 @@ def run(compose_path, fixture_path):
     def finish(passed):
         receipt = dict(scope='private-synthetic-credential-lifecycle', commit=live.COMMIT,
             compose_sha256=digest, passed=passed, observations=observations,
+            harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            sync_harness_sha256=hashlib.sha256(Path(live.__file__).read_bytes()).hexdigest(),
             limitation='Actual loopback server only; no native Mac, backup restoration or ingress proof')
         write_private(receipt_path, receipt)
         print(json.dumps(receipt))
@@ -103,7 +105,8 @@ s.secret=new_secret;s.revoked_at=None;s.save(update_fields=['secret','revoked_at
 print('SANTA_SYNTHETIC_JSON:'+json.dumps({'rotated':True}))
 ''')
     live.validate_fixture(rotated, digest)
-    write_private(fixture_path.with_suffix('.rotated.json'), rotated)
+    rotated_path = fixture_path.with_suffix('.rotated.json')
+    write_private(rotated_path, rotated)
     if not reject_stages(compose, rotated, first, first['secret'], 'rotated-old', observations):
         return finish(False)
     for case, device in (('rotated-new', rotated['devices'][0]), ('other-device-after-rotation', second)):
@@ -111,6 +114,13 @@ print('SANTA_SYNTHETIC_JSON:'+json.dumps({'rotated':True}))
         observations.append(dict(case=case, http_status=status))
         if status != 200:
             return finish(False)
+
+    # Both devices are still active here. Prove a complete renewed sync for
+    # the rotated credential and unchanged device, including quota==1 readback,
+    # exact rule paging, event counters and committed postflight. No re-enroll.
+    live.run(compose, rotated_path, initialize=False)
+    observations.append(dict(case='rotated-and-unaffected-full-sync', passed=True,
+                             reinitialized=False, enrolled_request_count_per_device=1))
 
     orm(compose, rotated, '''
 from django.utils import timezone

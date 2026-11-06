@@ -7,10 +7,15 @@ selected=${2:?An explicit current Compose path is required}
 fixture=${3:?The matching fixture path is required}
 image=${4:?The verified immutable image ID is required}
 [[ "$label" =~ ^[a-z0-9-]{2,24}$ ]]
-python3 "$(dirname "${BASH_SOURCE[0]}")/resume_runtime.py" --compose "$selected" --fixture "$fixture" --image "$image"
+project=$(python3 "$(dirname "${BASH_SOURCE[0]}")/resume_runtime.py" --compose "$selected" --fixture "$fixture" --image "$image" --project-name)
+echo "SANTA_EXPLICIT_RUNTIME_BINDING_OK $project"
+# Do not inherit another Compose namespace, context, file or env-file selection.
+for override in "${!COMPOSE_@}" "${!DOCKER_@}"; do
+    if test -n "$override"; then unset "$override"; fi
+done
 logs="$root/resume-$label"
 mkdir -m 700 "$logs"
-compose=(docker --host unix:///var/run/docker.sock compose -f "$selected")
+compose=(docker --host unix:///var/run/docker.sock compose --project-name "$project" -f "$selected")
 test "$(sysctl -n vm.max_map_count)" = 1048576
 "${compose[@]}" config --quiet
 timeout 120 "${compose[@]}" up --detach db redis rabbitmq elastic
