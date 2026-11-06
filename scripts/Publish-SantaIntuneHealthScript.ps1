@@ -6,6 +6,8 @@ param(
     [Parameter(Mandatory)][string] $ExpectedGroupDisplayName,
     [Parameter(Mandatory)][string] $ExpectedDeviceName,
     [Parameter(Mandatory)][string] $ExpectedAccount,
+    [ValidateSet('Default','NormalBrowser')][string] $AuthenticationMode = 'Default',
+    [string] $GraphClientId,
     [string] $ScriptPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'scripts/live-response/Get-SantaHealth.sh'),
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')][string] $EnvironmentName = 'default',
     [string] $ReceiptPath,
@@ -14,6 +16,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+Import-Module (Join-Path $PSScriptRoot 'Santa.GraphSession.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Santa.Template.psm1') -Force
 $lock = Get-SantaLock
 if (-not $ReceiptPath) { $ReceiptPath = Join-Path $root ".azure/$EnvironmentName/azd-santa-intune-health-script-state.json" }
@@ -33,10 +36,7 @@ if (-not $Apply) {
 if (-not $PSCmdlet.ShouldProcess("$ExpectedDeviceName via $ExpectedGroupDisplayName", "Publish and assign Intune macOS health script $displayName")) { return }
 
 $scopes = @('DeviceManagementScripts.ReadWrite.All','DeviceManagementConfiguration.ReadWrite.All','DeviceManagementManagedDevices.ReadWrite.All','Group.Read.All','Device.Read.All')
-Connect-MgGraph -TenantId $TenantId -Scopes $scopes -ContextScope Process -NoWelcome
-$context = Get-MgContext
-if ($context.TenantId -ne $TenantId -or $context.Account -ne $ExpectedAccount) { throw "Microsoft Graph context does not match the authorized tenant/account: $($context.Account) / $($context.TenantId)" }
-foreach ($scope in $scopes) { if ($scope -notin $context.Scopes) { throw "Missing required delegated scope '$scope'." } }
+$context = Initialize-SantaGraphSession -TenantId $TenantId -ExpectedAccount $ExpectedAccount -Scopes $scopes -ContextScope Process -ProbeUri "/v1.0/groups/${PilotGroupId}?`$select=id" -AuthenticationMode $AuthenticationMode -GraphClientId $GraphClientId
 
 function Invoke-GraphJson {
     param([Parameter(Mandatory)][ValidateSet('GET','POST','PATCH')][string] $Method, [Parameter(Mandatory)][string] $Uri, [object] $Body)

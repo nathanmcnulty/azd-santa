@@ -3,12 +3,15 @@
 param(
     [Parameter(Mandatory)][string] $TenantId,
     [Parameter(Mandatory)][string] $ExpectedAccount,
+    [ValidateSet('Default','NormalBrowser')][string] $AuthenticationMode = 'Default',
+    [string] $GraphClientId,
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')][string] $EnvironmentName = 'default',
     [string] $PublicationReceiptPath,
     [string] $OutputPath
 )
 
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSScriptRoot 'Santa.GraphSession.psm1') -Force
 $root = Split-Path -Parent $PSScriptRoot
 if (-not $PublicationReceiptPath) { $PublicationReceiptPath = Join-Path $root ".azure/$EnvironmentName/azd-santa-intune-health-script-state.json" }
 if (-not $OutputPath) { $OutputPath = Join-Path $root ".azure/$EnvironmentName/santa-intune-health-result.json" }
@@ -29,10 +32,7 @@ $localHash = (Get-FileHash -LiteralPath $scriptPath -Algorithm SHA256).Hash.ToLo
 if ($publication.sha256 -cne $localHash) { throw 'Published health script hash differs from the current repository artifact.' }
 
 $scopes = @('DeviceManagementScripts.Read.All','DeviceManagementManagedDevices.Read.All','Group.Read.All','Device.Read.All')
-Connect-MgGraph -TenantId $TenantId -Scopes $scopes -ContextScope Process -NoWelcome
-$context = Get-MgContext
-if ($context.TenantId -ne $TenantId -or $context.Account -ne $ExpectedAccount) { throw 'Microsoft Graph is connected to a different tenant or account.' }
-foreach ($scope in $scopes) { if ($scope -notin $context.Scopes) { throw "Missing delegated scope '$scope'." } }
+$context = Initialize-SantaGraphSession -TenantId $TenantId -ExpectedAccount $ExpectedAccount -Scopes $scopes -ContextScope Process -ProbeUri "/v1.0/groups/$($publication.assignmentGroupId)?`$select=id" -AuthenticationMode $AuthenticationMode -GraphClientId $GraphClientId
 
 function Get-GraphObject {
     param([Parameter(Mandatory)][string] $Uri)

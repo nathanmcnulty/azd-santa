@@ -6,6 +6,8 @@ param(
     [Parameter(Mandatory)][string] $ExpectedGroupDisplayName,
     [Parameter(Mandatory)][string] $ExpectedDeviceName,
     [Parameter(Mandatory)][string] $ExpectedAccount,
+    [ValidateSet('Default','NormalBrowser')][string] $AuthenticationMode = 'Default',
+    [string] $GraphClientId,
     [string] $Organization = 'Contoso',
     [switch] $AllowProfileUpdate,
     [switch] $Apply,
@@ -14,6 +16,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSScriptRoot 'Santa.GraphSession.psm1') -Force
 $root = Split-Path -Parent $PSScriptRoot
 Import-Module (Join-Path $PSScriptRoot 'Santa.Template.psm1') -Force
 
@@ -90,14 +93,7 @@ if (-not $Apply) {
 }
 
 $requiredScopes = @('DeviceManagementConfiguration.ReadWrite.All','Group.Read.All')
-$context = Get-MgContext -ErrorAction SilentlyContinue
-if (-not $context -or $context.TenantId -ne $TenantId -or @($requiredScopes | Where-Object { $_ -notin $context.Scopes }).Count -gt 0) {
-    Connect-MgGraph -TenantId $TenantId -Scopes $requiredScopes -ContextScope CurrentUser -NoWelcome
-    $context = Get-MgContext
-}
-if ($context.TenantId -ne $TenantId) { throw "Authenticated tenant '$($context.TenantId)' does not match '$TenantId'." }
-if ($context.Account -ne $ExpectedAccount) { throw "Authenticated account '$($context.Account)' does not match '$ExpectedAccount'." }
-foreach ($scope in $requiredScopes) { if ($scope -notin $context.Scopes) { throw "Missing required delegated scope '$scope'." } }
+$context = Initialize-SantaGraphSession -TenantId $TenantId -ExpectedAccount $ExpectedAccount -Scopes $requiredScopes -ContextScope CurrentUser -ProbeUri "/v1.0/groups/${PilotGroupId}?`$select=id" -AuthenticationMode $AuthenticationMode -GraphClientId $GraphClientId
 
 $group = Invoke-GraphJson -Method GET -Uri "/v1.0/groups/${PilotGroupId}?`$select=id,displayName,securityEnabled,mailEnabled,groupTypes,membershipRule" -Body $null
 if ($group.displayName -ne $ExpectedGroupDisplayName) { throw "Pilot group name drift: expected '$ExpectedGroupDisplayName', found '$($group.displayName)'." }
