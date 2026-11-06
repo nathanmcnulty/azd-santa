@@ -12,6 +12,11 @@ does not pretend an OS process proves a particular human's identity.
 
 ## One management command
 
+The following is a developer qualification invocation. The final `azd` setup
+and recovery flow must invoke it and privately deliver the short-lived link
+without asking an admin to locate files inside a remote container. That wrapper
+is still part of #53; this command alone does not complete customer setup.
+
 Run through the selected deployment's existing authenticated management channel:
 
 ```sh
