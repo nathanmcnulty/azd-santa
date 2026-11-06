@@ -40,6 +40,11 @@ in the image. Enrollment quota is kept separate from continuing device authority
 The operator-MFA experiment similarly marks its reviewed settings, authentication,
 form and password-policy integration changes in the affected Apache/core files.
 The separately installed operator policy module is original Unlicense code.
+The bounded-request integration contains a short exact Apache/core Santa parser
+snapshot used as a hash-bound replacement anchor. Its modified output retains
+upstream terms and adds a modification notice. The separately installed decoder
+and its integration tooling are original Unlicense code; decoder and resulting
+view hashes are recorded in the image build notice.
 
 Zentral's [licensing scheme](https://github.com/zentralopensource/zentral/blob/88e67b3ce49033aab028029937a6e14f7c489073/LICENSE)
 separately covers `ee/` and explicitly marked files with evaluation terms. Those

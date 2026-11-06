@@ -242,6 +242,9 @@ class CoreBuildTests(unittest.TestCase):
         # These small fixtures isolate the existing core derivation. Operator
         # policy packaging and actual Django behavior have separate acceptance.
         layer = mock.patch.object(core_build, '_operator_layer', return_value=('pass\n', 'a' * 64))
+        limits_layer = mock.patch.object(core_build, '_request_limits_layer', return_value=('pass\n', 'b' * 64))
+        limits_layer.start()
+        self.addCleanup(limits_layer.stop)
         layer.start()
         self.addCleanup(layer.stop)
 
@@ -338,6 +341,8 @@ class CoreBuildTests(unittest.TestCase):
             UPSTREAM_STORES_BACKENDS,
             UPSTREAM_STORES_SERIALIZERS,
             operator_program='pass\n',
+            request_limits_program='pass\n',
+            request_limits_sha256='0' * 64,
             operator_module_sha256='a' * 64,
         )
         self.assertIn("ARG APP_ENV=core", rendered)
