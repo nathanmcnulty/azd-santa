@@ -24,6 +24,7 @@ import pyotp
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.core import mail, signing
+from django.core.management import call_command
 from django.db import close_old_connections
 from django.test import Client, override_settings
 from django.test.utils import setup_test_environment, teardown_test_environment
@@ -394,6 +395,9 @@ def run():
     if 'azd_santa_operator.RequireOperatorMFA' not in settings.MIDDLEWARE or settings.DEBUG:
         raise RuntimeError('Expected the non-debug qualified operator policy')
     PRIVATE.mkdir(mode=0o700)
+    # This one-off container bypasses the normal web entrypoint. Prepare the
+    # same real manifest before rendering forms; never substitute dummy storage.
+    call_command('collectstatic', interactive=False, verbosity=0)
     setup_test_environment()
     capture = io.StringIO()
     import contextlib
@@ -413,6 +417,7 @@ def run():
     write('redacted-tests.log', sanitized)
     receipt = dict(scope='private-real-django-operator-mfa', namespace=PREFIX,
         tests=result.testsRun, passed=result.wasSuccessful(),
+        skipped=len(result.skipped),
         failures=[case.id() for case, _ in result.failures], errors=[case.id() for case, _ in result.errors],
         harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         policy_sha256=hashlib.sha256(Path(policy.__file__).read_bytes()).hexdigest(),
