@@ -27,6 +27,7 @@ jobs:
           /bin/bash -n ./experiments/server/inspect-build.sh
           /bin/bash -n ./experiments/server/rebuild-core.sh
           /bin/bash -n ./experiments/server/resume-runtime.sh
+          /bin/bash -n ./experiments/server/build-core-variant.sh
 
   validate:
     strategy:

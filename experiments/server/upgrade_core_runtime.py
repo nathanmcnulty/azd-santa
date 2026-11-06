@@ -23,7 +23,9 @@ def write_private(path, data):
         json.dump(data, stream, sort_keys=True, indent=2)
 
 
-def transition(old_path, fixture_path, image_id, boot_id):
+def transition(old_path, fixture_path, image_id, boot_id, label='stores'):
+    if not re.fullmatch(r'[a-z0-9-]{2,24}', label):
+        raise ValueError('Invalid transition label')
     old_path, old_hash = validate_compose(old_path)
     fixture = load_fixture(Path(fixture_path), old_hash)
     if not re.fullmatch(r'sha256:[0-9a-f]{64}', image_id):
@@ -36,9 +38,9 @@ def transition(old_path, fixture_path, image_id, boot_id):
         updated['services'][name]['image'] = image_id
     if updated == original:
         raise ValueError('Image transition must change the application image')
-    target = old_path.with_name('compose-stores.json')
-    target_fixture = old_path.with_name('synthetic-fixture-stores.json')
-    receipt = old_path.with_name('image-transition.json')
+    target = old_path.with_name('compose-' + label + '.json')
+    target_fixture = old_path.with_name('synthetic-fixture-' + label + '.json')
+    receipt = old_path.with_name('image-transition.json' if label == 'stores' else 'image-transition-' + label + '.json')
     if any(p.exists() or p.is_symlink() for p in (target, target_fixture, receipt)):
         raise FileExistsError('Existing transition requires inspection')
     write_private(target, updated)
@@ -56,7 +58,7 @@ def transition(old_path, fixture_path, image_id, boot_id):
     return target, target_fixture
 
 
-def upgrade(compose, fixture, image_id):
+def upgrade(compose, fixture, image_id, label='stores'):
     old, _ = validate_compose(compose)
     # Read and verify existing credentials/rules/postflight before any change.
     assert_committed(snapshot(old, load_fixture(Path(fixture), validate_compose(old)[1])),
@@ -71,13 +73,13 @@ def upgrade(compose, fixture, image_id):
             labels.get('io.azd-santa.variant') != 'core-experiment'):
         raise ValueError('Image provenance labels do not match')
     target, target_fixture = transition(old, fixture, image_id,
-        Path('/proc/sys/kernel/random/boot_id').read_text().strip())
+        Path('/proc/sys/kernel/random/boot_id').read_text().strip(), label)
     command = ['docker', '--host', 'unix:///var/run/docker.sock', 'compose', '-f', str(target)]
 
     def run(label, args, *, timeout=180, input=None):
         result = subprocess.run(command + args, input=input, text=True,
                                 capture_output=True, timeout=timeout, env=environment)
-        write_private(target.parent / ('upgrade-' + label + '.json'),
+        write_private(target.parent / ('upgrade-' + target.stem + '-' + label + '.json'),
                       dict(returncode=result.returncode, stdout=result.stdout, stderr=result.stderr))
         if result.returncode:
             raise RuntimeError('Private upgrade step failed: ' + label)
@@ -115,7 +117,7 @@ print('SANTA_SYNTHETIC_JSON:'+json.dumps({'queue':('store_events_'+s.name).repla
             queues = json.loads(result.stdout)
             if all(any(q['name'] == name and q['consumers'] > 0 for q in queues)
                    for name in (queue, 'enrich_events', 'process_events')):
-                write_private(target.parent / 'upgrade-consumers.json', {'queues': queues})
+                write_private(target.parent / ('upgrade-' + label + '-consumers.json'), {'queues': queues})
                 break
         if time.monotonic() >= deadline:
             raise TimeoutError('Event consumers not ready; listener remains stopped')
@@ -132,7 +134,7 @@ print('SANTA_SYNTHETIC_JSON:'+json.dumps({'queue':('store_events_'+s.name).repla
             if time.monotonic() >= deadline:
                 raise
             time.sleep(2)
-    write_private(target.parent / 'upgrade-persistence.json', {
+    write_private(target.parent / ('upgrade-' + label + '-persistence.json'), {
         'scope': 'private-synthetic-only', 'existing_fixture_preserved': True,
         'image_id': image_id, 'state': state, 'event_consumers_ready': True,
         'event_indexing': 'not yet verified'})
@@ -144,5 +146,6 @@ if __name__ == '__main__':
     parser.add_argument('--compose', required=True)
     parser.add_argument('--fixture', required=True)
     parser.add_argument('--image', required=True)
+    parser.add_argument('--label', default='stores')
     args = parser.parse_args()
-    upgrade(args.compose, args.fixture, args.image)
+    upgrade(args.compose, args.fixture, args.image, args.label)

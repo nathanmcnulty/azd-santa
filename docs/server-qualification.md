@@ -218,3 +218,77 @@ Compute billing is stopped; retained storage/network resources are not deleted.
 Resume requires starting this exact VM and explicitly inspecting/resuming the
 private runtime. Do not rerun bootstrap/acquisition/fixture initialization over
 these existing paths or treat the failed credential fixture as a healthy one.
+
+## Continuing device authority implementation
+
+The next derived image adds an original guard in the shared Santa sync request
+handler. Missing, revoked and expired secret records are rejected before body
+processing or stage-specific writes. Enrollment quota remains an initial
+enrollment limit; it is not charged or rechecked as an ongoing sync quota.
+The exact upstream sync-view SHA-256 is
+`95e0a59e6f37b5a3f43cb0db4c457981163734d954e1cc5b68df82826d412d97`;
+the guarded result is
+`f6041b2e83350dad583bb3a26265a182dab0d674f8a096f5c522783d8093e33d`.
+Input, shape and output checks fail closed, and the modified file and image carry
+notices. No enterprise source or licensing check is replaced.
+
+`test_credential_lifecycle.py` explicitly creates a fresh synthetic Monitor
+fixture. It checks revocation/expiry and an old rotated credential at all four
+stages, verifies database state is unchanged on rejection, and checks positive
+access for the new credential and the unaffected device. Rotation retains the
+old private fixture and writes a separate rotated fixture; it never prints
+credentials. The harness stops after unexpected acceptance instead of continuing
+potentially mutating stages. A named image transition retains the prior Compose,
+fixture and receipts. These are qualification tools, not the final admin flow.
+
+The offline suite now passes 135 Pester tests. Linux CI additionally executes the
+real Bash namespace-boundary test with external mutations replaced by functions;
+Windows intentionally skips that underlying Bash execution. Independent reviews
+found and repaired old-image selection and inherited Compose-namespace risks.
+The final code follow-up had no remaining concrete review blocker.
+
+## Actual guarded-image acceptance, 2026-11-06
+
+- Built image
+  `sha256:392eec0c62a329f2f06fc54e688c56f13a667bcadf6aa1a04576b5ae4f8a7c49`
+  completed successfully. A network-disabled container running as the actual
+  application user read the guarded sync view and verified its exact output hash.
+- The explicit image-only upgrade preserved the original healthy synthetic
+  fixture and volumes. The guarded Compose SHA-256 is
+  `4047744e951b41b33ae43e25c3ad6ddbdc4660e9226cb49b2e20e01133cf2571`.
+- The real lifecycle harness passed revocation, expiry and old-rotated-token
+  rejection at **all four stages**, each returning HTTP 403. Before/after hashes
+  matched for the selected secret/machine/rule/counter projection. This does not
+  assert that every audit table, queue or index is unchanged.
+- The other device remained usable when its peer was revoked/rotated. Both the
+  new credential and unaffected device then completed full preflight, exact rule
+  paging, event upload and committed postflight without reinitialization; each
+  enrollment's request count remained one. After the second device expired, the
+  rotated first device remained usable.
+- A separate Elasticsearch count found exactly four lifecycle-fixture Santa
+  events (initial sync plus renewed sync). The live harness SHA-256 was
+  `6eff33286a3ab1f3cd064089bb7993b90078bfaaf052154f49e4f7434abdd4e0`,
+  matching the checked-in canonical source bytes. Credentials remain private.
+- An attempted resume of the old Compose/image with the guarded expected image
+  failed for the explicit image-mismatch reason **before any Docker call**.
+  A deliberate application stop/resume with conflicting inherited Compose
+  project/file and Docker context/host variables then resumed the expected
+  project and guarded image. Original healthy fixture state matched its upgrade
+  receipt; the expired credential still failed all stages, the rotated credential
+  still worked, and all seven container project labels matched the expected one.
+
+For this retained experiment, qualification-only resume now requires an explicit
+Compose, matching fixture and verified immutable image. The actual guest helper
+is `/var/lib/azd-santa-qualification/resume-bound-tools/resume-runtime.sh`; pass
+a **new** evidence label followed by `runtime-fixed/compose-sync-guard.json`,
+`runtime-fixed/synthetic-fixture-sync-guard.json` (both absolute paths under the
+qualification root), and the guarded image ID above. Do not reuse an old stores
+example or treat the label as runtime selection. Customer recovery must become
+automatic in #53; these developer commands are not the intended admin flow.
+
+This accepts the private continuing-credential gate, not production or native
+Mac readiness. #52 remains open for restoration/lifecycle integration: #54 must
+ensure an old restored database cannot revive superseded credentials or policy.
+Mandatory operator MFA (#51), ingress/body-size protections, trusted TLS, MDM
+delivery, repeatable deployment/recovery and Container Apps parity remain open.
+The earlier failed credential receipt remains retained.

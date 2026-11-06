@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'experiments/server
 import test_live_zentral_harness as harness
 import upgrade_core_runtime as upgrade
 import record_persistence as persistence
+import resume_runtime as resume
 
 
 class Transition(unittest.TestCase):
@@ -54,6 +55,26 @@ class Transition(unittest.TestCase):
                        {'state': {'rules': [], 'counter': 0}}, {'count': 0}):
             with self.assertRaises(ValueError):
                 persistence.check_previous(previous, **{**expected, **change})
+
+    def test_named_second_transition_preserves_first_and_rejects_path_injection(self):
+        h = self.harness
+        first, first_fixture = upgrade.transition(h.compose, h.fixture_path, 'sha256:' + 'b' * 64, 'boot')
+        original = first.read_bytes(), first_fixture.read_bytes()
+        second, second_fixture = upgrade.transition(first, first_fixture, 'sha256:' + 'c' * 64, 'boot', 'sync-guard')
+        self.assertEqual(original, (first.read_bytes(), first_fixture.read_bytes()))
+        self.assertNotEqual(first, second)
+        self.assertEqual(json.loads(second_fixture.read_text())['devices'], h.fixture['devices'])
+        with self.assertRaisesRegex(ValueError, 'transition label'):
+            upgrade.transition(first, first_fixture, 'sha256:' + 'c' * 64, 'boot', '../../bad')
+
+    def test_resume_rejects_old_image_or_mismatched_fixture_binding(self):
+        h = self.harness
+        target, fixture = upgrade.transition(h.compose, h.fixture_path, 'sha256:' + 'b' * 64, 'boot', 'sync-guard')
+        resume.validate_selection(target, fixture, 'sha256:' + 'b' * 64)
+        with self.assertRaisesRegex(ValueError, 'expected image'):
+            resume.validate_selection(h.compose, h.fixture_path, 'sha256:' + 'b' * 64)
+        with self.assertRaises(ValueError):
+            resume.validate_selection(target, h.fixture_path, 'sha256:' + 'b' * 64)
 
 
 if __name__ == '__main__':

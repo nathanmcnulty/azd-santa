@@ -25,6 +25,15 @@ UPSTREAM_LICENSE_SHA256 = "00f43b4775da6dcbe63d20b3b2c36e616f35af5595d02c590278e
 UPSTREAM_REGISTRY_SHA256 = "d216a4a58acb8258794bd67db64dec5f6a69ebfe8d93d5ebbe1b702e88704cca"
 CORE_REGISTRY_SHA256 = "2c2aceac8fb47a73a418b471a87e0a47e2c852a7f57e7022e27f400aa79b261f"
 REGISTRY_PATH = "server/realms/backends/registry.py"
+SYNC_VIEW_PATH = "zentral/contrib/santa/public_views.py"
+UPSTREAM_SYNC_VIEW_SHA256 = "95e0a59e6f37b5a3f43cb0db4c457981163734d954e1cc5b68df82826d412d97"
+CORE_SYNC_VIEW_SHA256 = "f6041b2e83350dad583bb3a26265a182dab0d674f8a096f5c522783d8093e33d"
+SYNC_GUARD = '''        # azd-santa: continuing sync authority excludes enrollment quota.
+        sync_secret = EnrollmentSecret.objects.filter(secret=self.enrollment_secret_secret).first()
+        if sync_secret is None or sync_secret.is_revoked or sync_secret.is_expired:
+            raise PermissionDenied("Invalid sync credential")
+
+'''
 UPSTREAM_STORES_BACKENDS_SHA256 = "7db6c71eb508bce42d92803c9dc83799fd7d5dbacec577a47f98aaf06b0a5d4a"
 CORE_STORES_BACKENDS_SHA256 = "3a61216f59b69808a926e7063737004fc0b60d4e8642427f22323eca61a7a09b"
 STORES_BACKENDS_PATH = "zentral/core/stores/backends/all.py"
@@ -337,6 +346,26 @@ def _store_transform_script(
     )
 
 
+def _sync_transform_script(input_sha256=UPSTREAM_SYNC_VIEW_SHA256,
+                           output_sha256=CORE_SYNC_VIEW_SHA256) -> str:
+    """Apply the original continuing-authority guard to one exact core source."""
+    return (
+        "from pathlib import Path\nfrom hashlib import sha256\n"
+        f"path=Path('/zentral/{SYNC_VIEW_PATH}')\n"
+        "source=path.read_bytes()\n"
+        f"if sha256(source).hexdigest()!={input_sha256!r}: raise RuntimeError('sync input hash mismatch')\n"
+        "old=b'from zentral.contrib.inventory.models import PrincipalUserSource'\n"
+        "new=b'from zentral.contrib.inventory.models import EnrollmentSecret, PrincipalUserSource'\n"
+        "anchor=b'        self.client_cert_dn = self._get_client_cert_dn()'\n"
+        "if source.count(old)!=1 or source.count(anchor)!=1: raise RuntimeError('sync source shape mismatch')\n"
+        f"guard={SYNC_GUARD.encode()!r}\n"
+        "result=source.replace(old,new,1).replace(anchor,guard+anchor,1)\n"
+        "result=b'# Modified by azd-santa: enforce revocation and expiry for continuing sync credentials.\\n'+result\n"
+        f"if sha256(result).hexdigest()!={output_sha256!r}: raise RuntimeError('sync output hash mismatch')\n"
+        "compile(result, str(path), 'exec')\npath.write_bytes(result)\n"
+    )
+
+
 def render_core_dockerfile(
     upstream_dockerfile: str,
     upstream_license: bytes,
@@ -446,6 +475,12 @@ def render_core_dockerfile(
         "    && python /tmp/prepare_core_stores.py \\\n"
         "    && rm /tmp/prepare_core_stores.py\n"
     )
+    sync_transform_b64 = base64.b64encode(_sync_transform_script().encode()).decode('ascii')
+    stores_transform += (
+        "RUN printf '%s' '" + sync_transform_b64 + "' | base64 -d > /tmp/prepare_sync_guard.py \\\n"
+        "    && python /tmp/prepare_sync_guard.py \\\n"
+        "    && rm /tmp/prepare_sync_guard.py\n"
+    )
     rendered = _replace_once(
         rendered,
         "COPY ./zentral /zentral/zentral\n",
@@ -477,7 +512,10 @@ def render_core_dockerfile(
         "        'The upstream ee tree is intentionally omitted; no EE functionality is included.' \\\n"
         "        'The core registry was narrowed to LDAP; EE OIDC and SAML backends are unavailable.' \\\n"
         "        'Core store registry and serializer files were narrowed to Apache/core backends; EE store backends are unavailable.' \\\n"
-        "        'The only source transformations are the reviewed registry and core store narrowings; review licensing before production use.' \\\n"
+        f"        'Santa sync view input SHA256: {UPSTREAM_SYNC_VIEW_SHA256}' \\\n"
+        f"        'Santa sync view output SHA256: {CORE_SYNC_VIEW_SHA256}' \\\n"
+        "        'An original sync credential guard enforces revocation/expiry without charging enrollment quota.' \\\n"
+        "        'Source transformations are the reviewed registry/store narrowings and sync credential guard; review licensing before production use.' \\\n"
         "        > /usr/share/doc/zentral/CORE_BUILD_NOTICE.txt\n",
         "runtime assertion and build notice anchor",
     )

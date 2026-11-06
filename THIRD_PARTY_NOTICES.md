@@ -34,6 +34,9 @@ not this project's Unlicense. A copy of the standard Apache-2.0 terms is already
 retained in [the vendored license text](third_party/santa-2026.8/LICENSE.txt).
 The modified files carry their own modification notices, and the derived
 image retains the exact upstream LICENSE and source/build notices.
+The derived Santa sync view also carries a modification notice for the original
+continuing-credential guard; its exact upstream and resulting hashes are recorded
+in the image. Enrollment quota is kept separate from continuing device authority.
 
 Zentral's [licensing scheme](https://github.com/zentralopensource/zentral/blob/88e67b3ce49033aab028029937a6e14f7c489073/LICENSE)
 separately covers `ee/` and explicitly marked files with evaluation terms. Those
