@@ -22,6 +22,28 @@ UPSTREAM_SOURCE_URL = (
 )
 UPSTREAM_DOCKERFILE_SHA256 = "dd06e76e0b325684c0c07734cfb1b951218678fb454b8af18e719f309c2e94e1"
 UPSTREAM_LICENSE_SHA256 = "00f43b4775da6dcbe63d20b3b2c36e616f35af5595d02c590278e75d9d86793c"
+UPSTREAM_REGISTRY_SHA256 = "d216a4a58acb8258794bd67db64dec5f6a69ebfe8d93d5ebbe1b702e88704cca"
+CORE_REGISTRY_SHA256 = "7a3a70291d52483b4ac24235925bf3137bd058e1d59064dcc6c3452fbafc30aa"
+REGISTRY_PATH = "server/realms/backends/registry.py"
+
+UPSTREAM_REGISTRY = b"""from realms.backends.ldap import LDAPRealmBackend
+from realms.backends.openidc import OpenIDConnectRealmBackend
+from realms.backends.saml import SAMLRealmBackend
+
+
+backend_classes = {
+    "ldap": LDAPRealmBackend,
+    "openidc": OpenIDConnectRealmBackend,
+    "saml": SAMLRealmBackend,
+}
+"""
+CORE_REGISTRY_NARROWED = b"""from realms.backends.ldap import LDAPRealmBackend
+
+
+backend_classes = {
+    "ldap": LDAPRealmBackend,
+}
+"""
 
 
 def _sha256(path: Path) -> str:
@@ -30,6 +52,20 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def narrow_core_registry(registry_bytes: bytes, *, expected_sha256: str = UPSTREAM_REGISTRY_SHA256) -> bytes:
+    """Remove only the EE registry entries from the reviewed core registry."""
+
+    actual_sha256 = hashlib.sha256(registry_bytes).hexdigest()
+    if actual_sha256 != expected_sha256.lower() or registry_bytes != UPSTREAM_REGISTRY:
+        raise ValueError(
+            "unexpected core registry input: "
+            f"expected {expected_sha256}, got {actual_sha256}"
+        )
+    if hashlib.sha256(CORE_REGISTRY_NARROWED).hexdigest() != CORE_REGISTRY_SHA256:
+        raise ValueError("internal narrowed registry hash does not match its reviewed value")
+    return CORE_REGISTRY_NARROWED
 
 
 def _git_head(source_root: Path) -> str:
@@ -64,6 +100,7 @@ def validate_source(
     expected_commit: str = UPSTREAM_COMMIT,
     expected_dockerfile_sha256: str = UPSTREAM_DOCKERFILE_SHA256,
     expected_license_sha256: str = UPSTREAM_LICENSE_SHA256,
+    expected_registry_sha256: str = UPSTREAM_REGISTRY_SHA256,
 ) -> None:
     """Fail closed unless *source_root* is the reviewed upstream checkout."""
 
@@ -77,6 +114,7 @@ def validate_source(
         source_root / "server",
         source_root / "zentral",
         source_root / "ee",
+        source_root / REGISTRY_PATH,
     )
     missing = [str(path.relative_to(source_root)) for path in required if not path.exists()]
     if missing:
@@ -110,6 +148,13 @@ def validate_source(
             f"expected {expected_license_sha256}, got {actual_license_sha256}"
         )
 
+    actual_registry_sha256 = _sha256(source_root / REGISTRY_PATH)
+    if actual_registry_sha256 != expected_registry_sha256.lower():
+        raise ValueError(
+            "unexpected core registry SHA256: "
+            f"expected {expected_registry_sha256}, got {actual_registry_sha256}"
+        )
+
 
 def _replace_once(text: str, old: str, new: str, label: str) -> str:
     if text.count(old) != 1:
@@ -117,16 +162,40 @@ def _replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def _registry_transform_script(registry_bytes: bytes, expected_sha256: str) -> str:
+    narrowed = narrow_core_registry(registry_bytes, expected_sha256=expected_sha256)
+    source_b64 = base64.b64encode(registry_bytes).decode("ascii")
+    narrowed_b64 = base64.b64encode(narrowed).decode("ascii")
+    return (
+        "from base64 import b64decode\n"
+        "from hashlib import sha256\n"
+        "from pathlib import Path\n"
+        "path = Path('/zentral/server/realms/backends/registry.py')\n"
+        f"expected = b64decode('{source_b64}')\n"
+        f"narrowed = b64decode('{narrowed_b64}')\n"
+        "actual = path.read_bytes()\n"
+        f"if sha256(actual).hexdigest() != '{expected_sha256}': raise RuntimeError('core registry input hash mismatch')\n"
+        "if actual != expected: raise RuntimeError('core registry input bytes mismatch')\n"
+        "path.write_bytes(narrowed)\n"
+        f"if sha256(path.read_bytes()).hexdigest() != '{CORE_REGISTRY_SHA256}': raise RuntimeError('core registry output hash mismatch')\n"
+    )
+
+
 def render_core_dockerfile(
     upstream_dockerfile: str,
     upstream_license: bytes,
+    upstream_registry: bytes,
     *,
     license_sha256: str = UPSTREAM_LICENSE_SHA256,
+    registry_sha256: str = UPSTREAM_REGISTRY_SHA256,
 ) -> str:
     """Render the reviewed Dockerfile shape with only the core runtime stage."""
 
     if "COPY ./ee /zentral/ee" not in upstream_dockerfile:
         raise ValueError("upstream Dockerfile no longer has the reviewed EE copy boundary")
+    registry_transform_b64 = base64.b64encode(
+        _registry_transform_script(upstream_registry, registry_sha256).encode("utf-8")
+    ).decode("ascii")
 
     rendered = _replace_once(
         upstream_dockerfile,
@@ -193,6 +262,17 @@ def render_core_dockerfile(
         "COPY docker-entrypoint.py /zentral/\n" + license_install,
         "documentation copy anchor",
     )
+    registry_transform = (
+        "RUN printf '%s' '" + registry_transform_b64 + "' | base64 -d > /tmp/prepare_core_registry.py \\\n"
+        "    && python /tmp/prepare_core_registry.py \\\n"
+        "    && rm /tmp/prepare_core_registry.py\n"
+    )
+    rendered = _replace_once(
+        rendered,
+        "COPY ./server /zentral/server\n",
+        "COPY ./server /zentral/server\n" + registry_transform,
+        "core registry transform anchor",
+    )
     rendered = _replace_once(
         rendered,
         "RUN printf \"version = \\\"\\\"\\\"$APP_VERSION\\\"\\\"\\\"\\n\" > /zentral/server/base/deployment.py\n",
@@ -207,8 +287,11 @@ def render_core_dockerfile(
         f"        'Zentral source: {UPSTREAM_SOURCE_URL}' \\\n"
         f"        'Upstream Dockerfile SHA256: {UPSTREAM_DOCKERFILE_SHA256}' \\\n"
         f"        'Upstream LICENSE SHA256: {UPSTREAM_LICENSE_SHA256}' \\\n"
+        f"        'Core registry input SHA256: {registry_sha256}' \\\n"
+        f"        'Core registry output SHA256: {CORE_REGISTRY_SHA256}' \\\n"
         "        'The upstream ee tree is intentionally omitted; no EE functionality is included.' \\\n"
-        "        'The upstream Python source is otherwise unchanged; review licensing before production use.' \\\n"
+        "        'The core registry was narrowed to LDAP; EE OIDC and SAML backends are unavailable.' \\\n"
+        "        'The only source transformation is the reviewed core registry narrowing; review licensing before production use.' \\\n"
         "        > /usr/share/doc/zentral/CORE_BUILD_NOTICE.txt\n",
         "runtime assertion and build notice anchor",
     )
@@ -223,6 +306,8 @@ def render_core_dockerfile(
         raise ValueError("derived Dockerfile lacks core-builder")
     if "FROM base-runner AS core-runner" not in rendered:
         raise ValueError("derived Dockerfile lacks core-runner")
+    if "COPY ./server /zentral/server\nRUN printf '%s' '" not in rendered:
+        raise ValueError("derived Dockerfile lacks the core registry transform")
     return rendered
 
 
@@ -238,6 +323,7 @@ def derive_core_dockerfile(source_root: Path, output_path: Path) -> Path:
         expected_commit=UPSTREAM_COMMIT,
         expected_dockerfile_sha256=UPSTREAM_DOCKERFILE_SHA256,
         expected_license_sha256=UPSTREAM_LICENSE_SHA256,
+        expected_registry_sha256=UPSTREAM_REGISTRY_SHA256,
     )
     try:
         output_path.relative_to(source_root)
@@ -248,7 +334,9 @@ def derive_core_dockerfile(source_root: Path, output_path: Path) -> Path:
     rendered = render_core_dockerfile(
         (source_root / "Dockerfile").read_text(encoding="utf-8"),
         (source_root / "LICENSE").read_bytes(),
+        (source_root / REGISTRY_PATH).read_bytes(),
         license_sha256=UPSTREAM_LICENSE_SHA256,
+        registry_sha256=UPSTREAM_REGISTRY_SHA256,
     )
     with output_path.open("x", encoding="utf-8", newline="\n") as stream:
         stream.write(rendered)

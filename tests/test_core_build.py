@@ -69,19 +69,23 @@ WORKDIR /zentral
 USER zentral
 """
 UPSTREAM_LICENSE = b"Apache-2.0 and ZPEL notice\n"
+UPSTREAM_REGISTRY = core_build.UPSTREAM_REGISTRY
 
 
 class CoreBuildTests(unittest.TestCase):
-    def _source(self, root: Path) -> tuple[Path, str, str]:
+    def _source(self, root: Path) -> tuple[Path, str, str, str]:
         source = root / "zentral"
         source.mkdir()
         (source / "server").mkdir()
+        (source / "server" / "realms" / "backends").mkdir(parents=True)
         (source / "zentral").mkdir()
         (source / "ee").mkdir()
         (source / "Dockerfile").write_bytes(UPSTREAM_DOCKERFILE.encode("utf-8"))
         (source / "LICENSE").write_bytes(UPSTREAM_LICENSE)
+        (source / core_build.REGISTRY_PATH).write_bytes(UPSTREAM_REGISTRY)
         docker_hash = hashlib.sha256((source / "Dockerfile").read_bytes()).hexdigest()
         license_hash = hashlib.sha256((source / "LICENSE").read_bytes()).hexdigest()
+        registry_hash = hashlib.sha256((source / core_build.REGISTRY_PATH).read_bytes()).hexdigest()
         subprocess.run(["git", "init", "--quiet", str(source)], check=True)
         subprocess.run(
             [
@@ -95,6 +99,7 @@ class CoreBuildTests(unittest.TestCase):
                 "add",
                 "Dockerfile",
                 "LICENSE",
+                core_build.REGISTRY_PATH,
             ],
             check=True,
         )
@@ -114,7 +119,7 @@ class CoreBuildTests(unittest.TestCase):
             ],
             check=True,
         )
-        return source, docker_hash, license_hash
+        return source, docker_hash, license_hash, registry_hash
 
     def test_render_removes_non_core_stages_and_ee_copy(self) -> None:
         self.assertEqual(
@@ -125,7 +130,15 @@ class CoreBuildTests(unittest.TestCase):
             core_build.UPSTREAM_LICENSE_SHA256,
             "00f43b4775da6dcbe63d20b3b2c36e616f35af5595d02c590278e75d9d86793c",
         )
-        rendered = core_build.render_core_dockerfile(UPSTREAM_DOCKERFILE, UPSTREAM_LICENSE)
+        self.assertEqual(
+            core_build.UPSTREAM_REGISTRY_SHA256,
+            "d216a4a58acb8258794bd67db64dec5f6a69ebfe8d93d5ebbe1b702e88704cca",
+        )
+        self.assertEqual(
+            core_build.CORE_REGISTRY_SHA256,
+            "7a3a70291d52483b4ac24235925bf3137bd058e1d59064dcc6c3452fbafc30aa",
+        )
+        rendered = core_build.render_core_dockerfile(UPSTREAM_DOCKERFILE, UPSTREAM_LICENSE, UPSTREAM_REGISTRY)
         self.assertIn("ARG APP_ENV=core", rendered)
         self.assertIn("FROM base-builder AS core-builder", rendered)
         self.assertIn("FROM base-runner AS core-runner", rendered)
@@ -142,10 +155,22 @@ class CoreBuildTests(unittest.TestCase):
         self.assertIn("test -d /zentral/server/accounts", rendered)
         self.assertIn("test -d /zentral/server/realms", rendered)
         self.assertIn("test -d /zentral/zentral/contrib/santa", rendered)
+        self.assertIn("prepare_core_registry.py", rendered)
+        self.assertIn("Core registry input SHA256", rendered)
+
+    def test_registry_narrowing_removes_only_ee_backends(self) -> None:
+        narrowed = core_build.narrow_core_registry(UPSTREAM_REGISTRY)
+        self.assertEqual(narrowed, core_build.CORE_REGISTRY_NARROWED)
+        self.assertIn(b"LDAPRealmBackend", narrowed)
+        self.assertIn(b'"ldap": LDAPRealmBackend', narrowed)
+        self.assertNotIn(b"openidc", narrowed.lower())
+        self.assertNotIn(b"saml", narrowed.lower())
+        with self.assertRaises(ValueError):
+            core_build.narrow_core_registry(UPSTREAM_REGISTRY + b"\n")
 
     def test_derivation_is_deterministic_and_does_not_change_source(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            source, docker_hash, license_hash = self._source(Path(directory))
+            source, docker_hash, license_hash, _ = self._source(Path(directory))
             output = source / "Dockerfile.core"
             before = {path: path.read_bytes() for path in source.rglob("*") if path.is_file()}
             with mock.patch.object(core_build, "UPSTREAM_DOCKERFILE_SHA256", docker_hash), mock.patch.object(
@@ -164,7 +189,7 @@ class CoreBuildTests(unittest.TestCase):
 
     def test_refuses_existing_output_and_unexpected_license(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            source, docker_hash, license_hash = self._source(Path(directory))
+            source, docker_hash, license_hash, _ = self._source(Path(directory))
             with mock.patch.object(core_build, "_git_head", return_value=core_build.UPSTREAM_COMMIT):
                 with self.assertRaises(ValueError):
                     core_build.validate_source(source)
@@ -184,8 +209,10 @@ class CoreBuildTests(unittest.TestCase):
             (source / "server").mkdir()
             (source / "zentral").mkdir()
             (source / "ee").mkdir()
+            (source / "server" / "realms" / "backends").mkdir(parents=True)
             (source / "Dockerfile").write_bytes(UPSTREAM_DOCKERFILE.encode("utf-8"))
             (source / "LICENSE").write_bytes(UPSTREAM_LICENSE)
+            (source / core_build.REGISTRY_PATH).write_bytes(UPSTREAM_REGISTRY)
             docker_hash = hashlib.sha256((source / "Dockerfile").read_bytes()).hexdigest()
             license_hash = hashlib.sha256((source / "LICENSE").read_bytes()).hexdigest()
             with mock.patch.object(core_build, "UPSTREAM_DOCKERFILE_SHA256", docker_hash), mock.patch.object(
@@ -193,6 +220,16 @@ class CoreBuildTests(unittest.TestCase):
             ):
                 output = core_build.derive_core_dockerfile(source, source / "Dockerfile.core")
             self.assertTrue(output.is_file())
+            (source / core_build.REGISTRY_PATH).write_bytes(UPSTREAM_REGISTRY + b"\n")
+            with mock.patch.object(core_build, "UPSTREAM_DOCKERFILE_SHA256", docker_hash), mock.patch.object(
+                core_build, "UPSTREAM_LICENSE_SHA256", license_hash
+            ):
+                with self.assertRaisesRegex(ValueError, "core registry"):
+                    core_build.validate_source(
+                        source,
+                        expected_dockerfile_sha256=docker_hash,
+                        expected_license_sha256=license_hash,
+                    )
 
 
 if __name__ == "__main__":
