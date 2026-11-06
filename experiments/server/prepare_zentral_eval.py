@@ -22,6 +22,8 @@ SOURCE_HASHES = {
 DEPENDENCIES = ('postgres', 'redis', 'rabbitmq', 'elasticsearch')
 DIGEST_REF = re.compile(r'[a-z0-9][a-z0-9./:_-]*@sha256:[0-9a-f]{64}')
 IMAGE_ID = re.compile(r'sha256:[0-9a-f]{64}')
+OPTIONAL_APPS = ('zentral.contrib.jamf', 'zentral.contrib.munki',
+                 'zentral.contrib.osquery', 'zentral.contrib.turbo')
 
 
 def write_new(path, value, mode=0o600):
@@ -34,9 +36,11 @@ def json_text(value):
     return json.dumps(value, indent=2, sort_keys=True) + '\n'
 
 
-def prepare(source, image, lock, destination, variant='upstream-evaluation'):
+def prepare(source, image, lock, destination, variant='upstream-evaluation', *, app_profile='upstream'):
     if variant not in ('upstream-evaluation', 'core-experiment'):
         raise ValueError('Unknown evaluation image variant')
+    if app_profile not in ('upstream', 'santa'):
+        raise ValueError('Unknown evaluation app profile')
     source = Path(source).resolve(strict=True)
     if not source.is_dir() or not IMAGE_ID.fullmatch(image):
         raise ValueError('A source directory and local sha256 image ID are required')
@@ -52,6 +56,11 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation'):
         if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
             raise ValueError('Pinned source input differs: ' + name)
     config = copy.deepcopy(json.loads((source / 'conf/start/zentral/base.json').read_text(encoding='utf-8')))
+    if app_profile == 'santa':
+        # Fresh-install qualification only. Keep core/inventory dependencies and
+        # all telemetry services; do not remove apps from an existing database.
+        for name in OPTIONAL_APPS:
+            config['apps'].pop(name, None)
     config['api'] = {'fqdn': 'localhost:8000',
                      'metrics_bearer_token': '{{ env:ZENTRAL_METRICS_TOKEN }}'}
     config['extra_links'] = []
@@ -131,6 +140,7 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation'):
         'upstream_source': SOURCE_URL, 'checked_source_files': SOURCE_HASHES,
         'local_image_id': image, 'dependency_images': lock,
         'declared_image_variant': variant,
+        'app_profile': app_profile,
         'limitations': ['Image variant is a caller declaration, not production license clearance',
                         'Caller must verify full source archive and build binding',
                         'Memory caps are test constraints, not proven sizing',
@@ -156,10 +166,12 @@ def main():
     parser.add_argument('--lock', required=True)
     parser.add_argument('--destination', required=True)
     parser.add_argument('--variant', choices=('upstream-evaluation', 'core-experiment'), default='upstream-evaluation')
+    parser.add_argument('--app-profile', choices=('upstream', 'santa'), default='upstream',
+                        help='Fresh evaluation only; never migrate an existing app population')
     args = parser.parse_args()
     with open(args.lock, encoding='utf-8') as stream:
         lock = json.load(stream)
-    prepare(args.source, args.image, lock, args.destination, args.variant)
+    prepare(args.source, args.image, lock, args.destination, args.variant, app_profile=args.app_profile)
     print('Prepared private synthetic evaluation; no service started.')
 
 
