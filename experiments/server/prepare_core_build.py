@@ -562,7 +562,12 @@ def _operator_layer(source_root):
     spec = importlib.util.spec_from_file_location('prepare_operator_mfa', helper)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.docker_program(source_root, Path(__file__).with_name('operator_mfa.py'))
+    program, digest = module.docker_program(source_root, Path(__file__).with_name('operator_mfa.py'))
+    helper = Path(__file__).with_name('prepare_operator_recovery.py')
+    spec = importlib.util.spec_from_file_location('prepare_operator_recovery', helper)
+    recovery = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(recovery)
+    return program + '\n' + recovery.docker_program(source_root), digest
 
 
 def derive_core_dockerfile(source_root: Path, output_path: Path) -> Path:
