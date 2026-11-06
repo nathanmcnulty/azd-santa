@@ -70,3 +70,12 @@ skips, mismatched hashes, partial or secret-bearing exported receipts.
 `BaseEvent.post` is deliberately mocked in this isolated test database to avoid
 mixing its user IDs into the main event store. Intended audit metadata is tested;
 delivery/indexing, a real browser and real HTTPS remain separate unproven gates.
+The runtime harness also submits genuinely signed counterless WebAuthn assertions
+concurrently with recovery, in both user-row lock acquisition orders. It observes
+real PostgreSQL locks with bounded waits, checks the final revoked-factor/session
+state and new-password setup, and does not mock cryptographic verification. This
+case requires the MFA form's user-first locking integration; it is not an offline
+concurrency acceptance claim.
+Security-cache keys use a unique namespace per harness run and test method while
+retaining the actual shared Redis backend/options. Tests neither flush shared
+caches nor collide with main-application budgets when test user IDs reset.

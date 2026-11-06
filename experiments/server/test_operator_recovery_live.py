@@ -7,6 +7,7 @@ Original work released under the Unlicense.
 """
 import contextlib
 import copy
+import base64
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 import hashlib
@@ -28,7 +29,7 @@ from django.contrib.auth.models import Group
 from django.contrib.auth.tokens import default_token_generator
 from django.core.management import call_command, CommandError
 from django.db import close_old_connections, connection, connections
-from django.test import Client, TransactionTestCase
+from django.test import Client, TransactionTestCase, override_settings
 from django.test.runner import DiscoverRunner
 from accounts.models import User, UserTOTP, UserWebAuthn, APIToken, OIDCAPITokenIssuer
 from django.urls import reverse
@@ -50,6 +51,13 @@ class OperatorRequests(TransactionTestCase):
 
     def setUp(self):
         EVENTS.clear()
+        # Test DB sequence resets reuse user PKs. Keep real shared Redis and its
+        # fail-closed options, but never collide with main/other-test budgets.
+        caches = copy.deepcopy(settings.CACHES)
+        caches['azd_santa_security']['KEY_PREFIX'] = 'azd-recovery-tests:' + PREFIX + ':' + self._testMethodName
+        isolated = override_settings(CACHES=caches)
+        isolated.enable()
+        self.addCleanup(isolated.disable)
 
     def client(self):
         return Client(enforce_csrf_checks=True, HTTP_HOST='localhost', HTTP_USER_AGENT='Mozilla/5.0 synthetic-recovery')
@@ -271,6 +279,100 @@ class OperatorRequests(TransactionTestCase):
         artifact = json.loads(path.read_text())
         self.assertIn('setup_url', artifact)
         self.assertIn('not delivery proof', artifact['audit'])
+
+    def test_counterless_webauthn_and_recovery_serialize_in_both_lock_orders(self):
+        import cbor2
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from zentral.conf import api_base_url, settings as central
+
+        def encode(raw):
+            return base64.urlsafe_b64encode(raw).decode().rstrip('=')
+
+        for first in ('verify', 'recover'):
+            with self.subTest(first=first):
+                user, password = self.user()
+                previous_hash = user.password
+                key = ec.generate_private_key(ec.SECP256R1())
+                public = key.public_key().public_numbers()
+                credential = encode(secrets.token_bytes(32))
+                rp = central['api']['fqdn']
+                UserWebAuthn.objects.create(user=user, name='synthetic-counterless', key_handle=credential,
+                    public_key=cbor2.dumps({1: 2, 3: -7, -1: 1, -2: public.x.to_bytes(32, 'big'), -3: public.y.to_bytes(32, 'big')}),
+                    rp_id=rp, transports=['internal'], sign_count=0)
+                client = self.client()
+                response = self.password(client, user, password)
+                self.assertEqual(response['Location'], reverse('accounts:verify_webauthn'))
+                self.assertEqual(client.get(response['Location'], secure=True).status_code, 200)
+                challenge = client.session['webauthn_challenge']['challenge']
+                data = json.dumps(dict(type='webauthn.get', challenge=challenge, origin=api_base_url(),
+                                       crossOrigin=False), separators=(',', ':')).encode()
+                authenticator = hashlib.sha256(rp.encode()).digest() + b'\x01' + bytes(4)
+                signature = key.sign(authenticator + hashlib.sha256(data).digest(), ec.ECDSA(hashes.SHA256()))
+                assertion = json.dumps(dict(id=credential, rawId=credential, type='public-key', response=dict(
+                    clientDataJSON=encode(data), authenticatorData=encode(authenticator), signature=encode(signature)),
+                    clientExtensionResults={}))
+                locked = threading.Event()
+                contending = threading.Event()
+                release = threading.Event()
+
+                def observe(role):
+                    def wrapper(execute, sql, params, many, context):
+                        statement = sql.upper()
+                        target_lock = (statement.lstrip().startswith('SELECT')
+                                       and 'FROM "ACCOUNTS_USER"' in statement
+                                       and 'FOR UPDATE' in statement and user.pk in (params or ()))
+                        if target_lock and role != first:
+                            contending.set()
+                        result = execute(sql, params, many, context)
+                        if target_lock and role == first and not locked.is_set():
+                            locked.set()
+                            if not release.wait(timeout=10):
+                                raise RuntimeError('Synthetic lock-order observation timed out')
+                        return result
+                    return wrapper
+
+                def operation(role):
+                    close_old_connections()
+                    try:
+                        # Bound genuine PostgreSQL waits, not mocked lock/crypto
+                        # outcomes. A missing user-first lock is a test failure.
+                        with connection.cursor() as cursor:
+                            cursor.execute("SET lock_timeout = '8s'")
+                            cursor.execute("SET statement_timeout = '15s'")
+                        with connection.execute_wrapper(observe(role)):
+                            if role == 'recover':
+                                return self.command('recover', user)
+                            result = self.post(client, reverse('accounts:verify_webauthn'), dict(token_response=assertion))
+                            return result.status_code, policy.PROOF in client.session
+                    finally:
+                        close_old_connections()
+
+                other = 'recover' if first == 'verify' else 'verify'
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    leader = pool.submit(operation, first)
+                    try:
+                        self.assertTrue(locked.wait(timeout=10), 'Leader did not acquire the target user row first')
+                        follower = pool.submit(operation, other)
+                        self.assertTrue(contending.wait(timeout=10), 'Other operation did not contend for the target user row')
+                    finally:
+                        release.set()
+                    results = {first: leader.result(timeout=25), other: follower.result(timeout=25)}
+                status, proof = results['verify']
+                self.assertIn(status, (200, 302, 403))
+                if first == 'verify':
+                    self.assertEqual((status, proof), (302, True))
+                else:
+                    self.assertFalse(proof)
+                user.refresh_from_db()
+                self.assertNotEqual(user.password, previous_hash)
+                self.assertFalse(user.check_password(password))
+                self.assertEqual(user.usertotp_set.count() + user.userwebauthn_set.count(), 0)
+                self.assertEqual(client.get(reverse('accounts:profile'), secure=True)['Location'], reverse('login'))
+                _, new_password = self.reset(results['recover'])
+                user.refresh_from_db()
+                self.assertTrue(user.check_password(new_password))
+                self.assertEqual(user.usertotp_set.count() + user.userwebauthn_set.count(), 0)
 
 
 def recovery_url(user):
