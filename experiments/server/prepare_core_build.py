@@ -23,7 +23,7 @@ UPSTREAM_SOURCE_URL = (
 UPSTREAM_DOCKERFILE_SHA256 = "dd06e76e0b325684c0c07734cfb1b951218678fb454b8af18e719f309c2e94e1"
 UPSTREAM_LICENSE_SHA256 = "00f43b4775da6dcbe63d20b3b2c36e616f35af5595d02c590278e75d9d86793c"
 UPSTREAM_REGISTRY_SHA256 = "d216a4a58acb8258794bd67db64dec5f6a69ebfe8d93d5ebbe1b702e88704cca"
-CORE_REGISTRY_SHA256 = "7a3a70291d52483b4ac24235925bf3137bd058e1d59064dcc6c3452fbafc30aa"
+CORE_REGISTRY_SHA256 = "2c2aceac8fb47a73a418b471a87e0a47e2c852a7f57e7022e27f400aa79b261f"
 REGISTRY_PATH = "server/realms/backends/registry.py"
 
 UPSTREAM_REGISTRY = b"""from realms.backends.ldap import LDAPRealmBackend
@@ -37,7 +37,8 @@ backend_classes = {
     "saml": SAMLRealmBackend,
 }
 """
-CORE_REGISTRY_NARROWED = b"""from realms.backends.ldap import LDAPRealmBackend
+CORE_REGISTRY_NARROWED = b"""# Modified by azd-santa: optional enterprise OIDC/SAML backends omitted; core LDAP retained.
+from realms.backends.ldap import LDAPRealmBackend
 
 
 backend_classes = {

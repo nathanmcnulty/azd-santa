@@ -136,7 +136,7 @@ class CoreBuildTests(unittest.TestCase):
         )
         self.assertEqual(
             core_build.CORE_REGISTRY_SHA256,
-            "7a3a70291d52483b4ac24235925bf3137bd058e1d59064dcc6c3452fbafc30aa",
+            "2c2aceac8fb47a73a418b471a87e0a47e2c852a7f57e7022e27f400aa79b261f",
         )
         rendered = core_build.render_core_dockerfile(UPSTREAM_DOCKERFILE, UPSTREAM_LICENSE, UPSTREAM_REGISTRY)
         self.assertIn("ARG APP_ENV=core", rendered)
@@ -161,10 +161,13 @@ class CoreBuildTests(unittest.TestCase):
     def test_registry_narrowing_removes_only_ee_backends(self) -> None:
         narrowed = core_build.narrow_core_registry(UPSTREAM_REGISTRY)
         self.assertEqual(narrowed, core_build.CORE_REGISTRY_NARROWED)
+        self.assertIn(b"Modified by azd-santa", narrowed)
         self.assertIn(b"LDAPRealmBackend", narrowed)
         self.assertIn(b'"ldap": LDAPRealmBackend', narrowed)
-        self.assertNotIn(b"openidc", narrowed.lower())
-        self.assertNotIn(b"saml", narrowed.lower())
+        self.assertNotIn(b"from realms.backends.openidc", narrowed)
+        self.assertNotIn(b"from realms.backends.saml", narrowed)
+        self.assertNotIn(b'"openidc":', narrowed)
+        self.assertNotIn(b'"saml":', narrowed)
         with self.assertRaises(ValueError):
             core_build.narrow_core_registry(UPSTREAM_REGISTRY + b"\n")
 
