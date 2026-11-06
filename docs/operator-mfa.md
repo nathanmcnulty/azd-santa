@@ -13,7 +13,8 @@ legacy boolean-MFA sessions must sign in again.
 A successful core TOTP/security-key assertion creates a versioned proof bound
 to the user, password/session-auth hash and stable verification-method material.
 Names, WebAuthn counters and update timestamps are excluded. Proof lasts at most
-eight hours; password/factor changes invalidate other sessions. All local human
+eight hours from actual MFA; factor changes do not renew that clock.
+Password/factor changes invalidate other sessions. All local human
 operators are covered, including superusers and users without staff status.
 Remote/realm and service-account browser sign-in are unavailable in this policy.
 Existing PBAC authorization still runs after the MFA gate.
@@ -34,8 +35,9 @@ five minutes.
 The existing shared Redis supplies atomic budgets: ten password attempts per
 identifier and five MFA submissions per user in five minutes. A dedicated
 security cache alias has strict errors and two-second socket/connect timeouts;
-new sign-in fails closed when it is unavailable. Accepted TOTP timesteps are
-claimed once in that shared cache. This does **not** yet prove replay/attempt
+new sign-in fails closed when it is unavailable. Signed random verification
+challenges and accepted TOTP timesteps are claimed once in that shared cache,
+including for counterless security keys. This does **not** yet prove replay/attempt
 state survives Redis recreation or restoration: the current lab Redis has no
 durable volume. Resolve and test that boundary with #53/#54 before ingress.
 

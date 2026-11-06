@@ -14,7 +14,7 @@ INPUTS = {
 }
 OUTPUTS = {
     'server/server/settings.py': '8569481c18962c007698dc4492c2ea402eb49ec2fb1d44249274866642fcfb68',
-    'server/accounts/views/auth.py': '4d63aba33b79080f65b10c47835e3997d2fb8148e9d0a31779730ca27bf20d58',
+    'server/accounts/views/auth.py': '2226fbffc415966c97b23e6e16d3a568ca7a4af6779f76f0877b700f2d61720a',
     'server/accounts/forms.py': '768fa8e8537f8d77ef223334a60454afb538d4b040ad7d746258f7b05ea9ac2a',
     'server/accounts/views/user.py': 'cdf2706180277a9eee695cf1a6aca561b2f941bec0dd7b7d690085590d19440c',
     'server/accounts/middleware.py': '0728dff4626a67bec29895bd1a1037e5c4f720f30c8ef436219be39a25c8885a',
@@ -30,14 +30,16 @@ PATCHES = {
     )],
     'server/accounts/views/auth.py': [
         ('from accounts.events import post_failed_verification_event',
-         'from azd_santa_operator import begin_enrollment, complete_mfa\nfrom accounts.events import post_failed_verification_event'),
+         'from azd_santa_operator import begin_enrollment, complete_mfa, challenge_nonce\nfrom accounts.events import post_failed_verification_event'),
         ('token = signing.dumps({"auth_backend": user.backend,',
-         'token = signing.dumps({"auth_backend": user.backend,\n                                       "azd_auth_hash": user.get_session_auth_hash(),'),
+         'token = signing.dumps({"auth_backend": user.backend,\n                                       "azd_auth_hash": user.get_session_auth_hash(),\n                                       "azd_nonce": challenge_nonce(),'),
+        ('        self.request.session["mfa_authenticated"] = True\n',
+         '        verification_token = self.request.session["verification_token"]\n        self.request.session["mfa_authenticated"] = True\n'),
         ('                auth_login(request, form.get_user())\n',
          '                auth_login(request, form.get_user())\n                begin_enrollment(request, form.get_user())\n'),
         ('        auth_login(self.request, form.user)  # form.user has the backend (carried by the token from the login view)\n',
          '        auth_login(self.request, form.user)  # form.user has the backend (carried by the token from the login view)\n'
-         '        complete_mfa(self.request, form.user, form.verified_device, form.cleaned_data.get("verification_code"))\n'),
+         '        complete_mfa(self.request, form.user, form.verified_device, form.cleaned_data.get("verification_code"), verification_token=verification_token)\n'),
     ],
     'server/accounts/forms.py': [
         ('class AddTOTPForm(forms.Form):',

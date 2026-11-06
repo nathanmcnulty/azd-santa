@@ -6,6 +6,8 @@ Installed by the image builder, never by a customer editing Django settings.
 Original work released under the Unlicense.
 """
 import json
+import re
+import secrets
 import time
 from contextlib import nullcontext
 
@@ -130,7 +132,11 @@ def _budget(key, maximum, seconds=CHALLENGE_SECONDS):
     return cache.incr(key) <= maximum
 
 
-def complete_mfa(request, user, device, code=None):
+def challenge_nonce():
+    return secrets.token_urlsafe(32)
+
+
+def complete_mfa(request, user, device, code=None, *, verification_token):
     fresh_user = get_user_model().objects.get(pk=user.pk)
     if (not _local(fresh_user, request) or device is None
             or request.session.get('_auth_user_hash') != fresh_user.get_session_auth_hash()):
@@ -141,6 +147,23 @@ def complete_mfa(request, user, device, code=None):
     if material not in factors:
         logout(request)
         raise PermissionDenied('Verification method changed; sign in again')
+    # The pre-authentication session may already have been loaded by another
+    # request. Claim a signed random challenge, not the rotated session key or a
+    # WebAuthn signature counter (some authenticators always report zero).
+    try:
+        from django.conf import settings
+        data = signing.loads(verification_token, salt='zentral_verify_token',
+                             key=settings.SECRET_KEY, max_age=CHALLENGE_SECONDS)
+        nonce = data.get('azd_nonce')
+        valid = (data.get('user_id') == user.pk and data.get('auth_backend') == LOCAL_BACKEND
+                 and data.get('azd_auth_hash') == fresh_user.get_session_auth_hash()
+                 and isinstance(nonce, str) and re.fullmatch(r'[A-Za-z0-9_-]{43}', nonce))
+        claimed = valid and _cache_add('challenge-used:' + _digest(verification_token), True, CHALLENGE_SECONDS + 60)
+    except Exception:
+        claimed = False
+    if not claimed:
+        logout(request)
+        raise PermissionDenied('Verification expired or was already used; sign in again')
     if device.TYPE == 'TOTP':
         # Original verification already succeeded. Find that exact timestep,
         # allowing a boundary crossing during form processing, then claim once.
@@ -156,6 +179,7 @@ def complete_mfa(request, user, device, code=None):
             logout(request)
             raise PermissionDenied('Use a new verification code and sign in again')
     request.session[PROOF] = dict(_stamp(fresh_user), issued=time.time(), factors=_digest(factors))
+    request.session['mfa_authenticated'] = True
     for key in (ENROLL, SEED, 'verification_token', 'webauthn_challenge'):
         request.session.pop(key, None)
 
@@ -172,6 +196,8 @@ def _challenge(request):
                              key=settings.SECRET_KEY, max_age=CHALLENGE_SECONDS)
         user = get_user_model().objects.get(pk=data['user_id'])
         if (not _local(user) or data.get('auth_backend') != LOCAL_BACKEND
+                or not isinstance(data.get('azd_nonce'), str)
+                or not re.fullmatch(r'[A-Za-z0-9_-]{43}', data['azd_nonce'])
                 or not constant_time_compare(data.get('azd_auth_hash', ''), user.get_session_auth_hash()) or not _factors(user)):
             return _login(request)
     except (KeyError, TypeError, ValueError, signing.BadSignature, get_user_model().DoesNotExist):
@@ -247,7 +273,7 @@ class RequireOperatorMFA:
                 if verified and after != factors:
                     # This session authorized the change. Other sessions keep
                     # their old fingerprint and must authenticate again.
-                    request.session[PROOF] = dict(_stamp(user), issued=time.time(), factors=_digest(after))
+                    request.session[PROOF] = dict(request.session[PROOF], factors=_digest(after))
             return response
 
     def process_template_response(self, request, response):
