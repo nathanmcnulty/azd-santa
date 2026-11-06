@@ -199,8 +199,22 @@ open until these end-to-end delivery gates are actually verified.
   a real existing-enrollment revocation/expiry defect for that stage. Other
   stages, rotation and restoration remain unproven; #52 owns those gates and
   the fix. Public ingress must remain disabled.
+  This is a demonstrated gap against our required device-credential lifecycle;
+  it does not establish whether upstream intentionally limits these enrollment
+  flags to initial enrollment. The product must define and enforce continuing
+  device authority explicitly rather than infer it from those flags.
 
 Backup/restore, mandatory MFA (#51), credential lifecycle (#52), native Mac
 behavior (#33) and equivalent Container Apps operation (#46) remain open gates.
 Repeatable VM deployment and automatic recovery are tracked in #53; isolated
 backup/restore with current authority preserved is tracked in #54.
+
+## Retained checkpoint
+
+At 2026-11-06 21:13 UTC, all seven services had stopped cleanly and Azure instance
+view confirmed the qualification VM was **deallocated**. Disks, named volumes,
+private fixtures, successful receipts and failed-gate evidence remain retained.
+Compute billing is stopped; retained storage/network resources are not deleted.
+Resume requires starting this exact VM and explicitly inspecting/resuming the
+private runtime. Do not rerun bootstrap/acquisition/fixture initialization over
+these existing paths or treat the failed credential fixture as a healthy one.
