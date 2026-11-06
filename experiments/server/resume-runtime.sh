@@ -3,10 +3,14 @@
 set -euo pipefail
 root=/var/lib/azd-santa-qualification/runtime-fixed
 label=${1:?An explicit resume evidence label is required}
+selected=${2:?An explicit current Compose path is required}
+fixture=${3:?The matching fixture path is required}
+image=${4:?The verified immutable image ID is required}
 [[ "$label" =~ ^[a-z0-9-]{2,24}$ ]]
+python3 "$(dirname "${BASH_SOURCE[0]}")/resume_runtime.py" --compose "$selected" --fixture "$fixture" --image "$image"
 logs="$root/resume-$label"
 mkdir -m 700 "$logs"
-compose=(docker --host unix:///var/run/docker.sock compose -f "$root/compose-stores.json")
+compose=(docker --host unix:///var/run/docker.sock compose -f "$selected")
 test "$(sysctl -n vm.max_map_count)" = 1048576
 "${compose[@]}" config --quiet
 timeout 120 "${compose[@]}" up --detach db redis rabbitmq elastic
