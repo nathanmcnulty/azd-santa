@@ -45,13 +45,14 @@ Six pinned Apache/core files integrate the policy. Their exact original/result
 hashes are checked before image construction and again inside the build;
 modified files carry notices. The policy itself is original Unlicense code.
 Source acquisition, patch preparation and package tests execute no upstream app
-code. Real Django request/session/form/PostgreSQL/Redis tests remain required.
+code. Actual Django request/session/form/PostgreSQL/Redis acceptance is recorded
+separately below.
 
-Remaining acceptance includes first enrollment and malformed/changed seed,
-valid and invalid factor login, stale/cross-user/password-reset/deactivated
-sessions, challenge expiry/budgets/replay, simultaneous last-factor removal,
-human-token rejection, constrained service-token access, password-age bootstrap,
-and unchanged Santa device sync. Lost-all-factor recovery must become one
+The private request suite covers enrollment, malformed/changed seeds, factor
+login, stale/password-reset/deactivated sessions, challenge expiry/budgets/replay,
+simultaneous last-factor removal, human-token rejection, constrained service-token
+access and password-age bootstrap. Device sync is qualified separately.
+Lost-all-factor recovery must become one
 separately authorized, audited management command which invalidates prior
 sessions/tokens and requires secure password recovery; email password reset
 alone must never reset MFA. That command and the customer bootstrap experience
@@ -110,7 +111,51 @@ re-enrollment. A separate Elasticsearch query found exactly six Santa events for
 that fixture (four retained plus two new). A subsequent seven-service memory
 sample totaled approximately 1.5 GiB; this is not a fleet-load or peak guarantee.
 
-Successful-login audit ordering is tracked separately in #57: the upstream login
-signal currently precedes the added replay-policy check. Access is denied on a
-reused assertion, but final policy acceptance should precede a success audit.
-That source finding needs its own signal-count regression before ingress.
+Successful-login audit ordering in this first image was tracked separately in
+#57: the upstream login signal preceded the added replay-policy check. Access
+was denied on a reused assertion, but the success audit could misrepresent it.
+The following regression qualifies the correction in a later image.
+
+## Successful-login audit regression, 2026-11-06
+
+The original image above reproduced both signal-count failures: a reused TOTP
+step and two concurrent, genuinely signed counterless WebAuthn assertions each
+emitted two successful-login signals while only one session obtained operator
+access. The baseline ran all fourteen cases with exactly these two failures,
+zero errors and zero skipped. Its private receipt is
+`runtime-fixed/operator-audit-baseline-2/receipt.json`.
+
+The integration now validates the fresh local user, password hash, factor and
+signed challenge and atomically claims challenge/TOTP authority **before**
+Django login. Login uses the accepted fresh user and explicit local backend;
+the proof is attached after session rotation. A rejected assertion records the
+existing failed-verification event, without adding credentials to its payload.
+Restricted password-only enrollment retains its existing login event; that event
+must not be interpreted as completed operator MFA.
+
+The corrected image
+`sha256:11d237a75da25179c5e4b6241a47abced0990c086f923b6bf34de3c3d3dfa3ad`
+passed all **14 real request cases**, zero failures/errors/skipped. Both replay
+cases now require exactly one actual `user_logged_in` signal, with the MFA marker
+set, across the accepted/rejected pair. Exact bindings:
+
+- Policy SHA-256: `df1a0b3b62919414fba6715e9e924f344d40ff17052da7c1b493a19b4cc2ad84`.
+- Harness SHA-256: `ac2774bdef29f92c4bdbbb83a985f4dd9b815258b3c1f264121a5190aee67db8`.
+- Compose SHA-256: `3930e33a57eaa071fa3fb6fac0db999174a40bfabd0c1229a947ca9dc7514219`.
+- Private receipt: `runtime-fixed/operator-audit-events-requests/receipt.json`.
+
+The image-only transition preserved the original healthy fixture. Both devices
+then passed full loopback HTTP sync, including Monitor preflight, exact paged
+rules, event upload, credential isolation and committed postflight without
+re-enrollment. Its receipt is
+`runtime-fixed/synthetic-fixture-operator-audit-events.receipt-192a852050354ac4a3fda62b2f948e31.json`.
+The 137-test offline suite passed on PowerShell 7.6.9/Pester 6.2.0; independent
+review verified all six transformed core-file hashes. This signal regression
+does not additionally prove indexed audit delivery, real-browser/TLS behavior,
+native Mac sync, Redis restoration or lost-factor recovery.
+
+An earlier qualification attempt could not read the source-only bind-mounted
+harness as the non-root app user. That failure remains retained in
+`runtime-fixed/operator-audit-baseline/private-process-output.json`; only that
+source file's read permission was corrected. Private credentials and logs
+remained restricted, and the accepted run used new evidence paths.

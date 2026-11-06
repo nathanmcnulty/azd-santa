@@ -296,5 +296,6 @@ The earlier failed credential receipt remains retained.
 The next private image also passed fourteen real operator-MFA request cases and
 the original synthetic device-sync/indexing regression. See
 [operator MFA qualification](operator-mfa.md) for exact image/source/receipt
-bindings and the remaining recovery, Redis durability and audit-order gates.
+bindings, the accepted audit-order regression, and remaining recovery and Redis
+durability gates.
 This adds no real-Mac, browser/TLS or production acceptance.
