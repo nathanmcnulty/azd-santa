@@ -185,6 +185,22 @@ open until these end-to-end delivery gates are actually verified.
   same two indexed events remained. `record_persistence.py` compares these gates
   before sending any additional sync traffic; it cannot initialize the fixture.
   This proves private restart persistence, not automatic service recovery.
+- A fresh HTTP sync after reboot also passed. The original fixture's indexed
+  Santa-event count then increased from two to exactly four. All seven running
+  containers reported `OOMKilled=false` and restart count zero at that readback;
+  this observation covers that run, not historical/fleet-load stability.
+- `qualify_credentials.py` created a separate, fully synthetic Monitor fixture
+  and completed normal enrollment/sync first. It then verified one secret's
+  revoked flag and the other secret's expired flag in the actual database.
+  Empty `eventupload` requests with both credentials returned HTTP 200. The
+  qualification unit correctly exited 2 with `SANTA_CREDENTIAL_GATE_FAILED`.
+  No credential is printed by its public receipt. The isolated fixture is left
+  revoked/expired; the original reboot fixture is unchanged. This demonstrates
+  a real existing-enrollment revocation/expiry defect for that stage. Other
+  stages, rotation and restoration remain unproven; #52 owns those gates and
+  the fix. Public ingress must remain disabled.
 
 Backup/restore, mandatory MFA (#51), credential lifecycle (#52), native Mac
 behavior (#33) and equivalent Container Apps operation (#46) remain open gates.
+Repeatable VM deployment and automatic recovery are tracked in #53; isolated
+backup/restore with current authority preserved is tracked in #54.
