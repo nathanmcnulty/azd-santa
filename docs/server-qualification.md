@@ -292,3 +292,9 @@ ensure an old restored database cannot revive superseded credentials or policy.
 Mandatory operator MFA (#51), ingress/body-size protections, trusted TLS, MDM
 delivery, repeatable deployment/recovery and Container Apps parity remain open.
 The earlier failed credential receipt remains retained.
+
+The next private image also passed fourteen real operator-MFA request cases and
+the original synthetic device-sync/indexing regression. See
+[operator MFA qualification](operator-mfa.md) for exact image/source/receipt
+bindings and the remaining recovery, Redis durability and audit-order gates.
+This adds no real-Mac, browser/TLS or production acceptance.

@@ -67,7 +67,7 @@ upgrade preserved the existing healthy synthetic Santa fixture. Policy SHA-256:
 
 All **14 actual Django/PostgreSQL/Redis request cases passed**, with zero skipped,
 zero errors and zero failures. These cover the behaviors listed above except
-lost-factor recovery and device-sync regression, which remain separate. Both
+lost-factor recovery, which remains separate. Both
 ordinary and superuser operators were tested without staff status. Real forms,
 CSRF checks, password hashing, TOTP verification, session persistence and user-row
 locks ran against the actual core image. Human tokens were rejected while a
@@ -102,3 +102,15 @@ browser, TLS transport or physical security key. No native-Mac behavior or
 restoration durability follows from this result. Recovery/customer bootstrap,
 Redis recreation/restoration state and the final deployment flow remain open;
 #51 is not closed and public ingress remains disabled.
+
+The same original two-device synthetic fixture then passed full real HTTP Santa
+sync under the MFA-enabled image, including cross-device rejection, Monitor
+preflight, six exact rules paged 5+1, event upload and committed postflight without
+re-enrollment. A separate Elasticsearch query found exactly six Santa events for
+that fixture (four retained plus two new). A subsequent seven-service memory
+sample totaled approximately 1.5 GiB; this is not a fleet-load or peak guarantee.
+
+Successful-login audit ordering is tracked separately in #57: the upstream login
+signal currently precedes the added replay-policy check. Access is denied on a
+reused assertion, but final policy acceptance should precede a success audit.
+That source finding needs its own signal-count regression before ingress.
