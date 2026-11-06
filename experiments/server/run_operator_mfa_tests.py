@@ -1,5 +1,6 @@
 """Capture all real-app test output privately and export only the bounded receipt."""
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -12,13 +13,30 @@ from test_live_zentral import validate_compose
 from upgrade_core_runtime import write_private
 
 
-def run(compose_path, harness_path, destination, expected_policy):
+def test_count(source):
+    classes = [node for node in ast.parse(source).body if isinstance(node, ast.ClassDef) and node.name == 'OperatorRequests']
+    if len(classes) != 1:
+        raise ValueError('Expected one explicit OperatorRequests class')
+    methods = [node.name for node in classes[0].body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    tests = [name for name in methods if name.startswith('test_')]
+    if (any(isinstance(node, ast.AsyncFunctionDef) and node.name.startswith('test_') for node in classes[0].body)
+            or len(methods) != len(set(methods)) or not tests
+            or any(not re.fullmatch(r'test_[a-z0-9_]+', name) for name in tests)):
+        raise ValueError('Expected unique, explicitly named test methods')
+    return len(tests)
+
+
+def run(compose_path, harness_path, destination, expected_policy, expected_recovery=None):
     compose, digest = validate_compose(compose_path)
     if not re.fullmatch(r'[a-f0-9]{64}', expected_policy):
         raise ValueError('Expected an exact policy source hash')
     harness = Path(harness_path).resolve(strict=True)
     if not harness.is_file():
         raise ValueError('Expected the reviewed harness file')
+    expected_count = test_count(harness.read_text(encoding='utf-8'))
+    if expected_recovery is not None and not re.fullmatch(r'[a-f0-9]{64}', expected_recovery):
+        raise ValueError('Expected an exact recovery source hash')
+    scope = 'private-real-django-operator-recovery' if expected_recovery else 'private-real-django-operator-mfa'
     destination = Path(destination)
     destination.mkdir(mode=0o700)
     project = json.loads(compose.read_text())['name']
@@ -53,13 +71,18 @@ def run(compose_path, harness_path, destination, expected_policy):
                 item = json.loads(line)
             except ValueError:
                 continue
-            if item.get('scope') == 'private-real-django-operator-mfa':
+            if item.get('scope') == scope:
                 records.append(item)
     if len(records) != 1:
         raise RuntimeError('No unique real-app receipt; inspect retained private process output')
     receipt = records[0]
     allowed = {'scope', 'namespace', 'tests', 'passed', 'skipped', 'failures', 'errors',
                'harness_sha256', 'policy_sha256', 'limitation'}
+    if expected_recovery:
+        allowed.update({'recovery_sha256', 'database_scope'})
+        if (receipt.get('recovery_sha256') != expected_recovery or receipt.get('database_scope') !=
+                'Disposable isolated PostgreSQL test database; audit posting mocked, delivery unproven'):
+            raise RuntimeError('Recovery source/database evidence mismatch')
     if (set(receipt) != allowed or
             not re.fullmatch(r'azd-mfa-[a-f0-9]{24}', receipt.get('namespace', '')) or
             type(receipt.get('passed')) is not bool or
@@ -69,7 +92,7 @@ def run(compose_path, harness_path, destination, expected_policy):
             receipt.get('limitation') != 'Synthetic operators, direct Django request client; no real-browser/TLS/native-Mac/restore proof'):
         raise RuntimeError('Unrecognized MFA receipt schema; raw output remains private')
     source_hash = hashlib.sha256(harness.read_bytes()).hexdigest()
-    if (receipt.get('tests') != 14 or receipt.get('skipped') != 0 or
+    if (receipt.get('tests') != expected_count or receipt.get('skipped') != 0 or
             receipt.get('harness_sha256') != source_hash or receipt.get('policy_sha256') != expected_policy):
         raise RuntimeError('Incomplete or mismatched MFA request-test receipt')
     if receipt['passed'] and (receipt['failures'] or receipt['errors']):
@@ -88,5 +111,6 @@ if __name__ == '__main__':
     parser.add_argument('--harness', required=True)
     parser.add_argument('--destination', required=True)
     parser.add_argument('--policy-sha256', required=True)
+    parser.add_argument('--recovery-sha256')
     args = parser.parse_args()
-    run(args.compose, args.harness, args.destination, args.policy_sha256)
+    run(args.compose, args.harness, args.destination, args.policy_sha256, args.recovery_sha256)

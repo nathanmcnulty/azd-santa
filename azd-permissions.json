@@ -17,7 +17,7 @@
       "rationale": "Privileged nonproduction evaluation installs Docker tooling, acquires checksum-verified upstream source and submits a bounded private build. It performs no real device enrollment, tenant grant, image publication or production deployment.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/Start-ZentralQualification.ps1", "sha256": "e06b5b49b979428e19ba069ea9778ac21595398e2befe7d0a5302e179fb3f5f9" },
+        { "path": "experiments/server/Start-ZentralQualification.ps1", "sha256": "ef3ca43085843680835c012d6e7be3443df972cb1fc1b9f991a3f973d278d50a" },
         { "path": "experiments/server/bootstrap-host.sh", "sha256": "0dc1df0e859ccb5874b95816c61738e12c09ccb526f7daf9768f86210f1ddddd" }
       ]
     },
@@ -244,6 +244,7 @@
     }
   ],
   "gaps": [
+    "The candidate local operator_access bootstrap/recovery command uses existing privileged host/container and local application-database authority; it grants no Azure/Graph role and preserves other users, service identities and Santa device credentials. Its isolated-database runtime, real-browser/TLS, private link delivery, audit indexing and backup/restore behavior require separate qualification. Metadata is not recovery authorization.",
     "The private real-server qualification tooling uses existing privileged Azure Run Command rights, not a new workload role. Generated Compose and source acquisition need no tenant permission. Community-only production packaging, trusted ingress, operator MFA, unique device enrollment, rotation/revocation, backup/restore and Container Apps parity remain unqualified; private evaluation must not be promoted by inference.",
     "Evidence sha256 fields bind current repository file bytes, not historical documentationUrl content. Existing immutable documentationUrl values preserve the earlier source provenance and may refer to different bytes. The 2026-11-06 reconciliation found only the added PowerShell 7.6 requirement header in the three previously stale Graph scripts; their requested delegated scope sets are unchanged. Current hashes and explicit scope declarations do not prove effective tenant grants or permission sufficiency.",
     "Live sub-mvp inventory found an environment-added system-assigned VM identity and AzurePolicyforLinux extension absent from this template. Existing subscription policy appears responsible; a direct principal role lookup returned no entries, but full effective authority and policy ownership are not audited here. Preserve these environment-managed resources rather than removing them as drift.",
