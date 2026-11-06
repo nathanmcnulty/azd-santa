@@ -55,6 +55,17 @@ class Transition(unittest.TestCase):
             with self.assertRaises(ValueError):
                 persistence.check_previous(previous, **{**expected, **change})
 
+    def test_named_second_transition_preserves_first_and_rejects_path_injection(self):
+        h = self.harness
+        first, first_fixture = upgrade.transition(h.compose, h.fixture_path, 'sha256:' + 'b' * 64, 'boot')
+        original = first.read_bytes(), first_fixture.read_bytes()
+        second, second_fixture = upgrade.transition(first, first_fixture, 'sha256:' + 'c' * 64, 'boot', 'sync-guard')
+        self.assertEqual(original, (first.read_bytes(), first_fixture.read_bytes()))
+        self.assertNotEqual(first, second)
+        self.assertEqual(json.loads(second_fixture.read_text())['devices'], h.fixture['devices'])
+        with self.assertRaisesRegex(ValueError, 'transition label'):
+            upgrade.transition(first, first_fixture, 'sha256:' + 'c' * 64, 'boot', '../../bad')
+
 
 if __name__ == '__main__':
     unittest.main()

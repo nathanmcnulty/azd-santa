@@ -218,3 +218,30 @@ Compute billing is stopped; retained storage/network resources are not deleted.
 Resume requires starting this exact VM and explicitly inspecting/resuming the
 private runtime. Do not rerun bootstrap/acquisition/fixture initialization over
 these existing paths or treat the failed credential fixture as a healthy one.
+
+## Continuing device authority implementation
+
+The next derived image adds an original guard in the shared Santa sync request
+handler. Missing, revoked and expired secret records are rejected before body
+processing or stage-specific writes. Enrollment quota remains an initial
+enrollment limit; it is not charged or rechecked as an ongoing sync quota.
+The exact upstream sync-view SHA-256 is
+`95e0a59e6f37b5a3f43cb0db4c457981163734d954e1cc5b68df82826d412d97`;
+the guarded result is
+`f6041b2e83350dad583bb3a26265a182dab0d674f8a096f5c522783d8093e33d`.
+Input, shape and output checks fail closed, and the modified file and image carry
+notices. No enterprise source or licensing check is replaced.
+
+`test_credential_lifecycle.py` explicitly creates a fresh synthetic Monitor
+fixture. It checks revocation/expiry and an old rotated credential at all four
+stages, verifies database state is unchanged on rejection, and checks positive
+access for the new credential and the unaffected device. Rotation retains the
+old private fixture and writes a separate rotated fixture; it never prints
+credentials. The harness stops after unexpected acceptance instead of continuing
+potentially mutating stages. A named image transition retains the prior Compose,
+fixture and receipts. These are qualification tools, not the final admin flow.
+
+The offline suite currently passes 134 Pester tests. Live build, image update and
+these new lifecycle gates require their own actual receipts; source/offline
+success alone does not close #52 or authorize ingress. Backup restoration remains
+separate in #54, and the earlier failed credential receipt must be retained.

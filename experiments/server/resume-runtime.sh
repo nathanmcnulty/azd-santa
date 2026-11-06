@@ -2,6 +2,10 @@
 # Explicit manual resume for this one private experiment, not product recovery.
 set -euo pipefail
 root=/var/lib/azd-santa-qualification/runtime-fixed
+label=${1:?An explicit resume evidence label is required}
+[[ "$label" =~ ^[a-z0-9-]{2,24}$ ]]
+logs="$root/resume-$label"
+mkdir -m 700 "$logs"
 compose=(docker --host unix:///var/run/docker.sock compose -f "$root/compose-stores.json")
 test "$(sysctl -n vm.max_map_count)" = 1048576
 "${compose[@]}" config --quiet
@@ -20,8 +24,8 @@ test "$ready" = true
 timeout 120 "${compose[@]}" up --detach --no-deps workers celery
 ready=false
 for attempt in {1..60}; do
-    if "${compose[@]}" exec -T rabbitmq rabbitmqctl list_queues name consumers --formatter json > "$root/resume-queues.json" 2> "$root/resume-queues.stderr" &&
-        python3 -c "import json,pathlib; q=json.loads(pathlib.Path('$root/resume-queues.json').read_text()); assert all(any(row['name']==name and row['consumers']>0 for row in q) for name in ('store_events_Elasticsearch','enrich_events','process_events'))"; then
+    if "${compose[@]}" exec -T rabbitmq rabbitmqctl list_queues name consumers --formatter json > "$logs/queues.json" 2> "$logs/queues.stderr" &&
+        python3 -c "import json,pathlib; q=json.loads(pathlib.Path('$logs/queues.json').read_text()); assert all(any(row['name']==name and row['consumers']>0 for row in q) for name in ('store_events_Elasticsearch','enrich_events','process_events'))"; then
         ready=true
         break
     fi

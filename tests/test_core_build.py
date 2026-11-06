@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import ast
 import importlib.util
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -457,6 +459,36 @@ class CoreBuildTests(unittest.TestCase):
                         expected_dockerfile_sha256=docker_hash,
                         expected_license_sha256=license_hash,
                     )
+
+
+class SyncCredentialGuard(unittest.TestCase):
+    def test_shared_guard_rejects_invalid_authority_before_processing_but_not_used_quota(self):
+        method = ast.parse('def post(self):\n' + core_build.SYNC_GUARD + '        return True\n')
+        class Denied(Exception):
+            pass
+        for revoked, expired, missing in ((False, False, False), (True, False, False),
+                                          (False, True, False), (False, False, True)):
+            secret = None if missing else SimpleNamespace(is_revoked=revoked, is_expired=expired, is_used_up=True)
+            manager = mock.Mock()
+            manager.filter.return_value.first.return_value = secret
+            namespace = dict(EnrollmentSecret=SimpleNamespace(objects=manager), PermissionDenied=Denied)
+            exec(compile(method, 'original-sync-guard', 'exec'), namespace)
+            instance = SimpleNamespace(enrollment_secret_secret='synthetic')
+            if revoked or expired or missing:
+                with self.assertRaises(Denied):
+                    namespace['post'](instance)
+            else:
+                self.assertTrue(namespace['post'](instance))
+            manager.filter.assert_called_once_with(secret='synthetic')
+
+    def test_unreviewed_sync_source_is_not_modified(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'public_views.py'
+            path.write_bytes(b'unreviewed')
+            program = core_build._sync_transform_script().replace('/zentral/' + core_build.SYNC_VIEW_PATH, path.as_posix())
+            with self.assertRaisesRegex(RuntimeError, 'sync input hash mismatch'):
+                exec(compile(program, 'sync-transform', 'exec'), {})
+            self.assertEqual(path.read_bytes(), b'unreviewed')
 
 
 if __name__ == "__main__":

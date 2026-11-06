@@ -29,6 +29,10 @@ Describe 'Private server qualification tooling' {
         $output = & python (Join-Path $root 'tests/test_runtime_upgrade.py') 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
     }
+    It 'does not accept partial stage rejection or mutated database state as credential safety' {
+        $output = & python (Join-Path $root 'tests/test_lifecycle_harness.py') 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
+    }
     It 'parses privileged build submission without invoking Azure' {
         $tokens = $null
         $errors = $null
