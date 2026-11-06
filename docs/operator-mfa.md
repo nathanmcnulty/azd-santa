@@ -57,5 +57,48 @@ sessions/tokens and requires secure password recovery; email password reset
 alone must never reset MFA. That command and the customer bootstrap experience
 are not implemented by this first policy layer.
 
-The 136-test offline suite and pinned-source preparation are separate from
-these runtime gates. Public ingress remains disabled.
+## Actual private request acceptance, 2026-11-06
+
+The 137-test offline suite passed. The real image
+`sha256:0f606eabc9a1a4103b6b8b97aced72d0ea160fa6ac5ee98b5e7ae854452fed60`
+built, its non-root application user read the exact policy bytes, and its image
+upgrade preserved the existing healthy synthetic Santa fixture. Policy SHA-256:
+`e17fb7b380dab96bb593faf89ee9d33a4318c16d1f98a216c086640f409ece4a`.
+
+All **14 actual Django/PostgreSQL/Redis request cases passed**, with zero skipped,
+zero errors and zero failures. These cover the behaviors listed above except
+lost-factor recovery and device-sync regression, which remain separate. Both
+ordinary and superuser operators were tested without staff status. Real forms,
+CSRF checks, password hashing, TOTP verification, session persistence and user-row
+locks ran against the actual core image. Human tokens were rejected while a
+dedicated service token retained constrained access and PBAC denial elsewhere.
+
+The security-key replay case used genuine ES256/COSE signatures with a zero
+signature counter. Two requests loaded the same pre-authentication session before
+continuing; exactly one authenticated. The factor-change case added a method at
+hour seven without renewing the original proof and required sign-in after hour
+eight. Neither case mocked a successful cryptographic verifier.
+
+The accepted harness SHA-256 is
+`54fe5999fd674865ff6979e4226ed903a69368ca71f42fa4d22efdb73ba25787`;
+Compose SHA-256 is
+`6883424b17ac84658261db0139b8328b9f42b60501989f4d009e27def0f28293`.
+The guest receipt is in
+`runtime-fixed/operator-mfa-requests-run3/receipt.json` under the private
+qualification root. Detailed process output, passwords and seeds stay private.
+The outer runner validates exact source hashes, fourteen tests, zero skipped and
+a strict export schema before accepting or printing a receipt.
+
+Earlier failed runs remain retained. The disposable request container initially
+skipped the normal entrypoint's static-file collection; the harness now performs
+the real collection instead of replacing the static renderer. A later assertion
+was corrected to permit Django's safe local login URL with a `next` query after
+password-session invalidation, while still requiring an empty scheme/host and
+the exact login path. The policy was not weakened for either harness fix.
+
+An actual loopback HTTP login page also rendered successfully. The request
+acceptance uses Django's request client and a virtual authenticator, not a real
+browser, TLS transport or physical security key. No native-Mac behavior or
+restoration durability follows from this result. Recovery/customer bootstrap,
+Redis recreation/restoration state and the final deployment flow remain open;
+#51 is not closed and public ingress remains disabled.
