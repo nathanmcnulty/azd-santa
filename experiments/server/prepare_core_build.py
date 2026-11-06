@@ -20,8 +20,8 @@ UPSTREAM_SOURCE_URL = (
     "https://github.com/zentralopensource/zentral/tree/"
     f"{UPSTREAM_COMMIT}"
 )
-UPSTREAM_DOCKERFILE_SHA256 = "798a4a5fde0715f4e6976c96ca9bcc13ea28dedbc3fe6ea99805fadcf456aef8"
-UPSTREAM_LICENSE_SHA256 = "da37ac5ce63830ab2df237de88b7fe508f6bf525b30f9ea67c0c827f1dee9a7d"
+UPSTREAM_DOCKERFILE_SHA256 = "dd06e76e0b325684c0c07734cfb1b951218678fb454b8af18e719f309c2e94e1"
+UPSTREAM_LICENSE_SHA256 = "00f43b4775da6dcbe63d20b3b2c36e616f35af5595d02c590278e75d9d86793c"
 
 
 def _sha256(path: Path) -> str:
@@ -250,7 +250,8 @@ def derive_core_dockerfile(source_root: Path, output_path: Path) -> Path:
         (source_root / "LICENSE").read_bytes(),
         license_sha256=UPSTREAM_LICENSE_SHA256,
     )
-    output_path.write_text(rendered, encoding="utf-8", newline="\n")
+    with output_path.open("x", encoding="utf-8", newline="\n") as stream:
+        stream.write(rendered)
     return output_path
 
 
