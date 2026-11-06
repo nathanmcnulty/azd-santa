@@ -315,6 +315,7 @@ class OperatorRequests(TransactionTestCase):
                 locked = threading.Event()
                 contending = threading.Event()
                 release = threading.Event()
+                backend_pids = {}
 
                 def observe(role):
                     def wrapper(execute, sql, params, many, context):
@@ -339,6 +340,8 @@ class OperatorRequests(TransactionTestCase):
                         # Bound genuine PostgreSQL waits, not mocked lock/crypto
                         # outcomes. A missing user-first lock is a test failure.
                         with connection.cursor() as cursor:
+                            cursor.execute('SELECT pg_backend_pid()')
+                            backend_pids[role] = cursor.fetchone()[0]
                             cursor.execute("SET lock_timeout = '8s'")
                             cursor.execute("SET statement_timeout = '15s'")
                         with connection.execute_wrapper(observe(role)):
@@ -356,6 +359,18 @@ class OperatorRequests(TransactionTestCase):
                         self.assertTrue(locked.wait(timeout=10), 'Leader did not acquire the target user row first')
                         follower = pool.submit(operation, other)
                         self.assertTrue(contending.wait(timeout=10), 'Other operation did not contend for the target user row')
+                        # Observe PostgreSQL's actual wait graph rather than
+                        # assuming a pre-execute thread event proves blocking.
+                        deadline = time.monotonic() + 5
+                        blocked = False
+                        while time.monotonic() < deadline:
+                            with connection.cursor() as cursor:
+                                cursor.execute('SELECT pg_blocking_pids(%s)', [backend_pids[other]])
+                                blocked = backend_pids[first] in cursor.fetchone()[0]
+                            if blocked:
+                                break
+                            time.sleep(0.02)
+                        self.assertTrue(blocked, 'PostgreSQL did not confirm the expected user-row wait')
                     finally:
                         release.set()
                     results = {first: leader.result(timeout=25), other: follower.result(timeout=25)}
