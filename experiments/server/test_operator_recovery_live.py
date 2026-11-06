@@ -321,7 +321,8 @@ class OperatorRequests(TransactionTestCase):
                         statement = sql.upper()
                         target_lock = (statement.lstrip().startswith('SELECT')
                                        and 'FROM "ACCOUNTS_USER"' in statement
-                                       and 'FOR UPDATE' in statement and user.pk in (params or ()))
+                                       and 'FOR UPDATE' in statement
+                                       and any(value in (params or ()) for value in (user.pk, user.username)))
                         if target_lock and role != first:
                             contending.set()
                         result = execute(sql, params, many, context)
