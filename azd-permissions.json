@@ -200,6 +200,7 @@
     "Local artifact inspection adds no Graph, Azure, connector or recipient permission; catalog display metadata and this manifest do not authorize grants.",
     "Minimum read sufficiency, tenant consent, Intune licensing and effective current target authority are not proven by requested scope metadata or local artifacts.",
     "Defender Live Response, Intune health-script publication/status, optional compute/sync hosting and cleanup permissions still need a complete source-specific review; existing behavior is unchanged.",
-    "Candidate deployment-receipt replacement, authenticated observer provenance and optional notification transports are deferred; no permissions for those future paths are claimed."
+    "Candidate deployment-receipt replacement, authenticated observer provenance and optional notification transports are deferred; no permissions for those future paths are claimed.",
+    "Offline candidate drafting adds no Graph, Azure, provider, GitHub or Azure DevOps permissions and cannot publish rules. Sync-provider administration, profile distribution, publisher authority and selected-target live proof require separate source-specific review; enrollment profiles and credentials stay outside Git."
   ]
 }

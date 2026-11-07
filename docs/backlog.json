@@ -1,8 +1,8 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "nathanmcnulty/azd-santa",
-  "sourceRevision": "bc9c9a4124796a11db677aea90c038727da46f4f",
-  "capturedAt": "2026-10-04",
+  "sourceRevision": "b636b4c10cf2947348114839a3c4b226558c6de5",
+  "capturedAt": "2026-10-16",
   "items": [
     {
       "id": "SANTA-001",
@@ -85,7 +85,7 @@
       "title": "Evaluate managed/existing-server sync profiles before custom Azure hosting",
       "kind": "discovery",
       "priority": "P2",
-      "status": "proposed",
+      "status": "done",
       "wave": 3,
       "problem": "Santa native sync is required for scalable rules; custom Azure hosting is only an advanced candidate.",
       "scope": [
@@ -106,9 +106,17 @@
       "authorization": "local-only",
       "components": [],
       "sources": [
-        "README.md"
+        "README.md",
+        "docs/sync-profiles.md",
+        "package/santa.lock.json",
+        "https://github.com/northpolesec/santa/blob/dbe97b0aa0f5929feece5f4cbd2c69362c271abc/docs/docs/features/sync.md",
+        "https://northpole.security/docs/workshop/settings",
+        "https://www.zentral.com/docs/zentral/apps/santa/"
       ],
-      "evidence": [],
+      "evidence": [
+        "2026-10-16 discovery against repository b636b4c10cf2947348114839a3c4b226558c6de5 and pinned Santa 2026.8.244 source dbe97b0aa0f5929feece5f4cbd2c69362c271abc. docs/sync-profiles.md describes Workshop and existing Zentral setup packets, independently selected provider revisions, protocol/version evidence, secret-bearing enrollment profiles and MDM ownership boundaries. No particular live server/client pair is claimed compatible.",
+        "The Azure-native option remains an unimplemented scoped protocol/security spike. Baseline profiles and runtime retain Monitor mode and no SyncBaseURL; no provider profile is generated, merged, uploaded or assigned by this discovery change. SANTA-002 and SANTA-007 retain real-Mac/profile/provider/rule/rollback qualification."
+      ],
       "blocker": null
     },
     {
@@ -116,12 +124,14 @@
       "title": "Design deterministic Git-reviewed rule candidates",
       "kind": "discovery",
       "priority": "P2",
-      "status": "proposed",
+      "status": "in-progress",
       "wave": 3,
       "problem": "Optional telemetry must never directly authorize allow rules.",
       "scope": [
         "docs/",
-        "config/",
+        "scripts/Santa.Candidates.psm1",
+        "scripts/New-SantaRuleCandidate.ps1",
+        "schemas/candidate-1.1.schema.json",
         "tests/"
       ],
       "acceptance": [
@@ -139,10 +149,26 @@
       "authorization": "local-only",
       "components": [],
       "sources": [
-        "README.md"
+        "README.md",
+        "docs/candidate-drafts.md",
+        "scripts/New-SantaRuleCandidate.ps1",
+        "scripts/Santa.Candidates.psm1",
+        "schemas/event.schema.json",
+        "schemas/candidate-1.1.schema.json",
+        "tests/Santa.Candidates.Tests.ps1"
       ],
-      "evidence": [],
-      "blocker": null
+      "evidence": [
+        "Source implementation adds a local-only deterministic 1.1 draft generator with an explicit binary policy, bounded normalized input, evidence/identity/output digests, review expiry, aggregate-only output and unperformed-counterfactual null. The existing 1.0 candidate/rule contracts remain unchanged. docs/candidate-drafts.md defines evidence, approval, conflict, publication and rollback boundaries.",
+        "Partial progress only: normalization/provenance, performed counterfactuals against effective rules, bound human approval, optional GitHub/Azure DevOps transports, authorized publisher and real endpoint/rollback/Monitor-to-Lockdown gates remain open. A generated draft is not approval, rule delivery, effective enforcement or a live rule expiry mechanism.",
+        "PowerShell 7.6.6/Pester 6.2.0 required offline validation passed all 111 repository tests (14 candidate cases), with zero parser/analyzer findings. Independent review recomputed all three digest stages and exact output bytes outside the production implementation. Existing generated Monitor profiles, package and 1.0 contracts remain unchanged; no service, Graph, assignment, rule publication or endpoint operation occurred."
+      ],
+      "blocker": null,
+      "claim": {
+        "owner": "codex-santa-candidates",
+        "worktree": "C:\\azd-reconciliation-20261015\\santa-action-maintenance",
+        "baseRevision": "b636b4c10cf2947348114839a3c4b226558c6de5",
+        "startedAt": "2026-10-16T11:20:41.8010717+00:00"
+      }
     },
     {
       "id": "SANTA-005",
@@ -229,6 +255,45 @@
         "PowerShell 7.6.6: registered Test-SantaTemplate validation passed; full Pester 55/55 passed, zero skipped/not-run, including unchanged hash-bound coordinator mocks and both actual publisher no-Apply paths with zero context/auth/Graph dispatch and no receipts. Package bytes/stored verification receipt were checked; profile status input is synthetic.",
         "Assessment completed without publisher/runtime/permission/component-lock changes. Existing tenant/account gates, scope sets, Monitor one-Mac guards, receipt semantics and compute-free baseline remain unchanged. No live authentication, grants, Intune delivery or real-Mac readiness is claimed."
       ],
+      "blocker": null
+    },
+    {
+      "id": "SANTA-007",
+      "title": "Qualify a selected sync provider on the one-device Monitor pilot",
+      "kind": "verification",
+      "priority": "P2",
+      "status": "proposed",
+      "wave": 3,
+      "problem": "Provider documentation and protocol fixtures do not prove pinned-client compatibility, actual rule application or rollback on the selected Mac.",
+      "scope": [
+        "docs/sync-profiles.md",
+        "Private provider configuration and one-device endpoint evidence",
+        "Owned pilot profiles, credentials and rule receipts"
+      ],
+      "acceptance": [
+        "Select and authorize the exact provider release/configuration, pilot Mac, authentication, MDM objects/assignment and harmless test rule before mutation; preserve one-device Monitor mode.",
+        "Prove effective profile delivery, prerequisites, authenticated preflight, event handling, complete paged rule download, postflight and controlled client behavior separately; source/fixtures/server acceptance do not prove endpoint application.",
+        "Exercise authentication failure, interrupted download, stale/offline client and provider switching with a reviewed preservation plan; prove exact owned-rule/configuration rollback and effective client state.",
+        "Remove or rotate only confirmed owned unshared pilot credentials, rules, profiles and assignments; retain redacted source/provider/target-bound receipts. No broader assignment or Lockdown promotion is authorized by this item."
+      ],
+      "validation": [
+        "./scripts/Test-SantaTemplate.ps1",
+        "Invoke-Pester ./tests -CI",
+        "Follow docs/sync-profiles.md with separately selected provider/target and authorization; retain private service and endpoint evidence."
+      ],
+      "dependencies": [
+        "nathanmcnulty/azd-santa:SANTA-002",
+        "nathanmcnulty/azd-santa:SANTA-003"
+      ],
+      "authorization": "tenant-write",
+      "components": [],
+      "sources": [
+        "docs/sync-profiles.md",
+        "docs/candidate-drafts.md",
+        "AGENTS.md",
+        "package/santa.lock.json"
+      ],
+      "evidence": [],
       "blocker": null
     }
   ]
