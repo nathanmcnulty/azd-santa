@@ -7,7 +7,7 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import signal
 import socket
@@ -35,6 +35,10 @@ VOLUMES = {'db': ['postgres_data:/var/lib/postgresql'],
            **{name: ['./conf:/zentral-eval-conf:ro', 'media_data:/var/zentral'] for name in APPS}}
 
 
+class Cancelled(RuntimeError):
+    pass
+
+
 def sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
@@ -58,11 +62,68 @@ def checked_path(value, *, private=False):
             if not parent.is_dir() or info.st_uid != 0 or info.st_mode & 0o022:
                 raise ValueError('Runtime parents must be root-owned and not publicly writable')
     info = path.stat()
-    if not stat.S_ISREG(info.st_mode) or (os.name != 'nt' and info.st_uid != 0):
+    if not stat.S_ISREG(info.st_mode) or (os.name != 'nt' and (info.st_uid != 0 or info.st_mode & 0o022)):
         raise ValueError('Root-owned regular runtime file required')
     if private and info.st_mode & 0o077:
         raise ValueError('Private runtime file permissions required')
     return path
+
+
+def trusted_sources():
+    controller = checked_path(Path(__file__).absolute())
+    for name in HELPERS:
+        checked_path(controller.with_name(name))
+    return controller
+
+
+def state_path(root, relative, *, directory=False, nonempty=False):
+    path = root / relative
+    if path != path.resolve(strict=True) or not path.is_relative_to(root):
+        raise ValueError('Backing data sentinel must stay inside its existing volume')
+    if directory:
+        if not path.is_dir() or (nonempty and next(path.iterdir(), None) is None):
+            raise ValueError('Initialized backing directory missing')
+    elif not path.is_file() or (nonempty and path.stat().st_size == 0):
+        raise ValueError('Initialized backing file missing')
+    return path
+
+
+def check_postgres_data(root, image_environment, configured_environment):
+    major, pgdata = image_environment.get('PG_MAJOR', ''), image_environment.get('PGDATA', '')
+    if not re.fullmatch(r'[1-9][0-9]*', major) or any(configured_environment.get(k, v) != v for k, v in (('PG_MAJOR', major), ('PGDATA', pgdata))):
+        raise ValueError('Pinned PostgreSQL data-directory configuration required')
+    base, selected = PurePosixPath('/var/lib/postgresql'), PurePosixPath(pgdata)
+    if not selected.is_relative_to(base) or '..' in selected.parts:
+        raise ValueError('PostgreSQL data directory is outside its selected volume')
+    directory = state_path(root, str(selected.relative_to(base)), directory=True)
+    version = state_path(directory, 'PG_VERSION', nonempty=True)
+    if version.stat().st_size > 16 or version.read_text().strip() != major:
+        raise ValueError('Initialized PostgreSQL version mismatch')
+    for name in ('global/pg_control', 'postgresql.conf', 'pg_hba.conf'):
+        state_path(directory, name, nonempty=True)
+    for name in ('base', 'pg_wal'):
+        state_path(directory, name, directory=True)
+
+
+def check_redis_data(root):
+    directory = state_path(root, 'appendonlydir', directory=True)
+    manifest = state_path(directory, 'appendonly.aof.manifest', nonempty=True)
+    if manifest.stat().st_size > 65536:
+        raise ValueError('Redis append-only manifest exceeds bound')
+    lines = manifest.read_text().splitlines()
+    if not lines or len(lines) > 100:
+        raise ValueError('Initialized Redis append-only manifest required')
+    kinds = []
+    for line in lines:
+        match = re.fullmatch(r'file (appendonly\.aof\.[0-9]+\.(?:base\.(?:rdb|aof)|incr\.aof)) seq [0-9]+ type ([bih])', line)
+        if not match:
+            raise ValueError('Redis append-only manifest format changed')
+        name, kind = match.groups()
+        if kind != 'h':
+            state_path(directory, name, nonempty=kind == 'b')
+            kinds.append(kind)
+    if kinds.count('b') != 1 or 'i' not in kinds:
+        raise ValueError('Redis base/incremental backing data missing')
 
 
 def bundle(compose):
@@ -71,6 +132,8 @@ def bundle(compose):
     if (data['volumes'] != {name: {} for name in ('postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data')} or
             any(sorted(data['services'][name].get('volumes', [])) != sorted(expected) for name, expected in VOLUMES.items())):
         raise ValueError('Exact per-service persistent data/configuration mounts required')
+    if data['services']['rabbitmq'].get('hostname') != 'rabbitmq':
+        raise ValueError('Pinned broker node identity required')
     if any(s.get('restart') != 'no' for s in data['services'].values()):
         raise ValueError('Boot admission requires containers without independent auto-start')
     app_images = {data['services'][name]['image'] for name in APPS}
@@ -91,6 +154,7 @@ def bundle(compose):
 
 
 def prepare(compose, destination, policy_hashes):
+    trusted_sources()
     if set(policy_hashes) != set(POLICIES) or any(not re.fullmatch(r'[a-f0-9]{64}', x) for x in policy_hashes.values()):
         raise ValueError('Exact installed security-module hashes required')
     path, data, files = bundle(compose)
@@ -113,6 +177,7 @@ def prepare(compose, destination, policy_hashes):
 
 
 def load_manifest(path, expected):
+    trusted_sources()
     path = checked_path(path, private=True)
     raw = path.read_bytes()
     if not re.fullmatch(r'[a-f0-9]{64}', expected) or sha(raw) != expected:
@@ -136,13 +201,16 @@ def load_manifest(path, expected):
 def unit_text(script, manifest, digest):
     # No shell evaluation in systemd; still reject its specifiers and word syntax.
     for value in (str(script), str(manifest)):
-        if not re.fullmatch(r'/[A-Za-z0-9/_.-]+', value):
+        if (not re.fullmatch(r'/[A-Za-z0-9/_.-]+', value) or
+                not PurePosixPath(value).is_relative_to(PurePosixPath(ROOT.as_posix())) or
+                '..' in PurePosixPath(value).parts):
             raise ValueError('Safe absolute service paths required')
     if not re.fullmatch(r'[a-f0-9]{64}', digest):
         raise ValueError('Exact service manifest digest required')
     return f'''[Unit]
 Description=Private Santa initialized runtime
 Requires=docker.service
+PartOf=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=600
@@ -155,7 +223,7 @@ ExecStart=/usr/bin/python3 {script} run --manifest {manifest} --sha256 {digest}
 Restart=on-failure
 RestartSec=30
 TimeoutStartSec=420
-TimeoutStopSec=240
+TimeoutStopSec=360
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
@@ -167,8 +235,9 @@ WantedBy=multi-user.target
 
 
 def install_unit(manifest, digest, *, enable_now=False):
+    controller = trusted_sources()
     load_manifest(manifest, digest)
-    raw = unit_text(Path(__file__).resolve(), Path(manifest), digest).encode()
+    raw = unit_text(controller, Path(manifest), digest).encode()
     target = UNIT
     if target.is_symlink():
         raise ValueError('Existing service link requires inspection')
@@ -197,13 +266,23 @@ class Runtime:
         self.command = DOCKER + ['compose', '--project-name', self.project, '-f', self.binding['compose']]
         self.evidence = self.manifest_path.parent / ('attempt-' + uuid.uuid4().hex)
         self.evidence.mkdir(mode=0o700)
+        config_directory = self.evidence / 'docker-config'
+        config_directory.mkdir(mode=0o700)
+        self.environment['DOCKER_CONFIG'] = str(config_directory)
         self.ids = []
         self.images = {}
         self.rendered = None
         self.stopping = False
         self.phase = 'prepared'
+        self.helpers = set()
 
-    def call(self, label, args, *, timeout=30, allowed_failure=False, record=True):
+    def ensure_running(self):
+        if self.stopping:
+            raise Cancelled('Runtime startup cancelled')
+
+    def call(self, label, args, *, timeout=30, allowed_failure=False, record=True, allow_stopping=False):
+        if not allow_stopping:
+            self.ensure_running()
         self.phase = label
         try:
             result = subprocess.run(args, capture_output=True, text=True, env=self.environment, timeout=timeout)
@@ -215,15 +294,21 @@ class Runtime:
                           dict(returncode=result.returncode, stdout=result.stdout, stderr=result.stderr))
         if result.returncode and not allowed_failure:
             raise RuntimeError('Private runtime step failed: ' + label)
+        if not allow_stopping:
+            self.ensure_running()
         return result
 
     def inspect(self, *, running, record=True):
-        ids = self.call('container-selection', self.command + ['ps', '--all', '--quiet'], record=record).stdout.split()
+        ids = self.ids or self.call('container-selection', DOCKER + ['ps', '--all', '--quiet', '--no-trunc',
+                    '--filter', 'label=com.docker.compose.project=' + self.project,
+                    '--filter', 'label=com.docker.compose.oneoff=False'], record=record).stdout.split()
         if len(ids) != 7 or any(not re.fullmatch(r'[a-f0-9]{64}', x) for x in ids):
             raise ValueError('Exactly seven previously initialized containers required')
         if self.ids and set(ids) != set(self.ids):
             raise ValueError('Selected container identity changed')
         rows = json.loads(self.call('container-inspection', DOCKER + ['inspect', *ids], record=record).stdout)
+        if len(rows) != 7 or {row['Id'] for row in rows} != set(ids):
+            raise ValueError('Selected container identity changed')
         if self.rendered is None:
             self.rendered = json.loads(self.call('rendered-compose', self.command + ['config', '--format', 'json']).stdout)
         selected = {}
@@ -247,6 +332,8 @@ class Runtime:
                     host.get('CapAdd') or host.get('PidMode') or host.get('Devices') or host.get('PublishAllPorts') or
                     host.get('SecurityOpt') != ['no-new-privileges:true']):
                 raise ValueError('Container command or privilege boundary changed')
+            if 'hostname' in self.data['services'][name] and config.get('Hostname') != self.data['services'][name]['hostname']:
+                raise ValueError('Container node identity changed')
             environment = dict(item.split('=', 1) for item in image['Config'].get('Env', []))
             environment.update({k: str(v) for k, v in self.rendered['services'][name].get('environment', {}).items()})
             actual = row['Config'].get('Env', [])
@@ -281,28 +368,75 @@ class Runtime:
 
     def wait(self, label, check, seconds=100):
         deadline = time.monotonic() + seconds
-        while not check():
-            if self.stopping or time.monotonic() >= deadline:
+        while True:
+            self.ensure_running()
+            ready = check()
+            self.ensure_running()
+            if ready:
+                return
+            if time.monotonic() >= deadline:
                 raise RuntimeError('Private runtime readiness failed: ' + label)
             time.sleep(2)
 
+    def start_ids(self, label, names):
+        self.ensure_running()
+        load_manifest(self.manifest_path, self.digest)
+        selected = self.inspect(running=False)
+        self.call(label, DOCKER + ['start', *(selected[name] for name in names)], timeout=120)
+
+    def oneoff(self, label, args, timeout=60):
+        self.ensure_running()
+        load_manifest(self.manifest_path, self.digest)
+        self.inspect(running=False)
+        name = 'santa-runtime-check-' + uuid.uuid4().hex
+        self.helpers.add(name)
+        try:
+            return self.call(label, self.command + ['run', '--rm', '--no-deps', '--name', name,
+                            '--entrypoint', 'python', 'web', *args], timeout=timeout)
+        finally:
+            self.stop_helpers()
+
     def python(self, label, code):
-        return self.call(label, self.command + ['run', '--rm', '--no-deps', '--entrypoint', 'python',
-                                               'web', 'server/manage.py', 'shell', '--no-imports', '-c', code], timeout=60)
+        return self.oneoff(label, ['server/manage.py', 'shell', '--no-imports', '-c', code])
+
+    def backing_data(self):
+        # Check real entrypoint data sentinels before starting dependencies.
+        docker_root = Path(self.call('docker-root', DOCKER + ['info', '--format', '{{.DockerRootDir}}']).stdout.strip())
+        if not docker_root.is_absolute() or docker_root != docker_root.resolve(strict=True):
+            raise ValueError('Canonical local Docker data directory required')
+        volumes = {}
+        for name in self.data['volumes']:
+            full_name = self.project + '_' + name
+            volume = json.loads(self.call('volume-inspection', DOCKER + ['volume', 'inspect', full_name]).stdout)[0]
+            expected = docker_root / 'volumes' / full_name / '_data'
+            if (volume.get('Name') != full_name or volume.get('Driver') != 'local' or volume.get('Options') or
+                    volume.get('Labels', {}).get('com.docker.compose.project') != self.project or
+                    volume.get('Mountpoint') != str(expected) or expected != expected.resolve(strict=True) or not expected.is_dir()):
+                raise ValueError('Existing volume ownership mismatch')
+            volumes[name] = expected
+        db_image = self.images[self.data['services']['db']['image']]
+        check_postgres_data(volumes['postgres_data'], dict(x.split('=', 1) for x in db_image['Config']['Env']),
+                            self.rendered['services']['db'].get('environment', {}))
+        check_redis_data(volumes['redis_data'])
+        state_path(volumes['rabbitmq_data'], '.erlang.cookie', nonempty=True)
+        state_path(volumes['rabbitmq_data'], 'mnesia/rabbit@rabbitmq', directory=True, nonempty=True)
+        elastic = volumes['elasticsearch_data']
+        metadata = [p for pattern in ('_state/node-*.st', 'nodes/0/_state/node-*.st') for p in elastic.glob(pattern)]
+        if not 1 <= len(metadata) <= 8:
+            raise ValueError('Existing search-node metadata missing')
+        for path in metadata:
+            state_path(elastic, path.relative_to(elastic), nonempty=True)
 
     def start(self):
+        self.ensure_running()
         selected = self.inspect(running=False)
         # A deliberate hot start must close admission before inspecting stores.
         self.call('close-admission', DOCKER + ['stop', '--time', '30', *(selected[name] for name in APPS)], timeout=100)
         self.call('compose-config', self.command + ['config', '--quiet'])
-        # Never create replacement volumes or initialize a missing security store.
-        for name in self.data['volumes']:
-            volume = json.loads(self.call('volume-inspection', DOCKER + ['volume', 'inspect', self.project + '_' + name]).stdout)[0]
-            if volume.get('Labels', {}).get('com.docker.compose.project') != self.project:
-                raise ValueError('Existing volume ownership mismatch')
+        self.backing_data()
         if Path('/proc/sys/vm/max_map_count').read_text().strip() != '1048576':
             raise ValueError('Qualified Elasticsearch kernel prerequisite missing')
-        self.call('dependencies', self.command + ['up', '--detach', '--no-recreate', '--pull', 'never', *DEPENDENCIES], timeout=120)
+        self.start_ids('dependencies', DEPENDENCIES)
         self.wait('database', lambda: self.call('database', self.command + ['exec', '-T', 'db', 'pg_isready', '-U', 'zentral', '-d', 'zentral'], allowed_failure=True).returncode == 0)
         code = 'from pathlib import Path; import hashlib; '
         for name, file in POLICIES.items():
@@ -310,9 +444,10 @@ class Runtime:
         code += "from django.db import connection; from django.db.migrations.executor import MigrationExecutor; e=MigrationExecutor(connection); assert not e.migration_plan(e.loader.graph.leaf_nodes()); "
         code += "from zentral.core.stores.models import Store; assert Store.objects.count()==1; s=Store.objects.get(provisioning_uid='elasticsearch'); assert s.backend=='ELASTICSEARCH' and s.admin_console"
         self.python('source-schema-store', code)
-        self.call('security-store', self.command + ['run', '--rm', '--no-deps', '--entrypoint', 'python', 'web', 'server/manage.py', 'operator_security_store', 'check'], timeout=60)
+        self.oneoff('security-store', ['server/manage.py', 'operator_security_store', 'check'])
+        self.ensure_running()
         self.python('search', "import json,time,urllib.request; o=urllib.request.build_opener(urllib.request.ProxyHandler({})); deadline=time.monotonic()+45\nwhile True:\n try:\n  r=json.load(o.open('http://elastic:9200/_cluster/health',timeout=3)); assert r['status'] in ('yellow','green'); break\n except Exception:\n  if time.monotonic()>deadline: raise RuntimeError('Search not ready') from None\n  time.sleep(2)")
-        self.call('workers', self.command + ['up', '--detach', '--no-recreate', '--no-deps', '--pull', 'never', 'workers', 'celery'], timeout=120)
+        self.start_ids('workers', ('workers', 'celery'))
 
         def consumers():
             result = self.call('queues', self.command + ['exec', '-T', 'rabbitmq', 'rabbitmqctl', 'list_queues', 'name', 'consumers', '--formatter', 'json'], allowed_failure=True)
@@ -321,7 +456,7 @@ class Runtime:
             rows = json.loads(result.stdout)
             return all(any(q['name'] == name and q['consumers'] > 0 for q in rows) for name in ('store_events_Elasticsearch', 'enrich_events', 'process_events'))
         self.wait('consumers', consumers)
-        self.call('listener', self.command + ['up', '--detach', '--no-recreate', '--no-deps', '--pull', 'never', 'web'], timeout=120)
+        self.start_ids('listener', ('web',))
         self.inspect(running=True)
         # A running PID is not an HTTP readiness receipt.
         from test_live_zentral import NoRedirect
@@ -333,11 +468,39 @@ class Runtime:
             except Exception:
                 return False
         self.wait('http', http_ready, seconds=45)
+        self.ensure_running()
         print('SANTA_PRIVATE_RUNTIME_READY', flush=True)
 
+    def stop_helpers(self):
+        for name in list(self.helpers):
+            result = self.call('helper-inspection', DOCKER + ['inspect', name], allowed_failure=True, allow_stopping=True)
+            if result.returncode == 0:
+                rows = json.loads(result.stdout)
+                if len(rows) != 1:
+                    raise ValueError('Ambiguous startup helper')
+                row = rows[0]
+                labels = row['Config'].get('Labels', {})
+                if (row['Name'] != '/' + name or labels.get('com.docker.compose.project') != self.project or
+                        labels.get('com.docker.compose.service') != 'web' or row['Image'] != self.data['services']['web']['image']):
+                    raise ValueError('Startup helper ownership mismatch')
+                self.call('helper-stop', DOCKER + ['stop', '--time', '5', row['Id']], timeout=15, allow_stopping=True)
+            else:
+                # Confirm absence with a successful daemon inventory, rather
+                # than treating transport failure as completed helper cleanup.
+                names = self.call('helper-inventory', DOCKER + ['ps', '--all', '--format', '{{.Names}}'], allow_stopping=True).stdout.splitlines()
+                if name in names:
+                    raise RuntimeError('Startup helper outcome requires inspection')
+            self.helpers.remove(name)
+
     def stop(self):
-        if self.ids:
-            self.call('stop', DOCKER + ['stop', '--time', '30', *self.ids], timeout=100)
+        try:
+            self.stop_helpers()
+        finally:
+            if self.ids:
+                current = self.call('cleanup-selection', DOCKER + ['ps', '--all', '--quiet', '--no-trunc'], allow_stopping=True).stdout.split()
+                selected = [cid for cid in self.ids if cid in current]
+                if selected:
+                    self.call('stop', DOCKER + ['stop', '--time', '30', *selected], timeout=100, allow_stopping=True)
 
     def supervise(self):
         import fcntl
@@ -349,6 +512,7 @@ class Runtime:
             signal.signal(signal.SIGINT, stopping)
             try:
                 self.start()
+                self.ensure_running()
                 address = os.environ.get('NOTIFY_SOCKET')
                 if address:
                     with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
@@ -358,6 +522,8 @@ class Runtime:
                     self.phase = 'binding-check'
                     load_manifest(self.manifest_path, self.digest)
                     self.inspect(running=True, record=False)
+            except Cancelled:
+                private_write(self.evidence / 'cancelled.json', dict(phase=self.phase, cancelled=True))
             except Exception as error:
                 private_write(self.evidence / 'failure.json', dict(phase=self.phase,
                               error_type=type(error).__name__, detail=str(error)))
