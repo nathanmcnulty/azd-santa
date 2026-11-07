@@ -55,10 +55,17 @@ def load_helpers(expected, expected_generator):
     return module, hashes
 
 
-def preflight(device):
-    return dict(machine_id=device['uuid'], serial_num=device['serial'], hostname='azd-synthetic',
+def preflight(device, clean=True):
+    body = dict(machine_id=device['uuid'], serial_num=device['serial'], hostname='azd-synthetic',
                 os_version='15.0', os_build='24A335', santa_version='2026.8.244',
-                client_mode='MONITOR', request_clean_sync=True)
+                client_mode='MONITOR')
+    if clean: body['request_clean_sync'] = True
+    else:
+        # Last completed client database had six binary rules. Neither a forced
+        # clean nor zero reported counts may mask lost-session reconciliation.
+        body.update({kind + '_rule_count': 6 if kind == 'binary' else 0
+                     for kind in ('binary', 'cdhash', 'certificate', 'compiler', 'signingid', 'transitive', 'teamid')})
+    return body
 
 
 def synthetic_event(fixture):
@@ -130,7 +137,7 @@ need(m.count()<=2)
 for em in m:
  d=next(d for d in fixture['devices'] if d['enrollment_id']==em.enrollment_id)
  need(em.hardware_uuid==d['uuid'] and em.serial_number==d['serial'] and em.client_mode==Configuration.MONITOR_MODE)
-result=dict(authority=authority,machines=list(m.order_by('pk').values('pk','enrollment_id','hardware_uuid','last_preflight_at','last_postflight_at','sync_session','sync_session_clean')),
+result=dict(authority=authority,machines=list(m.order_by('pk').values('pk','enrollment_id','hardware_uuid','last_preflight_at','last_postflight_at','sync_session','sync_session_clean','forced_sync_type')),
  rules=list(MachineRule.objects.filter(enrolled_machine__in=m).order_by('pk').values('pk','enrolled_machine_id','target__identifier','policy','version','cursor','sync_session','staged_removal','committed_policy','committed_version')),
  counters=list(TargetCounter.objects.filter(configuration=c).order_by('pk').values('target_id','blocked_count')))
 print('SANTA_SYNTHETIC_JSON:'+json.dumps(result,default=str))
@@ -177,10 +184,40 @@ def deny_all(compose, fixture, device, credential, observations, case, cursor=No
         need(status == expected and unchanged)
 
 
-def full_sync(compose, fixture, index, observations, case, changed=False, legacy=None, header=None, stale_cursor=None):
+def partial_projection(snapshot, fixture, index, page):
+    machine = next(m for m in snapshot['machines'] if m['enrollment_id'] == fixture['devices'][index]['enrollment_id'])
+    need(machine['sync_session'] and machine['sync_session_clean'] is True and machine['forced_sync_type'] is None)
+    cursor = page.get('cursor'); need(isinstance(cursor, str) and 0 < len(cursor) <= 128)
+    identifiers = sorted(rule['identifier'] for rule in page['rules'])
+    need(len(identifiers) == 5 and len(set(identifiers)) == 5 and set(identifiers) <= set(fixture['identifiers']))
+    need(sorted(page['rules'], key=lambda rule: rule['identifier']) == [dict(identifier=value, rule_type='BINARY', policy='BLOCKLIST') for value in identifiers])
+    rows = [row for row in snapshot['rules'] if row['enrolled_machine_id'] == machine['pk']]
+    need(sorted(row['target__identifier'] for row in rows) == sorted(fixture['identifiers']))
+    normalized = []
+    for row in rows:
+        staged = row['target__identifier'] in identifiers
+        need(row['policy'] == 2 and row['version'] == 1 and row['staged_removal'] is False
+             and row['cursor'] == (cursor if staged else None)
+             and row['sync_session'] == (machine['sync_session'] if staged else None)
+             and row['committed_policy'] == (2 if staged else None)
+             and row['committed_version'] == (1 if staged else None))
+        normalized.append({key: ('page' if key == 'cursor' and value else value)
+                           for key, value in row.items() if key != 'pk'})
+    # A resend may legitimately regenerate selected-row PKs and the page cursor.
+    # Every authority, rule semantic, session and unrelated-device field remains.
+    return dict(machine=machine, authority=snapshot['authority'], counters=snapshot['counters'],
+        rules=sorted(normalized, key=lambda row: row['target__identifier']),
+        others=[m for m in snapshot['machines'] if m['pk'] != machine['pk']],
+        other_rules=[r for r in snapshot['rules'] if r['enrolled_machine_id'] != machine['pk']])
+
+
+def full_sync(compose, fixture, index, observations, case, changed=False, legacy=None, header=None, stale_cursor=None, reconcile=False):
     device = fixture['devices'][index]
     if header is None and legacy is None: header = 'Bearer ' + device['secret']
-    status, reply = post('preflight', device, preflight(device), header, legacy)
+    if reconcile:
+        prior = next(m for m in state(compose, fixture)['machines'] if m['enrollment_id'] == device['enrollment_id'])
+        need(prior['sync_session'] and prior['sync_session_clean'] is True and prior['forced_sync_type'] is None)
+    status, reply = post('preflight', device, preflight(device, clean=not reconcile), header, legacy)
     need(status == 200 and reply['client_mode'] == 'MONITOR' and reply['sync_type'] == 'CLEAN' and reply['batch_size'] == 5)
     rules = []; cursor = stale_cursor
     for page in range(2):
@@ -203,7 +240,8 @@ def full_sync(compose, fixture, index, observations, case, changed=False, legacy
         need(row['policy'] == (1 if updated else 2) and row['version'] == (2 if updated else 1)
              and row['cursor'] is None and row['sync_session'] is None and not row['staged_removal']
              and row['committed_policy'] is None and row['committed_version'] is None)
-    observations.append(dict(case=case, complete_two_pages=True, exact_rules=True, committed_ledger=True))
+    observations.append(dict(case=case, complete_two_pages=True, exact_rules=True, committed_ledger=True,
+                             lost_session_reconciliation=reconcile, explicit_clean_requested=not reconcile))
 
 
 def run(compose_path, destination, expected_image, expected_helper, expected_generator):
@@ -253,22 +291,18 @@ def run(compose_path, destination, expected_image, expected_helper, expected_gen
         status, first = post('ruledownload', device, {}, 'Bearer ' + old)
         need(status == 200 and len(first['rules']) == 5 and first.get('cursor'))
         partial = state(compose, fixture)
-        partial_machine = next(m for m in partial['machines'] if m['enrollment_id'] == device['enrollment_id'])
-        need(partial_machine['sync_session'] and sum(bool(row['cursor']) for row in partial['rules']
-             if row['enrolled_machine_id'] == partial_machine['pk']) == 5)
+        before_projection = partial_projection(partial, fixture, 0, first)
         write(destination / 'partial-before-retry.json', partial)
         status, retried = post('ruledownload', device, {}, 'Bearer ' + old)
         need(status == 200 and retried['rules'] == first['rules'] and retried.get('cursor'))
         after_retry = state(compose, fixture)
-        retry_machine = next(m for m in after_retry['machines'] if m['pk'] == partial_machine['pk'])
-        need(retry_machine == partial_machine and after_retry['counters'] == partial['counters']
-             and after_retry['authority'] == partial['authority'])
+        need(partial_projection(after_retry, fixture, 0, retried) == before_projection)
         write(destination / 'partial-after-retry.json', after_retry)
         # Change a rule actually present in the interrupted page, rather than
         # assuming the fixture's construction order is the SQL page order.
         fixture['changed_identifier'] = first['rules'][0]['identifier']
         need(fixture['changed_identifier'] in fixture['identifiers'])
-        observations.append(dict(case='unacknowledged-page-retry', exact_page=True))
+        observations.append(dict(case='unacknowledged-page-retry', exact_page=True, staged_semantics_equal=True))
         cursor = retried['cursor']; authority(0, 'revoke')
         deny_all(compose, fixture, device, 'Bearer ' + old, observations, 'revoked-during-page', cursor)
         authority(0, 'rotate'); device = fixture['devices'][0]
@@ -287,7 +321,7 @@ with transaction.atomic():
  r.policy=Rule.Policy.ALLOWLIST;r.version=2;r.full_clean();r.save(update_fields=['policy','version'])
 print('SANTA_SYNTHETIC_JSON:'+json.dumps({'changed':True}))
 ''')
-        full_sync(compose, fixture, 0, observations, 'replacement-reconciles-stale-cursor', True, old, 'Bearer ' + device['secret'], cursor)
+        full_sync(compose, fixture, 0, observations, 'replacement-reconciles-stale-cursor', True, old, 'Bearer ' + device['secret'], cursor, reconcile=True)
         full_sync(compose, fixture, 0, observations, 'legacy-replacement-full-sync', True, device['secret'])
         full_sync(compose, fixture, 1, observations, 'unaffected-device-full-sync', True)
         counter_before = sum(c['blocked_count'] for c in state(compose, fixture)['counters'])
