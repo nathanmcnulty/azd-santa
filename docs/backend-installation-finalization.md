@@ -69,8 +69,43 @@ commit for the installer to retain in its deployment journal.
 The initialized readiness projection is not browser/TLS/native-Mac, synthetic
 HTTP sync, event-index receipt, backup/restore or production acceptance proof.
 The existing consumer therefore still labels runtime acceptance not-performed.
-Actual installer lifecycle integration, authoritative azd output wiring, trusted
-reachable HTTPS and independent live qualification remain required. Offline
+Actual installer lifecycle integration, authoritative azd output wiring and
+trusted reachable HTTPS remain required. Selected private finalization passed
+the independent live qualification below. Offline
 tests execute no Azure, VM, Docker or authentication action; they cover source
 compilation/bounds, read-only scope, readiness failures, receipt tampering and
 automatic producer-to-consumer file flow using mocked Azure/Docker results.
+
+## Actual private finalization, 2026-11-06
+
+The selected cached ARM context and the role-separated VM runtime passed the
+real inline observer, including all six gates and the current restricted SQL
+identity. Machine-created installation expectations were passed in memory;
+the function produced the installation receipt and operator binding without
+manually constructing the binding artifact. The deployed image and Compose
+identities are recorded in the
+[database-role qualification](database-role-separation.md#actual-private-qualification-2026-11-06).
+
+Attestor SHA-256:
+`0b0fe20a28e99fb2455d2e311d60d397f274ef617072836f7116364254501dc8`;
+producer SHA-256:
+`935db2716c89c78bb0c5ace4b330589c75ca00b28db8bcc0d76f128c2b27b602`;
+composite program SHA-256:
+`c791a54c49c9cd2dbbe63d5f3bd77803c4d2402d29d8dbc15ab352cbcc727478`.
+The observed context SHA-256 was
+`ffc64cce0677914d9489e92b3a45962a6b6bc38d9c30ac98a19c73e56880ec94`.
+
+The resulting binding was then consumed by the supported operator setup
+entrypoint. It privately delivered first-human bootstrap and targeted recovery
+for one synthetic operator using normal application credentials. Independent
+database and event-store readback verified preserved flags, a changed password
+fingerprint and the expected bootstrap/recovery audit records. The producer's
+read-only probe itself issued no operator mutation. No browser was opened and
+no plaintext setup URL was exported into Azure, Git or these docs.
+
+The selected local private qualification directory retains `installation.json`,
+`operator-binding.json`, `finalization-receipt.json` and setup checkpoints.
+Private server evidence includes `operator-role-recovery-receipt.json` under the
+role-separated runtime. Recipient keys were disposed rather than persisted.
+This qualifies the private finalizer and its handoff, not an azd provision/deploy
+hook, public TLS, a native endpoint or real-user browser/password/MFA completion.
