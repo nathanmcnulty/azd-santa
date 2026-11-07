@@ -19,7 +19,7 @@
       "evidence": [
         { "path": "experiments/server/SetupTransport.psm1", "sha256": "6830624ff4cd03e1545d72df17cb1a41f6cd5a9f5e7ae3c6f955c6ce52c669b5" },
         { "path": "experiments/server/Invoke-SantaOperatorSetup.ps1", "sha256": "fbf2b05ec819ce651113cb37f6b215394e19744a06f5a203562978ba779e6d1a" },
-        { "path": "experiments/server/operator_setup_host.py", "sha256": "2519b1fb9e11398be8759f2ac835bf149a579ef08e43fe4014f4186d3d8d9582" }
+        { "path": "experiments/server/operator_setup_host.py", "sha256": "3c0dad48976dbb11287f01fbe13fbe17d9c3f5a070bbe3d4825af44f896bf9f4" }
       ]
     },
     {
