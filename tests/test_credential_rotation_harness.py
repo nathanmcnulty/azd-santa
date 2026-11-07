@@ -24,6 +24,45 @@ def fixture():
 
 
 class Harness(unittest.TestCase):
+    def test_embedded_rule_mutation_excludes_only_owned_null_ruleset_and_validates_before_save(self):
+        import ast
+        import contextlib
+        import io
+        tree = ast.parse(Path(rotation.__file__).read_text())
+        code = next(node.value for node in ast.walk(tree) if isinstance(node, ast.Constant)
+                    and isinstance(node.value, str) and 'r=Rule.objects.select_for_update()' in node.value)
+        compiled = compile(code, '<actual-rule-mutation>', 'exec')
+        data = fixture(); data['configuration_id'] = 3; data['changed_identifier'] = data['identifiers'][0]
+        class RuleValue:
+            def __init__(self, ruleset=None, validation_error=False):
+                self.policy=2; self.version=1; self.ruleset_id=ruleset; self.calls=[]; self.validation_error=validation_error
+            def full_clean(self, **kwargs):
+                self.calls.append(('validate', kwargs, self.policy, self.version))
+                # All original model validation remains enabled. Only the
+                # unrelated nullable/nonblank relation is excluded.
+                self_test.assertEqual(kwargs, dict(exclude=['ruleset'], validate_unique=True, validate_constraints=True))
+                if self.validation_error: raise ValueError('Real validation failure must prevent save')
+            def save(self, **kwargs): self.calls.append(('save', kwargs, self.policy, self.version))
+        self_test = self
+        def execute(rule):
+            manager=MagicMock(); manager.select_for_update.return_value.get.return_value=rule
+            env=dict(need=rotation.need, fixture=data, json=json,
+                     transaction=SimpleNamespace(atomic=contextlib.nullcontext),
+                     Rule=SimpleNamespace(objects=manager,Policy=SimpleNamespace(BLOCKLIST=2,ALLOWLIST=1)))
+            with contextlib.redirect_stdout(io.StringIO()): exec(compiled, env)
+            self.assertEqual(manager.select_for_update.return_value.get.call_args.kwargs,
+                dict(configuration_id=3,target__identifier=data['changed_identifier']))
+        valid=RuleValue(); execute(valid)
+        self.assertEqual([call[0] for call in valid.calls], ['validate','save'])
+        self.assertEqual(valid.calls[0][2:], (1,2))
+        self.assertEqual(valid.calls[1], ('save',dict(update_fields=['policy','version']),1,2))
+        foreign=RuleValue(ruleset=99)
+        with self.assertRaises(ValueError): execute(foreign)
+        self.assertEqual(foreign.calls, [])
+        invalid=RuleValue(validation_error=True)
+        with self.assertRaises(ValueError): execute(invalid)
+        self.assertEqual([call[0] for call in invalid.calls], ['validate'])
+
     def test_state_executes_uuid_identity_guard_with_real_uuid_model_values(self):
         # Execute the actual embedded ORM assertion (without importing Django),
         # reproducing UUIDField's Python representation and exact other guards.
