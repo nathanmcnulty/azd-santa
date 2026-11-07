@@ -8,6 +8,46 @@ Fresh core preparation now defaults to the qualified Santa-only profile. An
 explicit `--app-profile upstream` remains available for controlled comparisons;
 this generator never updates an existing runtime or database in place.
 
+## Actual private acceptance, 2026-11-06
+
+The full-app durable stack was recorded with two committed synthetic devices
+and two indexed Santa events, then explicitly paused. A separate fresh namespace
+used the **same** application image and dependency digests. Runtime readback
+confirmed exactly the nine retained apps, their actual migrations and no
+Jamf/Munki/osquery/Turbo migrations. The initial readback also confirmed no human
+accounts, Santa configurations or enrolled devices and one provisioned
+Elasticsearch Store. Neither old stack nor its data volumes were replaced.
+
+The new stack then passed actual search/queue/listener readiness, fifteen MFA
+cases, eleven recovery cases including authenticated empty Santa UI, full Monitor
+device sync, 89 bounded HTTP checks and independently counted two indexed Santa
+events. Redis storage crash/recreation and genuine captured MFA replay across
+restart passed separately on this stack.
+
+Image: `sha256:04dad3522af470586d04ddd8ed555cc49e51cbc42756f5e202db8bef1131efef`.
+Compose SHA-256:
+`21bee0c9cd7a7a54c1d61ac399c5814b302ed9f83b7f4dab82b8b91a29e25d55`.
+Private receipt root: `runtime-santa-durable/`, with
+`fresh-profile-runtime.json`, `fresh-ready.json`, `mfa-requests/receipt.json`,
+`recovery-requests/receipt.json`, `storage-crash-bound/receipt.json`, and
+`held-mfa-restart/receipt.json`. Full sync receipt:
+`synthetic-fixture.receipt-641edf9872054a59bcfe64aba2738b17.json`;
+HTTP-limit receipt:
+`synthetic-fixture.request-limits-803bdb9614934bfc8d819297fb777773.json`.
+
+The recovery harness SHA-256 was
+`7c2de997e3703eda122975c9a3b3ced1dc5a50f5a62f9447a17e1832da3eaa46`.
+Its worker connections now close explicitly, and private logs survive database
+cleanup failures. The earlier full-app attempt failed disposable-DB cleanup and
+remains retained. A separate profile-transition attempt hit the original-runtime
+CLI directory guard before stopping anything; the corrected runner used the
+new runtime's validated binding. No failed preparation was overwritten.
+
+One post-test seven-service memory sample totaled about 1.6 GiB. It establishes
+neither savings against the other profile nor peak/fleet capacity. This accepts
+the simpler fresh core profile; product deployment, automatic reboot/restore,
+real-browser/TLS and native-Mac gates remain open.
+
 The generator's `santa` app profile omits Jamf, Munki, osquery and Turbo while
 retaining the eight automatically enabled core/inventory/admin apps plus Santa.
 PostgreSQL, Redis, RabbitMQ, Elasticsearch, web, workers and Celery remain; real

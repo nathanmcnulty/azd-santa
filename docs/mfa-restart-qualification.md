@@ -1,8 +1,8 @@
 # Cryptographic MFA across Redis restart
 
-Candidate developer qualification, not a live acceptance receipt. Neither the
-driver nor the request script has been executed against a VM by adding these
-files. Existing storage-helper tests cannot establish this captured-request gate.
+Private developer qualification; actual acceptance is recorded below. Adding
+the files or passing storage-helper tests alone does not establish this
+captured-request gate.
 
 `run_mfa_restart.py` is a Linux host driver for one explicitly selected private
 durable seven-service Compose. It requires `--allow-redis-restart`, exact image,
@@ -55,3 +55,31 @@ database/Redis/crypto path. A future successful receipt would prove genuine Djan
 request/cryptographic replay rejection across one Redis process restart. It would
 not prove TCP/browser/TLS/native-Mac behavior, host power loss, AOF corruption or
 rewrite/load behavior, or current authority after an old backup restore (#54).
+## Actual private acceptance, 2026-11-06
+
+The real held-request test passed on the fresh nine-app Santa profile, using
+image `sha256:04dad3522af470586d04ddd8ed555cc49e51cbc42756f5e202db8bef1131efef`
+and policy SHA-256
+`ca212a3ae403776e62f13708feb97e149684379359bb8f095b0c3712a39ed759`.
+Compose SHA-256:
+`21bee0c9cd7a7a54c1d61ac399c5814b302ed9f83b7f4dab82b8b91a29e25d55`;
+request harness SHA-256:
+`902b7c3f9570f48af5dbfe58fa41bb8fa625946612fb8dbe855bea40a455ede6`;
+host driver SHA-256:
+`2ac5274f5cdb3a26dd73f5607b276743997d51cc29e1b04844bb8bda85452738`.
+
+After the inspected Redis container was killed and restarted with the same data
+volume, its process identity changed and the admitted marker/settings passed.
+The held counterless ES256/COSE assertion observed the real nonce claim return
+false. The held still-valid TOTP assertion observed its new nonce claim succeed
+and its already-used timestep claim return false. The exhausted real MFA budget
+still returned false/429. Exactly the two original accepted logins were observed;
+their sessions still accessed protected profiles. Expiry, transport errors or a
+missing session were not credited as replay proof.
+
+The private receipt is `runtime-santa-durable/held-mfa-restart/receipt.json`.
+Its test process exited successfully after cleanup, and an independent query
+still found exactly two Santa events for the device fixture. No real user,
+native Mac, TCP admin login, physical security key or public TLS was involved.
+Audit delivery was deliberately mocked for the isolated database. Host power
+loss, old-backup authority reconciliation and workload sizing remain separate.
