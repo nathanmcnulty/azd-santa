@@ -94,3 +94,35 @@ requests may now receive intentional 429s: qualification must honor bounded
 Retry-After and separately verify decoder results, never disable admission or
 count a rate denial as decoder acceptance. Real native-Mac retry/profile behavior
 and the public-TLS/proxy gate remain required. This does not close #58.
+
+## Original container generation follow-up
+
+The explicit fresh machine producer is `runtime_service.py admission-bind-fresh`
+with the exact `--manifest` and `--sha256`. It runs after fresh create/prepare and
+before unit installation. It never accepts a caller-provided CID JSON map.
+All seven actual containers must pass the existing image/config/env/mount
+inspection and backing-data checks; all three apps must still be created, never
+started, with PID zero, and dependencies must be running and initialized. A
+second selection check precedes the exclusive private/fsynced anchor write.
+An existing unit or anchor prevents binding.
+
+The single machine-produced `runtime-service/container-generation.json` schema is
+exactly `scope`, `manifest_sha256`, `project`, `image_id`, `generation`, and
+`container_ids`. Scope is `private-runtime-container-generation-v1`; generation
+is 32 lowercase hexadecimal characters. The map has exactly db/redis/rabbitmq/
+elastic/web/workers/celery, seven distinct full 64-character lowercase Docker IDs.
+Manifest SHA and immutable app image bind the source/configuration selection.
+This is the common anchor for admission and future native backup maintenance,
+not a second independent backup generation store.
+
+Startup and reconciliation require this persisted original map and reject a
+consistently replaced container, even if current labels/image/config all match.
+Missing anchors are never adopted from current Compose labels. Older contexts
+without the trusted machine-produced anchor remain closed; deliberate migration
+or replacement/upgrade needs separately reviewed generation evidence. The
+installer must call the fresh producer between runtime prepare and install.
+
+Readiness CHECK and EMPTY now also validate the fixed global counter's type,
+canonical positive value, upper bound and finite window TTL without writing it.
+Absent counters are valid; exhausted-but-valid counters remain ready and produce
+normal 429 admission denials. Corrupt counters produce 503 and prevent readiness.

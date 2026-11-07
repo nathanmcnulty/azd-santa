@@ -216,6 +216,7 @@ class Lifecycle(unittest.TestCase):
         runtime.inspect = Mock(return_value={name: format(i + 1, '064x') for i, name in enumerate(runtime.data['services'])})
         runtime.python = Mock()
         runtime.backing_data = Mock()
+        runtime.container_generation = Mock()
         calls = []
         def call(label, args, **kwargs):
             calls.append((label, args))
