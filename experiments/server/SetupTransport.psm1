@@ -131,9 +131,18 @@ function Assert-SantaSetupPreparedRequest {
     $raw = [Convert]::FromBase64String($Request.PayloadBase64)
     if ([Convert]::ToBase64String($raw) -cne $Request.PayloadBase64) { throw 'Noncanonical prepared request.' }
     $payload = [Text.UTF8Encoding]::new($false, $true).GetString($raw) | ConvertFrom-Json -AsHashtable -Depth 12
+    # Bind the identity actually delivered to the remote command, rather than
+    # trusting the digest fields copied from the original preparation.
+    if ($payload.username -isnot [string] -or -not $payload.username -or $payload.username.Length -gt 150 -or
+        $payload.username -cne $payload.username.Trim() -or $payload.email -isnot [string] -or -not $payload.email -or
+        $payload.email.Length -gt 254 -or $payload.email -cne $payload.email.Trim() -or
+        $payload.reason -isnot [string] -or -not $payload.reason.Trim() -or $payload.reason.Length -gt 256 -or
+        $payload.reason -match '[\x00-\x1f]') { throw 'Prepared identity/reason failed validation.' }
+    $actualTarget = Get-SantaSetupTargetDigest -Username $payload.username -Email $payload.email
     if ((Get-SantaTransportHash ($payload.context | ConvertTo-Json -Depth 6 -Compress)) -cne $Request.Context -or
         $payload.context_sha256 -cne $Request.Context -or $payload.context.nonce -cne $Request.RequestId -or
         $payload.context.mode -cne $Request.Mode -or $payload.context.target_sha256 -cne $Request.TargetDigest -or
+        $actualTarget -cne $Request.TargetDigest -or $actualTarget -cne $payload.context.target_sha256 -or
         $payload.context.recipient_sha256 -cne $Request.Recipient.KeyId -or
         $payload.recipient_public_key -cne [Convert]::ToBase64String($Request.Recipient.Key.ExportSubjectPublicKeyInfo()) -or
         ($payload.context.binding | ConvertTo-Json -Compress) -cne ($Request.Binding | ConvertTo-Json -Compress)) {

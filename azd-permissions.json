@@ -16,7 +16,7 @@
       "scope": "Exact selected tenant/subscription and tagged private pilot RG/VM only",
       "rationale": "Optional transport primitives inspect selected account/group/VM and invoke one separately hash-pinned remote program. They do not authenticate, grant rights, provide remote source attestation, or enable an azd setup hook.",
       "evidenceState": "code",
-      "evidence": [{ "path": "experiments/server/SetupTransport.psm1", "sha256": "3a90dfe352ec396728d6c89c6351584736d481032706d7b25dcee60e97aa72d0" }]
+      "evidence": [{ "path": "experiments/server/SetupTransport.psm1", "sha256": "d6679fa0d1531619db69f4379350a88401e6f3ea7d52878bd90c11120e110f73" }]
     },
     {
       "resource": "Azure Resource Manager",
