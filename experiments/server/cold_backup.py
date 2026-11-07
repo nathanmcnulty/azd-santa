@@ -31,7 +31,7 @@ import urllib.request
 import uuid
 
 ROOT = Path('/var/lib/azd-santa-qualification')
-CONTROLLER_SHA = 'a4aa813dd792dcb941ebfae71562b7bcf24578f2b6b41a67f82c5ed40058527f'
+CONTROLLER_SHA = 'f1ac47a17571a12b08c4ba6360121acd883ec9c2fc70d3205835e05afcd19c8c'
 MAGIC = b'AZDSANTABACKUP1\n'
 CHUNK = 1024 * 1024
 HEX = r'[a-f0-9]{64}'

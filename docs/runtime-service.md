@@ -1,9 +1,9 @@
 # Initialized runtime startup service candidate
 
 This implements a private Linux/systemd lifecycle controller toward #53. It is
-not wired to an azd hook. Selected actual Docker, systemd and VM reboot gates
-passed the private qualification below. The final deployment must install it
-automatically; these low-level
+packaged by the optional nested private VM installer. Selected actual Docker,
+systemd and VM reboot gates passed the source-specific private qualification
+below; they do not qualify later source changes automatically. These low-level
 qualification commands are not tasks intended for a customer administrator.
 
 `runtime_service.py prepare` records an existing, initialized runtime's exact
@@ -82,6 +82,30 @@ gates include startup cancellation, Docker-daemon restart propagation and the
 final automatic installer. These selected results do not establish general
 corrupt-data recovery, backup restoration, runtime-role separation, native Mac
 sync, public TLS or final azd deployment acceptance.
+
+## Automatic proven-quiescent permit recovery candidate
+
+A killed HTTP handler can leave a persistent C1 permit. New startup closes all
+three exact original apps, proves PID zero under its existing flock, drains
+same-role/current-database PostgreSQL sessions read-only, and performs one
+source-bound compare-and-set transition before its existing empty-state check
+and worker/listener admission. See [the complete fence/unknown-outcome contract](santa-admission.md).
+Valid abandoned capacity no longer requires a customer to run manual
+`admission-reconcile`. Explicit reconciliation uses the identical guarded path.
+
+No automatic marker/config initialization, corrupt-state repair, rate reset, user/device
+credential change or MFA replay-state reset is performed. A timeout cannot clear
+live work. Intent and exact-target confirmation remain private; unknown outcomes
+block listener admission. A later supervisor retry re-proves all preconditions
+and fences old delayed jobs. The unit keeps Burst3 and Restart30, with a corrected
+1,800-second window covering three maximum 420-second starts.
+
+This is offline source acceptance only. The earlier reboot/clean restart
+receipts below do not qualify the new permit recovery, PostgreSQL drain, delayed
+Redis execution or retry-exhaustion behavior. Actual production-Lua/CAS and
+killed-handler/server-query/reboot faults remain open. Full restore/current
+authority and arbitrary privileged concurrent lifecycle operations remain outside
+this mechanism.
 
 ## Actual private qualification, 2026-11-06
 
