@@ -214,6 +214,22 @@ class ZentralEvaluation(unittest.TestCase):
             generator.prepare(self.source, self.image, self.lock, self.destination, app_profile='unknown')
         self.assertFalse(self.destination.exists())
 
+    def test_core_has_distinct_database_authority_and_unreferenced_private_job_file(self):
+        with patch.dict(generator.SOURCE_HASHES, self.hashes, clear=True):
+            generator.prepare(self.source, self.image, self.lock, self.destination, 'core-experiment')
+        database, runtime, migration = (self.environment(name) for name in ('db.env', 'runtime.env', 'migration.env'))
+        self.assertEqual(database['POSTGRES_USER'], 'zentral_owner')
+        self.assertEqual(runtime['POSTGRES_USER'], 'zentral_runtime')
+        self.assertNotEqual(database['POSTGRES_PASSWORD'], runtime['POSTGRES_PASSWORD'])
+        self.assertEqual(migration, {**runtime, 'POSTGRES_USER': database['POSTGRES_USER'],
+                                    'POSTGRES_PASSWORD': database['POSTGRES_PASSWORD']})
+        self.assertEqual(self.read('conf/base.json')['django']['POSTGRES_USER'], '{{ env:POSTGRES_USER }}')
+        self.assertNotIn('migration.env', (self.destination / 'compose.json').read_text())
+        for service in self.read('compose.json')['services'].values():
+            self.assertNotIn(database['POSTGRES_PASSWORD'], json.dumps(service))
+        if os.name != 'nt':
+            self.assertEqual((self.destination / 'migration.env').stat().st_mode & 0o777, 0o600)
+
     def test_core_variant_is_declared_not_license_clearance(self):
         with patch.dict(generator.SOURCE_HASHES, self.hashes, clear=True):
             generator.prepare(self.source, self.image, self.lock, self.destination,

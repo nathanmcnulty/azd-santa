@@ -1,6 +1,10 @@
 #Requires -Version 7.6
 Describe 'Private server qualification tooling' {
     BeforeAll { $root = Split-Path $PSScriptRoot -Parent }
+    It 'guards separated database authority without claiming live SQL acceptance' {
+        $output = & python (Join-Path $root 'tests/test_database_roles.py') 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
+    }
     It 'fails closed at the durable security-store boundary without automatic initialization' {
         $output = & python (Join-Path $root 'tests/test_security_store.py') 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
