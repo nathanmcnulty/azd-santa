@@ -4,8 +4,46 @@
 [#52](https://github.com/nathanmcnulty/azd-santa/issues/52). It does not implement
 an administrator rotation API or change Intune/native profiles. The installed
 `test_live_zentral.py` and earlier `test_credential_lifecycle.py` remain unchanged.
-No tenant/guest/service operation was performed while preparing this harness.
-Offline mocks and syntax checks are not real HTTP/DB or native acceptance.
+Harness preparation used offline mocks and syntax checks. The subsequent
+selected private server run passed the actual HTTP/DB checks below; neither
+stage establishes native acceptance.
+
+## Selected private server result
+
+On 2026-11-07, the reviewed harness (SHA-256
+`776a1c3f8d96849091e3c3aa85f4f02bea19d1055fd05befb0ceb371f9c97433`)
+completed with exit0, `passed:true` and 76 observations on the private VM in
+`rg-azd-santa-vm-privatehook2-20261107`. The selected application image was
+`sha256:0ba39cf8b1d2a14b49797220d5ef319f08b9d6fcd61d457f08f359472b98e93a`;
+the Compose SHA-256 was
+`d9f939ce2147d6503c5cdf152ecf3db4eb63e4f9d890dc3c71544e417a80c2ca`.
+The retained job was `azd-santa-rotation-a1b0fccc.service`, invocation
+`8c7a6ef7df2040e8b9406a0dea4b8f4b`. Its owner-private evidence directory is
+`/var/lib/azd-santa-qualification/rotation-a1b0fccc`; do not publish its fixtures.
+
+The run covered denial across all four sync stages, replacement credentials,
+interrupted page retries, reconciliation without a forced clean, changed rule
+policy/version, exact selected rule ledgers and enrollment counters, and one
+positive application event-counter increment. Denied-request invariance covers
+the inspected database projection, not all possible database side effects.
+The event counter does not prove search indexing or native event delivery.
+This image predates the admission-control candidate; it does not qualify that
+candidate. Failed earlier harness attempts remain retained separately.
+
+The subsequent controlled VM reboot returned all seven original container IDs
+with the same image and Compose bytes. Boot ID changed from
+`ebf57b43-745d-4b0d-9394-f9637e7a8bfb` to
+`c1c34482-647f-455c-abbb-05d1e4f93baa`; the selected state SHA-256 remained
+`f6aa986e9c77ef63514d4d8539437d8e99596300a4559ea691dc7c7efc52f8fd`
+(two machines, twelve ledger rows, enrollment counts `[1,1]`, one expired
+credential). Comparison occurred before further HTTP requests. Afterward,
+sixteen actual HTTP denials covered retired header/legacy credentials, expiry
+and cross-device use across all four stages, with the selected database
+projection unchanged after each denial. An empty event upload using the current
+credential returned200. The exclusive `selected-reboot-before.json`,
+`selected-reboot-after.json` and `selected-reboot-http.json` receipts remain
+beside the private runtime Compose file. This is ordinary reboot persistence,
+not backup/restore or graceful worker-drain acceptance.
 
 The explicit run creates **one new unique configuration, business unit, two
 enrollments and six rules**. Both devices are fake reserved UUIDs/serials; secrets

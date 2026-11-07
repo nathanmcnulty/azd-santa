@@ -8,6 +8,24 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action; Microsoft.DevTestLab/schedules/read; Microsoft.DevTestLab/schedules/write",
+      "principal": "Selected private VM azd operator (existing rights only)",
+      "phase": "deployment",
+      "feature": "private-vm-backend-install",
+      "defaultEnabled": false,
+      "scope": "Explicit selected environment/subscription and tagged rg-azd-santa-vm-<environment>/vm-santa-lab only",
+      "rationale": "Opt-in nested-template hook sets a cost guard, transports bounded pinned sources, submits one durable privileged fresh-install job and observes it before nonmutating finalization. No root Intune hook, network admission, tenant grant or operator reset is added; actual complete ARM/hook/cold-install delivery remains unqualified.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "0b17692e4fb37c2e23347e4045c83a23478c3c5aac1df881964deb99ac865c8d" },
+        { "path": "experiments/vm/Install-PrivateBackend.ps1", "sha256": "33c620439f5abadef688f4a6f0477e80e4676986beac0cb6d43b975c092320d5" },
+        { "path": "experiments/server/private_install.py", "sha256": "91f773bc65f978f83239a523a49c9d3c9dec87be0622c5e815a9b3a0a25a06e6" },
+        { "path": "experiments/server/private_install_transport.py", "sha256": "1b4d6ae32a2a79013c471548a2e21df555aac9094228495a1a0e802eb7a88064" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
       "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
       "principal": "Explicit selected cached Azure CLI installation operator (existing rights only)",
       "phase": "deployment",
@@ -17,7 +35,7 @@
       "rationale": "Source-pinned read-only host observer verifies selected initialized runtime and machine-produces a nonsecret installation receipt and local operator binding. No setup mutation, cloud deployment, service restart, marker initialization, grant or authentication flow is performed by finalization; the actual installer/hook remains a separate gate.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/SetupTransport.psm1", "sha256": "fb0abe994b52845d7d2da5ae95c84476056c543c25ef75d8014296515e484f4c" },
+        { "path": "experiments/server/SetupTransport.psm1", "sha256": "bd9f372343adda888cbfe676ca74b7c236d6c3edc5e25325368fd92f672377fb" },
         { "path": "experiments/server/installation_readback.py", "sha256": "935db2716c89c78bb0c5ace4b330589c75ca00b28db8bcc0d76f128c2b27b602" },
         { "path": "experiments/server/operator_setup_host.py", "sha256": "0b0fe20a28e99fb2455d2e311d60d397f274ef617072836f7116364254501dc8" }
       ]
@@ -33,7 +51,7 @@
       "scope": "Exact selected tenant/subscription, environment and tagged private pilot RG/VM only",
       "rationale": "Generate a local operator binding from a trusted checksum-pinned selected installation receipt after reusing read-only account/group/immutable-VM preflight. This function does not invoke Run Command, authenticate, mutate azd state or grant permissions; receipt producer and live qualification remain separate gates.",
       "evidenceState": "code",
-      "evidence": [{ "path": "experiments/server/SetupTransport.psm1", "sha256": "fb0abe994b52845d7d2da5ae95c84476056c543c25ef75d8014296515e484f4c" }]
+      "evidence": [{ "path": "experiments/server/SetupTransport.psm1", "sha256": "bd9f372343adda888cbfe676ca74b7c236d6c3edc5e25325368fd92f672377fb" }]
     },
     {
       "resource": "Azure Resource Manager",
@@ -47,7 +65,7 @@
       "rationale": "Optional operator setup checks cached selected account/group/VM, then sends a hash-pinned stdlib host program to verify private runtime bindings and invoke the installed sealed operator command or ciphertext-only readback. It creates no grants and enables no azd hook; runtime checks are not live acceptance evidence.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/SetupTransport.psm1", "sha256": "fb0abe994b52845d7d2da5ae95c84476056c543c25ef75d8014296515e484f4c" },
+        { "path": "experiments/server/SetupTransport.psm1", "sha256": "bd9f372343adda888cbfe676ca74b7c236d6c3edc5e25325368fd92f672377fb" },
         { "path": "experiments/server/Invoke-SantaOperatorSetup.ps1", "sha256": "fbf2b05ec819ce651113cb37f6b215394e19744a06f5a203562978ba779e6d1a" },
         { "path": "experiments/server/operator_setup_host.py", "sha256": "0b0fe20a28e99fb2455d2e311d60d397f274ef617072836f7116364254501dc8" }
       ]
@@ -65,7 +83,7 @@
       "evidenceState": "code",
       "evidence": [
         { "path": "experiments/server/Start-ZentralQualification.ps1", "sha256": "9ab3f9a789e90875dde90b5147d6f682c90982ad89de9c0e59ef6e3e8a0da586" },
-        { "path": "experiments/server/bootstrap-host.sh", "sha256": "0dc1df0e859ccb5874b95816c61738e12c09ccb526f7daf9768f86210f1ddddd" }
+        { "path": "experiments/server/bootstrap-host.sh", "sha256": "18db776f866994dc1abaf18c53bab42e272875b7d270217b7ec2a52c504a3a8c" }
       ]
     },
     {
@@ -80,8 +98,8 @@
       "rationale": "Optional nested azd project provisions a synthetic-only test host, disk and isolated network. This inventories operations, not consent or authorization to grant Contributor. A minimal custom deployment role has not been established.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/vm/infra/main.bicep", "sha256": "7d9d449156555d8bb4170a0531149bbe3f0ca305f92bdc8ce4f29ed2e437f487" },
-        { "path": "experiments/vm/infra/host.bicep", "sha256": "2b2575e9383ce3e4044100fc22d9ab3c69c101a7277e4ffab6c095fca7251059" }
+        { "path": "experiments/vm/infra/main.bicep", "sha256": "8b4017538627d919748b6722dac4b0223e14aaaa810d742c0af3c4844702420b" },
+        { "path": "experiments/vm/infra/host.bicep", "sha256": "22737c092467972fa7d85b65467c7758d9913dcdcdefd257ac9c3b18ef6576f8" }
       ]
     },
     {
@@ -291,11 +309,12 @@
     }
   ],
   "gaps": [
-    "Separate offline credential rotation harness (#52) experiments/server/test_credential_rotation_live.py sha256 776a1c3f8d96849091e3c3aa85f4f02bea19d1055fd05befb0ceb371f9c97433 adds no cloud/Graph grants or azd hook. Actual private application-container HTTP/ORM execution remains coordinator-only and unrun for this candidate. Native profile/MDM credential delivery, client-local rule application, supported administrator rotation API and backup/restore authority remain unqualified; source/mock checks do not close issue52.",
+    "Separate credential rotation harness (#52) experiments/server/test_credential_rotation_live.py sha256 776a1c3f8d96849091e3c3aa85f4f02bea19d1055fd05befb0ceb371f9c97433 passed 76 selected private application-container HTTP/ORM observations with isolated synthetic fixtures. It adds no cloud/Graph grants or azd hook. Native profile/MDM credential delivery, client-local rule application, supported administrator rotation API and backup/restore authority remain unqualified; these server observations do not close issue52.",
+    "Optional nested private VM azd installation has selected actual ARM, pinned prerequisite/source-build, fresh initialization/runtime, warm same-source azd repeat and original-container reboot evidence. Post-reboot selected credential/rule state matched and seventeen synthetic HTTP checks passed. The initial cold invocation failed at finalization after guest success; its cause remains unexplained, so first-attempt cold end-to-end acceptance remains open. Failed/unknown or differently sourced installation state is retained rather than reinitialized. Trusted reachable HTTPS, native Mac enrollment and customer MFA remain pending; no new grant or public ingress is authorized by metadata.",
     "Offline held-closed HTTPS candidate (#64/#58) adds no Azure/Graph permission, ingress, DNS or certificate order. experiments\\server\\prepare_https_proxy.py sha256 7fa2dcb6a621b330bd42cc44640abe48cb7edd70dbbf6a99b097787d77fcccb1; experiments\\server\\caddy.lock.json sha256 d1919c8a19b9e282a1985d91383139eff5d9b45c382093ad5d22c138d4c0c5ea. Authoritative ARM endpoint facts producer, Linux proxy/load/admission budgets and trusted TLS/renewal remain unqualified; Windows Caddy validate is provisioning-only and does not close those gates.",
     "Recovery13 passed selected owner-only disposable fixture setup, thirteen request cases under runtime-only credentials, exact name/OID/no-active-backend teardown and independent verification of database absence. No Azure/Graph permission or normal runtime privilege was added; see docs/operator-recovery.md. Failed/unknown outcome retention has offline coverage and needs live fault qualification. Held-restart fixture adaptation, browser/TLS/native and restore gates remain open.",
     "Fresh core role separation passed selected private initialization, ten administrative SQL denials, original empty-inventory TEMP cleanup, normal sync/indexing/MFA/recovery and reboot qualification. Owner-only developer fixture jobs and normal runtime requests have separate receipts; see docs/database-role-separation.md. It adds no Azure/Graph permission or tenant grant. Nonempty retention, unknown initializer fault recovery, upgrades/default grants and existing-volume rotation remain unqualified.",
-    "The bounded finalizer passed selected private actual Run Command observation of restricted database authority, schema/Store/security state, search and event consumers, then machine-produced the installation receipt and operator binding. See docs/backend-installation-finalization.md. Actual azd installer/build/init lifecycle and authoritative azd backend output wiring remain unimplemented in this slice. Trusted HTTPS/browser, native endpoint and backup/restore acceptance remain open; no automatic hook or grants are supplied.",
+    "The bounded finalizer passed selected private actual Run Command observation of restricted database authority, schema/Store/security state, search and event consumers, then machine-produced the installation receipt and operator binding. See docs/backend-installation-finalization.md. The opt-in nested private VM hook now supplies machine-generated build/init and deployment facts to this producer; the complete cold ARM/hook path remains live-unqualified. Trusted HTTPS/browser, native endpoint and backup/restore acceptance remain open; no automatic grants are supplied.",
     "The optional initialized-runtime systemd controller uses existing privileged Linux host authority, not new Azure/Graph permissions. Selected private Docker/systemd startup, clean restart, web-container failure, VM reboot and isolated empty-data rejection passed with independent state readback; see docs/runtime-service.md. Automatic azd installation, startup cancellation, Docker-daemon restart propagation, continuous application health, upgrades and backup/current-authority behavior remain unqualified. Metadata is not service-installation authorization.",
     "Per-service outputs separate db.env, rabbitmq.env and application runtime.env without adding cloud/API permissions. Shared-role and fresh restricted-role layouts have separate selected private environment/readiness receipts; earlier receipts do not qualify a different image. Existing-volume rotation and restoration remain unqualified. See docs/service-secret-separation.md and docs/database-role-separation.md.",
     "Private operator setup has selected actual ARM/IMDS, Docker/image/Compose/module/security-store and encrypted delivery receipts. The coordinated restricted-role stack separately passed six-gate producer-to-binding finalization and bootstrap/recovery; see docs/database-role-separation.md. This is not automated azd deployment, trusted HTTPS or browser/password/MFA completion. The host program never repairs legacy shared-secret containers automatically; no automatic hook is supplied.",

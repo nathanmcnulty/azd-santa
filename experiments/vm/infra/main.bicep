@@ -4,8 +4,9 @@ targetScope = 'subscription'
 @maxLength(32)
 param environmentName string
 param location string
-@minLength(40)
-param sshPublicKey string
+// azd initializes parameters before preprovision. Allow that local phase to
+// reach the key hook; the actual host module retains the required length gate.
+param sshPublicKey string = ''
 
 var tags = {
   'azd-env-name': environmentName
@@ -31,3 +32,6 @@ module host './host.bicep' = {
 
 output AZURE_RESOURCE_GROUP string = group.name
 output SANTA_VM_NAME string = host.outputs.vmName
+output SANTA_VM_RESOURCE_ID string = host.outputs.vmResourceId
+output SANTA_VM_INSTANCE_ID string = host.outputs.vmInstanceId
+output SANTA_VM_DEPLOYMENT_ID string = '${subscription().id}/providers/Microsoft.Resources/deployments/${deployment().name}'
