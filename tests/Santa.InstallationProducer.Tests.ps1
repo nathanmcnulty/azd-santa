@@ -110,5 +110,35 @@ Describe 'Machine-produced installation readiness and binding' {
             [IO.File]::ReadAllText($arguments.InstallationReceiptPath) | Should -Be 'preserve'
             Should -Invoke Invoke-SantaSetupAzJson -Times 0
         }
+        It 'reports a fixed source phase without exposing underlying failure data' {
+            Mock New-SantaInstallationProgram { throw 'private-canary-token-and-unreviewed-output' }
+            try {
+                Complete-SantaBackendInstallation @arguments
+                throw 'Expected source failure.'
+            } catch {
+                $_.Exception.Data['SantaInstallationPhase'] | Should -BeExactly 'source-program'
+                $_.Exception.Message | Should -Not -Match 'private-canary|unreviewed-output'
+                $_.Exception.InnerException | Should -BeNullOrEmpty
+            }
+            Should -Invoke Invoke-SantaSetupAzJson -Times 0
+            Test-Path $arguments.InstallationReceiptPath | Should -BeFalse
+            Test-Path $arguments.OperatorBindingPath | Should -BeFalse
+        }
+        It 'distinguishes failed readiness from binding persistence and retains partial evidence' {
+            Set-ReadyAzureMock
+            $script:tamper = 'uninitialized'
+            try { Complete-SantaBackendInstallation @arguments; throw 'Expected readiness failure.' }
+            catch { $_.Exception.Data['SantaInstallationPhase'] | Should -BeExactly 'readiness' }
+            Test-Path $arguments.InstallationReceiptPath | Should -BeFalse
+            $script:tamper = ''
+            Mock New-SantaOperatorDeploymentBinding { throw 'private-binding-canary' }
+            try { Complete-SantaBackendInstallation @arguments; throw 'Expected binding failure.' }
+            catch {
+                $_.Exception.Data['SantaInstallationPhase'] | Should -BeExactly 'binding'
+                $_.Exception.Message | Should -Not -Match 'private-binding-canary'
+            }
+            Test-Path $arguments.InstallationReceiptPath | Should -BeTrue
+            Test-Path $arguments.OperatorBindingPath | Should -BeFalse
+        }
     }
 }

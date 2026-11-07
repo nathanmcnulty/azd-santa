@@ -69,19 +69,35 @@ function Invoke-SantaSetupAzJson {
     catch { throw 'Azure response was not complete JSON; outcome requires inspection.' }
 }
 
-function Assert-SantaSetupAzureTarget {
-    param([object]$Request)
-    $b = $Request.Binding
+function Get-SantaPrivateVmDeploymentTarget {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][guid]$SubscriptionId,
+        [Parameter(Mandatory)][ValidatePattern('^[a-z0-9-]{2,32}$')][string]$EnvironmentName)
+    $b = @{ SubscriptionId = $SubscriptionId.ToString(); EnvironmentName = $EnvironmentName
+        ResourceGroup = "rg-azd-santa-vm-$EnvironmentName"; VmName = 'vm-santa-lab' }
+    $b.VmId = "/subscriptions/$($b.SubscriptionId)/resourceGroups/$($b.ResourceGroup)/providers/Microsoft.Compute/virtualMachines/$($b.VmName)"
     $account = Invoke-SantaSetupAzJson @('account', 'show', '--subscription', $b.SubscriptionId)
-    if ($account.id -ine $b.SubscriptionId -or $account.tenantId -ine $b.TenantId -or $account.state -cne 'Enabled') { throw 'Cached account does not match selected enabled subscription/tenant.' }
+    $guidPattern = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    if ($account.id -ine $b.SubscriptionId -or $account.tenantId -cnotmatch $guidPattern -or $account.state -cne 'Enabled') { throw 'Cached selected enabled subscription unavailable.' }
     $group = Invoke-SantaSetupAzJson @('group', 'show', '--subscription', $b.SubscriptionId, '--name', $b.ResourceGroup)
     if ($group.id -ine "/subscriptions/$($b.SubscriptionId)/resourceGroups/$($b.ResourceGroup)" -or
         $group.tags.'azd-solution' -cne 'azd-santa' -or $group.tags.purpose -cne 'synthetic-vm-lab' -or
         $group.tags.'azd-env-name' -cne $b.EnvironmentName) { throw 'Selected group is not the tagged private pilot.' }
     $vm = Invoke-SantaSetupAzJson @('vm', 'show', '--subscription', $b.SubscriptionId, '--resource-group', $b.ResourceGroup, '--name', $b.VmName)
-    if ($vm.id -ine $b.VmId -or $vm.vmId -ine $b.VmInstanceId -or $vm.provisioningState -cne 'Succeeded' -or
+    if ($vm.id -ine $b.VmId -or $vm.vmId -cnotmatch $guidPattern -or $vm.provisioningState -cne 'Succeeded' -or
         $vm.tags.'azd-solution' -cne 'azd-santa' -or $vm.tags.purpose -cne 'synthetic-vm-lab' -or
         $vm.tags.'azd-env-name' -cne $b.EnvironmentName) { throw 'Selected VM identity/tags/provisioning binding failed.' }
+    $b.TenantId = $account.tenantId; $b.VmInstanceId = $vm.vmId
+    $b
+}
+
+function Assert-SantaSetupAzureTarget {
+    param([object]$Request)
+    $b = $Request.Binding
+    $actual = Get-SantaPrivateVmDeploymentTarget -SubscriptionId $b.SubscriptionId -EnvironmentName $b.EnvironmentName
+    foreach ($name in @('TenantId', 'SubscriptionId', 'ResourceGroup', 'VmName', 'VmId', 'VmInstanceId')) {
+        if ($actual[$name] -ine $b[$name]) { throw 'Selected cached ARM target differs from expected deployment binding.' }
+    }
 }
 
 function Assert-SantaReceiptFields {
@@ -249,7 +265,7 @@ function Complete-SantaBackendInstallation {
         [Parameter(Mandatory)][string]$DeploymentId,
         [Parameter(Mandatory)][string]$InstallationReceiptPath,
         [Parameter(Mandatory)][string]$OperatorBindingPath)
-    $request = $null; $temporary = $null; $document = $null
+    $request = $null; $temporary = $null; $document = $null; $phase = 'input'
     try {
         Assert-SantaSetupBinding $InstallationOutputs
         Assert-SantaPrivateDestination $InstallationReceiptPath
@@ -261,6 +277,7 @@ function Complete-SantaBackendInstallation {
             [IO.Path]::GetFileName($InstallationReceiptPath) -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.json$') { throw 'Selected local environment paths required.' }
         $sub = [regex]::Escape($InstallationOutputs.SubscriptionId); $group = [regex]::Escape($InstallationOutputs.ResourceGroup)
         if ($DeploymentId -cnotmatch "^/subscriptions/$sub/(?:resourceGroups/$group/)?providers/Microsoft\.Resources/deployments/[A-Za-z0-9_.()-]{1,64}$") { throw 'Selected installation deployment mismatch.' }
+        $phase = 'source-program'
         $source = New-SantaInstallationProgram $DeploymentId
         $binding = @{}; foreach ($key in $InstallationOutputs.Keys) { $binding[$key] = $InstallationOutputs[$key] }
         $binding.SourceCommit = (Get-Content (Join-Path $PSScriptRoot 'zentral-source.lock.json') -Raw | ConvertFrom-Json).commit
@@ -271,9 +288,11 @@ function Complete-SantaBackendInstallation {
         $binding.RemoteProgramSha256 = $source.Sha256
         # A structural crypto probe only: these fixed identifiers are never
         # created as users and the producer never calls the setup mutation path.
+        $phase = 'request'
         $request = New-SantaSetupTransportRequest $binding bootstrap 'azd-installation-probe' 'azd-installation-probe@example.invalid' 'Read-only installation readiness'
         if ($request.PayloadBase64.Length -gt 8192) { throw 'Installation request exceeded its bound.' }
         Assert-SantaSetupPreparedRequest $request
+        $phase = 'azure-selection'
         Assert-SantaSetupAzureTarget $request
         $script = "set -eu`nexport AZD_SANTA_SETUP_REQUEST_B64='$($request.PayloadBase64)'`npython3 -I - <<'AZD_SANTA_INSTALL_PY'`n" +
             $source.Program + "`nAZD_SANTA_INSTALL_PY`nprintf '%s\n' 'SANTA_INSTALLATION_TRANSPORT_DONE:$($request.Context)'`n"
@@ -282,8 +301,10 @@ function Complete-SantaBackendInstallation {
         $stream = [IO.FileStream]::new($temporary, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
         try { $stream.Write([Text.Encoding]::UTF8.GetBytes($script)) } finally { $stream.Dispose() }
         $b = $request.Binding
+        $phase = 'transport'
         $result = Invoke-SantaSetupAzJson @('vm', 'run-command', 'invoke', '--subscription', $b.SubscriptionId,
             '--resource-group', $b.ResourceGroup, '--name', $b.VmName, '--command-id', 'RunShellScript', '--scripts', "@$temporary")
+        $phase = 'readback'
         $payload = Read-SantaRunCommandPayload $result $request.Context 'SANTA_INSTALLATION_JSON:' 'SANTA_INSTALLATION_TRANSPORT_DONE:' 3200
         $document = [Text.Json.JsonDocument]::Parse($payload); $root = $document.RootElement
         Assert-SantaReceiptFields $root @('scope', 'context_sha256', 'attestor_sha256', 'producer_sha256', 'readiness', 'installation')
@@ -291,9 +312,11 @@ function Complete-SantaBackendInstallation {
             $root.GetProperty('context_sha256').GetString() -cne $request.Context -or
             $root.GetProperty('attestor_sha256').GetString() -cne $source.AttestorSha256 -or
             $root.GetProperty('producer_sha256').GetString() -cne $source.ProducerSha256) { throw 'Installation readback source/selection mismatch.' }
+        $phase = 'readiness'
         $ready = $root.GetProperty('readiness'); $gates = @('database_authority', 'migrations', 'store', 'security_store', 'event_consumers', 'search')
         Assert-SantaReceiptFields $ready $gates
         foreach ($gate in $gates) { if (-not $ready.GetProperty($gate).GetBoolean()) { throw 'Runtime initialization is not complete.' } }
+        $phase = 'receipt'
         $receipt = $root.GetProperty('installation')
         Assert-SantaReceiptFields $receipt @('schemaVersion', 'scope', 'state', 'deploymentId', 'outputs')
         if ($receipt.GetProperty('schemaVersion').GetInt32() -ne 1 -or $receipt.GetProperty('scope').GetString() -cne 'azd-santa-backend-installation' -or
@@ -302,9 +325,11 @@ function Complete-SantaBackendInstallation {
         foreach ($key in $InstallationOutputs.Keys) { if ($outputs.GetProperty($key).GetString() -cne $InstallationOutputs[$key]) { throw 'Installed runtime differs from selected installer outputs.' } }
         # Machine-produced bytes, pinned immediately before passing to the local
         # consumer. No admin JSON construction or setup-mutation result is used.
+        $phase = 'local-persistence'
         $receiptBytes = [Text.Encoding]::UTF8.GetBytes($receipt.GetRawText())
         $file = [IO.FileStream]::new($InstallationReceiptPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
         try { $file.Write($receiptBytes); $file.Flush($true) } finally { $file.Dispose() }
+        $phase = 'binding'
         $completed = New-SantaOperatorDeploymentBinding -InstallationReceiptPath $InstallationReceiptPath `
             -ExpectedReceiptSha256 ([Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData($receiptBytes))) `
             -TenantId $InstallationOutputs.TenantId -SubscriptionId $InstallationOutputs.SubscriptionId `
@@ -315,7 +340,13 @@ function Complete-SantaBackendInstallation {
             SourceCommit = $binding.SourceCommit; RecoverySha256 = $binding.RecoverySha256; SealedSha256 = $binding.SealedSha256
             InitializationReadback = 'database-authority-migrations-store-security-consumers-search'
         } -PassThru
-    } catch { throw 'Deployment is not ready for operator setup: initialization/source/selection readback or local finalization failed. Preserve any local artifacts; no setup action was submitted.' }
+    } catch {
+        # Fixed local phase names only; never expose the underlying exception,
+        # request, native command output or credential-bearing target object.
+        $failure = [InvalidOperationException]::new("Deployment is not ready for operator setup (phase: $phase). Preserve local artifacts and inspect the same installation; no setup action was submitted.")
+        $failure.Data['SantaInstallationPhase'] = $phase
+        throw $failure
+    }
     finally {
         if ($request) { $request.Recipient.Key.Dispose() }
         if ($document) { $document.Dispose() }
@@ -398,4 +429,4 @@ function Send-SantaSetupRunCommand {
     finally { if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) } }
 }
 
-Export-ModuleMember -Function New-SantaSetupTransportRequest, Send-SantaSetupRunCommand, New-SantaOperatorDeploymentBinding, Complete-SantaBackendInstallation
+Export-ModuleMember -Function New-SantaSetupTransportRequest, Send-SantaSetupRunCommand, New-SantaOperatorDeploymentBinding, Complete-SantaBackendInstallation, Get-SantaPrivateVmDeploymentTarget

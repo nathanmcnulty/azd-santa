@@ -1,4 +1,5 @@
 param location string
+@minLength(40)
 param sshPublicKey string
 param tags object
 param adminUsername string = 'santalab'
@@ -128,3 +129,5 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-11-01' = {
 }
 
 output vmName string = vm.name
+output vmResourceId string = vm.id
+output vmInstanceId string = vm.properties.vmId
