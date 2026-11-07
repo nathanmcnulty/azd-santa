@@ -50,6 +50,9 @@ def docker_program(source_root):
     digest = hashlib.sha256(module).hexdigest()
     destinations = {'server/azd_santa_operator_recovery.py': module,
                     'server/accounts/management/commands/operator_access.py': WRAPPER}
+    sealed = Path(__file__).with_name('sealed_setup.py').read_bytes().replace(b'\r\n', b'\n')
+    ast.parse(sealed)
+    destinations['server/azd_santa_sealed_setup.py'] = sealed
     payload = {name: (base64.b64encode(raw).decode(), hashlib.sha256(raw).hexdigest())
                for name, raw in destinations.items()}
     program = (
@@ -73,5 +76,6 @@ def docker_program(source_root):
         '    with os.fdopen(fd,"wb") as stream: stream.write(raw)\n'
         '    path.chmod(0o644)\n'
         f"print('Installed original operator recovery layer SHA256: {digest}')\n"
+        f"print('Installed original setup sealer SHA256: {hashlib.sha256(sealed).hexdigest()}')\n"
     )
     return program

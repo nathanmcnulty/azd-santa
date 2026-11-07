@@ -71,6 +71,8 @@ class RecoveryPackage(unittest.TestCase):
             installed = root / 'server/azd_santa_operator_recovery.py'
             self.assertEqual(installed.read_bytes(), (ROOT / 'operator_recovery.py').read_bytes().replace(b'\r\n', b'\n'))
             self.assertTrue((root / 'server/accounts/management/commands/operator_access.py').exists())
+            self.assertEqual((root / 'server/azd_santa_sealed_setup.py').read_bytes(),
+                             (ROOT / 'sealed_setup.py').read_bytes().replace(b'\r\n', b'\n'))
             self.assertEqual(hashlib.sha256((root / package.URLS).read_bytes()).hexdigest(), outputs[package.URLS])
             # Subsequent runs fail at the exact patch boundary, never silently replay.
             with self.assertRaises(RuntimeError):
