@@ -68,6 +68,7 @@ def install_policy(namespace):
     chain = namespace['MIDDLEWARE']
     chain.insert(chain.index('realms.middlewares.realm_session_middleware') + 1,
                  'azd_santa_operator.RequireOperatorMFA')
+    chain.insert(0, 'azd_santa_admission.Admission')
 
 
 def _digest(value):
@@ -204,7 +205,11 @@ def initialize_security_store(mode, *, confirm_quiesced=False):
         raise ImproperlyConfigured('Migration requires explicit quiescence confirmation')
     cache, client = _security_client()
     delay = CHALLENGE_SECONDS + 60 if mode == 'migrate' else 0
-    result = client.eval('''
+    if mode == 'fresh':
+        from azd_santa_admission import initialize_fresh
+        result = initialize_fresh(cache, client, _expected_store_id(), delay, STORE_MARKER)
+    else:
+        result = client.eval('''
 if redis.call('EXISTS', KEYS[1]) ~= 0 then return 0 end
 local ready = tonumber(redis.call('TIME')[1]) + tonumber(ARGV[2])
 redis.call('SET', KEYS[1], ARGV[1] .. ':' .. tostring(ready))
