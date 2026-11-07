@@ -31,6 +31,10 @@ VM-first Azure testing is available as an isolated opt-in
 [host qualification lab](experiments/vm/README.md). It provisions no public sync
 service and does not change the default Intune deployment or enroll a Mac.
 
+The next stage is [real-server qualification](docs/server-qualification.md),
+including a private core-only Zentral build experiment. This is development
+tooling, not yet the simple supported backend deployment offered to admins.
+
 ## Recommended architecture
 
 ```text
