@@ -352,7 +352,7 @@ class Runtime:
             config, host = row['Config'], row['HostConfig']
             if (config.get('Cmd') != self.data['services'][name].get('command', image['Config'].get('Cmd')) or
                     config.get('Entrypoint') != image['Config'].get('Entrypoint') or
-                    config.get('User') != image['Config'].get('User') or host.get('Privileged') or
+                    (config.get('User') or '') != (image['Config'].get('User') or '') or host.get('Privileged') or
                     host.get('CapAdd') or host.get('PidMode') or host.get('Devices') or host.get('PublishAllPorts') or
                     host.get('SecurityOpt') != ['no-new-privileges:true']):
                 raise ValueError('Container command or privilege boundary changed')
