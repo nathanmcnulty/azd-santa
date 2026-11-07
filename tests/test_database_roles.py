@@ -1,7 +1,9 @@
 """Offline package/precondition tests; SQL outcomes need the real DB harness."""
 import ast
 import hashlib
+import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -20,8 +22,8 @@ class DatabaseBoundary(unittest.TestCase):
             package.transform(b'not reviewed upstream')
 
     def test_entrypoint_normal_path_only_checks_runtime_and_preserves_original_input(self):
-        raw = b'import subprocess\nif True:\n    if True:\n        if True:\n' + package.OLD
-        expected = package.NOTICE + raw.replace(package.OLD, package.NEW)
+        raw = package.HEADER + b'import subprocess\nif True:\n    if True:\n        if True:\n' + package.OLD
+        expected = package.HEADER + package.NOTICE + raw[len(package.HEADER):].replace(package.OLD, package.NEW)
         with patch.object(package, 'INPUT', hashlib.sha256(raw).hexdigest()), \
                 patch.object(package, 'OUTPUT', hashlib.sha256(expected).hexdigest()):
             output = package.transform(raw)
@@ -31,10 +33,11 @@ class DatabaseBoundary(unittest.TestCase):
         calls.assert_called_once_with(['python', 'server/manage.py', 'operator_database', 'check'], check=True)
         self.assertIn(b'wait_for_db_migration()', raw)
         self.assertNotIn(b'wait_for_db_migration()', output)
+        self.assertEqual(output.splitlines()[:2], package.HEADER.splitlines())
 
     def test_installer_preserves_module_bytes_and_requires_exact_entrypoint_hash(self):
-        raw = b'import subprocess\nif True:\n    if True:\n        if True:\n' + package.OLD
-        output = package.NOTICE + raw.replace(package.OLD, package.NEW)
+        raw = package.HEADER + b'import subprocess\nif True:\n    if True:\n        if True:\n' + package.OLD
+        output = package.HEADER + package.NOTICE + raw[len(package.HEADER):].replace(package.OLD, package.NEW)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / 'docker-entrypoint.py').write_bytes(raw)
@@ -45,10 +48,20 @@ class DatabaseBoundary(unittest.TestCase):
             target = root / 'zentral'
             (target / 'server/accounts/management/commands').mkdir(parents=True)
             (target / 'docker-entrypoint.py').write_bytes(raw)
-            exec(program.replace('/zentral', target.as_posix()), {})
+            chmod = Path.chmod
+            with patch.object(Path, 'chmod', autospec=True, side_effect=chmod) as modes:
+                exec(program.replace('/zentral', target.as_posix()), {})
+            self.assertIn(((target / 'database-role-entrypoint.py', 0o755), {}), modes.call_args_list)
             self.assertEqual((target / 'docker-entrypoint.py').read_bytes(), output)
             self.assertEqual((target / 'server/azd_santa_database_roles.py').read_bytes(),
                              (SERVER / 'database_roles.py').read_bytes().replace(b'\r\n', b'\n'))
+            if os.name != 'nt':
+                self.assertEqual((target / 'docker-entrypoint.py').stat().st_mode & 0o777, 0o755)
+                (target / 'server/manage.py').write_text("import sys\nassert sys.argv[1:]==['operator_database','check']\nprint('SYNTHETIC_RUNTIME_CHECK')\n")
+                executed = subprocess.run([str(target / 'docker-entrypoint.py')], cwd=target,
+                                          capture_output=True, text=True, timeout=10)
+                self.assertEqual(executed.returncode, 0, executed.stderr)
+                self.assertIn('SYNTHETIC_RUNTIME_CHECK', executed.stdout)
             with self.assertRaisesRegex(RuntimeError, 'input mismatch'):
                 exec(program.replace('/zentral', target.as_posix()), {})
 
@@ -64,6 +77,22 @@ class DatabaseBoundary(unittest.TestCase):
             cursor = Mock(); cursor.fetchone.side_effect = results
             with self.subTest(index=index), self.assertRaises(ValueError):
                 roles.check_role(cursor)
+
+    def test_permanent_system_schema_create_is_not_exempted_as_temporary(self):
+        safe = [(roles.RUNTIME, roles.RUNTIME, roles.DATABASE), (False,) * 6, (False,),
+                (False, True, False, True), (False,), (False,), (False,), (True, False), (False,)]
+        for schema in ('pg_catalog', 'information_schema'):
+            cursor = Mock()
+            unsafe = list(safe); unsafe[5] = (True,)
+            cursor.fetchone.side_effect = unsafe
+            with self.subTest(schema=schema), self.assertRaises(ValueError):
+                roles.check_role(cursor)
+            query = cursor.execute.call_args.args[0]
+            self.assertIn('pg_my_temp_schema()', query)
+            self.assertIn('pg_is_other_temp_schema(n.oid)', query)
+            self.assertIn("'pg_toast_temp_' || substr(t.nspname,9)", query)
+            self.assertNotIn("!~ '^pg_'", query)
+            self.assertNotIn("<> 'information_schema'", query)
 
     def test_runtime_file_rejects_bootstrap_identity_duplicate_keys_and_unsafe_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:

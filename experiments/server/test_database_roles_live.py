@@ -36,6 +36,13 @@ def run(expected):
     with transaction.atomic(), connection.cursor() as cursor:
         cleanup_inventory(cursor, lambda *args, **kwargs: None, get_cleanup_max_date())
         transaction.set_rollback(True)
+    # Owned temporary relations/TOAST objects must remain allowed while present.
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute('CREATE TEMPORARY TABLE azd_role_temp_probe (payload text)')
+        cursor.execute("INSERT INTO azd_role_temp_probe VALUES (repeat('x',8192))")
+        roles.check_role(cursor)
+        cursor.execute('DROP TABLE azd_role_temp_probe')
+        transaction.set_rollback(True)
     denied = []
     name = 'azd_role_probe_' + uuid.uuid4().hex
     statements = {

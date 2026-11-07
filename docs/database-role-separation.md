@@ -34,7 +34,10 @@ the three implicit migration/provision/admin-creation calls with
 `operator_database check`. Input SHA-256:
 `c11a6a75841a7c6f719367445a8d604a0cd8e4c9cfb39efe439d09999b2dbef7`;
 output SHA-256:
-`e0e8f00e0df32f5967fa3d399035d951d77c7e770c40d7507a40d9beeb1db8ae`.
+`2789954887836f03fdc24bf42f0d12eb95109920f66911884200a95c3579a8f6`.
+The original first-line shebang and second-line encoding cookie remain first;
+the modification notice follows them. The replacement is installed mode 0755
+because the pinned image's tini entrypoint executes that file directly.
 The modified-source notice is retained and the image records input/output/module
 hashes in `/zentral/server/DATABASE_ROLE_NOTICE.json`. Apache/core and original
 Unlicense provenance remain separate. No EE source is added.
@@ -79,7 +82,12 @@ an explicit permission, not a silent substitute for permanent-schema CREATE.
 Cleanup, UI and Celery behavior are preserved. Runtime may own its temporary
 objects; it owns no permanent application schema/table/function or database.
 Its search path is `pg_catalog, public, pg_temp`; permanent schema creation and
-role membership remain denied. Initialization/runtime checks reject non-system
+role membership remain denied. Permanent-schema CREATE/ownership checks include
+system schemas, exempting only catalog-identified temporary schemas (including
+the current session's temporary TOAST namespace). PostgreSQL's
+[namespace implementation](https://github.com/postgres/postgres/blob/REL_18_STABLE/src/backend/catalog/namespace.c)
+distinguishes that namespace from other sessions' temporary namespaces.
+Initialization/runtime checks reject non-system
 SECURITY DEFINER functions; there are none in the inspected pinned migrations.
 
 ## Required live acceptance
