@@ -198,7 +198,7 @@ def attest_runtime(request):
                'env_file', 'environment', 'volumes', 'depends_on', 'ports', 'hostname'}
     dependency_mounts = {'db': ['postgres_data:/var/lib/postgresql'], 'redis': ['redis_data:/data'],
         'rabbitmq': ['rabbitmq_data:/var/lib/rabbitmq'], 'elastic': ['elasticsearch_data:/usr/share/elasticsearch/data']}
-    web, networks = None, set()
+    web, networks, services = None, set(), {}
     for service, declaration in config['services'].items():
         need(set(declaration) <= allowed and declaration.get('ports', []) == (['127.0.0.1:8000:8000'] if service == 'web' else []))
         expected_mounts = dependency_mounts.get(service, ['./conf:/zentral-eval-conf:ro', 'media_data:/var/zentral'])
@@ -209,6 +209,7 @@ def attest_runtime(request):
         need(image == b['ImageId'] if service in ('web', 'workers', 'celery') else re.fullmatch('[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}', image))
         ids = docker(['compose', '--project-name', project, '-f', str(compose), 'ps', '--quiet', service]).decode().strip()
         need(re.fullmatch('[a-f0-9]{64}', ids))
+        services[service] = ids
         info = loads(docker(['inspect', ids]))[0]
         labels = info['Config'].get('Labels', {})
         need(info['State']['Running'] is True and labels.get('com.docker.compose.project') == project
@@ -266,7 +267,7 @@ print('SANTA_SETUP_HOST_ATTESTED')
     output = docker(['exec', '--env', 'AZD_SANTA_SETUP_REQUEST_B64=' + value, web,
                      'python', 'server/manage.py', 'shell', '--no-imports', '-c', probe], timeout=60)
     need(output.decode().splitlines().count('SANTA_SETUP_HOST_ATTESTED') == 1)
-    return web
+    return services
 
 
 def envelope(raw, request):
@@ -302,7 +303,7 @@ def run():
     request, raw = request_from_environment()
     operation = os.environ['AZD_SANTA_SETUP_OPERATION']; need(operation in ('create', 'readback'))
     attest_metadata(request['context']['binding'])
-    web = attest_runtime(request)
+    web = attest_runtime(request)['web']
     store = ROOT / 'operator-setup'
     if not store.exists():
         try:

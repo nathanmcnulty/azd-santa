@@ -177,7 +177,7 @@ class RuntimeGuards(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             value, data, infos, docker, ids = self.fixture(directory)
             with patch.object(host, 'private_path', side_effect=lambda path, **kwargs: Path(path)), patch.object(host, 'docker', side_effect=docker):
-                self.assertEqual(host.attest_runtime(value), ids['web'])
+                self.assertEqual(host.attest_runtime(value), ids)
                 for name, key, changed in (('web', 'Image', 'sha256:' + 'b' * 64), ('redis', 'State', {'Running': False}),
                     ('db', 'HostConfig', {'Privileged': True}), ('celery', 'NetworkSettings', {'Networks': {'wrong': {}}})):
                     previous = infos[ids[name]][key]; infos[ids[name]][key] = changed
@@ -226,7 +226,7 @@ class MutationCheckpoint(unittest.TestCase):
             with patch.object(host, 'ROOT', root), patch.object(host, 'private_path', side_effect=lambda path, **kwargs: Path(path)), \
                  patch.object(host, 'write_new', side_effect=write), patch.object(host, 'sync_directory'), \
                  patch.object(host.os, 'geteuid', return_value=0, create=True), patch.object(host, 'attest_metadata'), \
-                 patch.object(host, 'attest_runtime', return_value='a' * 64), patch.object(host.os, 'umask'), \
+                 patch.object(host, 'attest_runtime', return_value={'web': 'a' * 64}), patch.object(host.os, 'umask'), \
                  patch.object(host.subprocess, 'run', side_effect=subprocess.TimeoutExpired('selected-docker-exec', 180)) as action, \
                  patch.dict(os.environ, environment(value)), patch('sys.stdout', new_callable=io.StringIO) as output:
                 with self.assertRaises(subprocess.TimeoutExpired): host.run()
@@ -254,7 +254,7 @@ class MutationCheckpoint(unittest.TestCase):
             with patch.object(host, 'ROOT', Path(directory)), patch.object(host, 'private_path', side_effect=lambda p, **kw: Path(p)), \
                  patch.object(host, 'write_new', side_effect=write), patch.object(host, 'sync_directory'), \
                  patch.object(host.os, 'geteuid', return_value=0, create=True), patch.object(host, 'attest_metadata'), \
-                 patch.object(host, 'attest_runtime', return_value='a' * 64), patch.object(host.os, 'umask'), \
+                 patch.object(host, 'attest_runtime', return_value={'web': 'a' * 64}), patch.object(host.os, 'umask'), \
                  patch.object(host.subprocess, 'run', side_effect=subprocess.TimeoutExpired('selected-docker-exec', 180)) as action, \
                  patch.dict(os.environ, environment(value)):
                 def attempt(_):
