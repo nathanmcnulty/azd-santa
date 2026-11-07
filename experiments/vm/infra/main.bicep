@@ -4,8 +4,9 @@ targetScope = 'subscription'
 @maxLength(32)
 param environmentName string
 param location string
-@minLength(40)
-param sshPublicKey string
+// azd initializes parameters before preprovision. Allow that local phase to
+// reach the key hook; the actual host module retains the required length gate.
+param sshPublicKey string = ''
 
 var tags = {
   'azd-env-name': environmentName

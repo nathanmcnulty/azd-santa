@@ -1,4 +1,5 @@
 param location string
+@minLength(40)
 param sshPublicKey string
 param tags object
 param adminUsername string = 'santalab'

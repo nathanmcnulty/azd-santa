@@ -15,6 +15,21 @@ key changes across reruns. Existing user-supplied public input is retained. This
 does not provide SSH access or a private-key download; explicit SSH would require
 a separate operator choice and network review.
 
+In azd 1.34.1, `up` initializes the Bicep provider before its provisioning graph
+runs `preprovision`. The outer key parameter therefore has an empty default
+solely to reach this hook. The graph's hook node reloads environment writes
+before creating the layer snapshot; deployment resolves parameters again. The
+same hook serves standalone `provision`. The nested host parameter remains
+required with `minLength: 40`, so missing hook output cannot create a VM with an
+empty key. Existing public-key overrides remain authoritative. See the pinned
+[Bicep provider](https://github.com/Azure/azure-dev/blob/azure-dev-cli_1.34.1/cli/azd/pkg/infra/provisioning/bicep/bicep_provider.go),
+[provision graph](https://github.com/Azure/azure-dev/blob/azure-dev-cli_1.34.1/cli/azd/internal/cmd/provision_graph.go)
+and [hook runner](https://github.com/Azure/azure-dev/blob/azure-dev-cli_1.34.1/cli/azd/pkg/ext/hooks_runner.go),
+plus the [`up` entry](https://github.com/Azure/azure-dev/blob/azure-dev-cli_1.34.1/cli/azd/cmd/up.go)
+and [up graph](https://github.com/Azure/azure-dev/blob/azure-dev-cli_1.34.1/cli/azd/internal/cmd/up_graph.go).
+Source inspection and compiled-template checks do not prove either real CLI
+entry point; genuine cold `azd up` and `azd provision` remain separate gates.
+
 Postprovision verifies authoritative Bicep VM resource/instance/deployment outputs
 against cached selected account/group/VM readback. Every azd command explicitly
 targets this nested project and selected environment. The hook requests a

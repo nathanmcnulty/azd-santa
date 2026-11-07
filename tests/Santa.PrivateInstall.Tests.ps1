@@ -3,6 +3,20 @@ BeforeDiscovery {
     Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'experiments/vm/PrivateVmInstall.psm1') -Force
 }
 Describe 'Optional private VM azd installation' {
+    It 'allows initialization before key generation while retaining the actual host key gate' {
+        $root = Split-Path $PSScriptRoot -Parent
+        $outer = Get-Content (Join-Path $root 'experiments/vm/infra/main.bicep') -Raw
+        $hostSource = Get-Content (Join-Path $root 'experiments/vm/infra/host.bicep') -Raw
+        $hooks = Get-Content (Join-Path $root 'experiments/vm/azure.yaml') -Raw
+        $outer | Should -Match "param sshPublicKey string = ''"
+        $outer | Should -Not -Match '@minLength\(40\)'
+        $hostSource | Should -Match '@minLength\(40\)\s+param sshPublicKey string\s'
+        $hostSource | Should -Not -Match 'param sshPublicKey string\s*='
+        $hooks | Should -Match '(?s)preprovision:.*?run: ./Install-PrivateBackend.ps1 -Phase preprovision'
+        $hooks | Should -Not -Match '(?m)^  preup:'
+        # Both lifecycle entry points use the same tested public-only/override
+        # implementation. This structural check is not a real azd execution.
+    }
     InModuleScope PrivateVmInstall {
         BeforeAll { $priorEnvironment = $env:AZURE_ENV_NAME; $env:AZURE_ENV_NAME = 'synthetic' }
         AfterAll { $env:AZURE_ENV_NAME = $priorEnvironment }
