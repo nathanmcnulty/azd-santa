@@ -11,9 +11,11 @@ Describe 'Offline setup transport boundaries' {
                     TenantId = '22222222-2222-4222-8222-222222222222'; SubscriptionId = $sub
                     EnvironmentName = 'synthetic'; ResourceGroup = 'rg-azd-santa-vm-synthetic'; VmName = 'vm-santa-lab'
                     VmId = "/subscriptions/$sub/resourceGroups/rg-azd-santa-vm-synthetic/providers/Microsoft.Compute/virtualMachines/vm-santa-lab"
+                    VmInstanceId = '33333333-3333-4333-8333-333333333333'
                     ImageId = 'sha256:' + ('a' * 64); ComposePath = '/var/lib/synthetic/compose.json'
                     ComposeSha256 = 'b' * 64; SourceCommit = 'c' * 40; RecoverySha256 = 'd' * 64
-                    Origin = 'https://santa.example.invalid'; RemoteProgramSha256 = Get-SantaTransportHash "exit 0`n"
+                    SealedSha256 = 'e' * 64
+                    Origin = 'https://santa.example.invalid'; RemoteProgramSha256 = Get-SantaTransportHash "pass`n"
                 } -Mode recover -Username 'synthetic-é' -Email 'synthetic@example.invalid' -Reason 'Synthetic transport qualification'
             }
             function New-TestResult($Context, $Envelope = '', $Kid = ('a' * 64), $Target = ('b' * 64)) {
@@ -45,6 +47,34 @@ Describe 'Offline setup transport boundaries' {
                 Should -Invoke Invoke-SantaSetupAzJson -Times 0
             } finally { $one.Recipient.Key.Dispose(); $two.Recipient.Key.Dispose() }
         }
+        It 'interoperates with the actual stdlib host canonical-request decoder without external calls' {
+            $request = New-TestRequest
+            $prior = $env:AZD_SANTA_SETUP_REQUEST_B64
+            try {
+                $env:AZD_SANTA_SETUP_REQUEST_B64 = $request.PayloadBase64
+                $hostProgram = Join-Path (Split-Path $PSScriptRoot -Parent) 'experiments/server/operator_setup_host.py'
+                $result = & python $hostProgram --validate-request 2>&1
+                $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
+                ($result -join "`n") | Should -BeExactly ('SANTA_SETUP_REQUEST_VALID:' + $request.Context)
+            } finally { $env:AZD_SANTA_SETUP_REQUEST_B64 = $prior; $request.Recipient.Key.Dispose() }
+        }
+        It 'enforces the 24KiB program boundary before request validation or Azure calls' {
+            $request = New-TestRequest
+            try {
+                Mock Assert-SantaSetupPreparedRequest { throw 'past-program-boundary' }
+                foreach ($size in @(24576, 24577)) {
+                    $path = Join-Path $TestDrive ($size.ToString() + '.py')
+                    [IO.File]::WriteAllText($path, ('#' + ('a' * ($size - 1))), [Text.UTF8Encoding]::new($false))
+                    $request.Binding.RemoteProgramSha256 = (Get-FileHash $path).Hash.ToLowerInvariant()
+                    if ($size -eq 24576) {
+                        { Send-SantaSetupRunCommand $request $path $TestDrive create } | Should -Throw '*past-program-boundary*'
+                    } else {
+                        { Send-SantaSetupRunCommand $request $path $TestDrive create } | Should -Throw '*program hash/size mismatch*'
+                    }
+                }
+                Should -Invoke Invoke-SantaSetupAzJson -Times 0
+            } finally { $request.Recipient.Key.Dispose() }
+        }
         It 'rejects wrong tenant or group tags before VM submission' {
             $request = New-TestRequest
             try {
@@ -61,12 +91,12 @@ Describe 'Offline setup transport boundaries' {
                     if ($Arguments[0] -eq 'account') { return @{ id = $request.Binding.SubscriptionId; tenantId = $request.Binding.TenantId; state = 'Enabled' } }
                     $tags = @{ 'azd-solution' = 'azd-santa'; purpose = 'synthetic-vm-lab'; 'azd-env-name' = 'synthetic' }
                     if ($Arguments[0] -eq 'group') { return @{ id = "/subscriptions/$($request.Binding.SubscriptionId)/resourceGroups/rg-azd-santa-vm-synthetic"; tags = $tags } }
-                    return @{ id = $request.Binding.VmId; provisioningState = 'Succeeded'; tags = $tags }
+                    return @{ id = $request.Binding.VmId; vmId = $request.Binding.VmInstanceId; provisioningState = 'Succeeded'; tags = $tags }
                 }
                 { Assert-SantaSetupAzureTarget $request } | Should -Not -Throw
                 Should -Invoke Invoke-SantaSetupAzJson -Times 3 -Exactly
                 Mock Invoke-SantaSetupAzJson -ParameterFilter { $Arguments[0] -eq 'vm' } {
-                    @{ id = $request.Binding.VmId; provisioningState = 'Succeeded'; tags = @{ purpose = 'unrelated' } }
+                    @{ id = $request.Binding.VmId; vmId = $request.Binding.VmInstanceId; provisioningState = 'Succeeded'; tags = @{ purpose = 'unrelated' } }
                 }
                 { Assert-SantaSetupAzureTarget $request } | Should -Throw
             } finally { $request.Recipient.Key.Dispose() }
@@ -87,7 +117,7 @@ Describe 'Offline setup transport boundaries' {
                     $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($request.PayloadBase64)) | ConvertFrom-Json -AsHashtable
                     $payload[$field] = switch ($field) { username { 'different-user' } email { 'different@example.invalid' } reason { "invalid`nreason" } }
                     $request.PayloadBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($payload | ConvertTo-Json -Depth 8 -Compress)))
-                    $path = Join-Path $TestDrive ($field + '.sh'); [IO.File]::WriteAllText($path, "exit 0`n")
+                    $path = Join-Path $TestDrive ($field + '.py'); [IO.File]::WriteAllText($path, "pass`n")
                     { Send-SantaSetupRunCommand $request $path $TestDrive create } | Should -Throw
                     Should -Invoke Invoke-SantaSetupAzJson -Times 0
                     Test-Path (Join-Path $TestDrive ($request.RequestId + '-create.submitted.json')) | Should -BeFalse
@@ -121,7 +151,7 @@ Describe 'Offline setup transport boundaries' {
         It 'retains unknown-outcome checkpoint and refuses a second create without invoking Azure again' {
             $request = New-TestRequest
             try {
-                $path = Join-Path $TestDrive 'program.sh'; [IO.File]::WriteAllText($path, "exit 0`n")
+                $path = Join-Path $TestDrive 'program.py'; [IO.File]::WriteAllText($path, "pass`n")
                 Mock Assert-SantaSetupAzureTarget {}
                 Mock Invoke-SantaSetupAzJson { throw 'Synthetic timeout.' }
                 { Send-SantaSetupRunCommand $request $path $TestDrive create } | Should -Throw
@@ -135,7 +165,7 @@ Describe 'Offline setup transport boundaries' {
         It 'returns ciphertext only and keeps readback as an explicit separate invocation' {
             $request = New-TestRequest
             try {
-                $path = Join-Path $TestDrive 'success.sh'; [IO.File]::WriteAllText($path, "exit 0`n")
+                $path = Join-Path $TestDrive 'success.py'; [IO.File]::WriteAllText($path, "pass`n")
                 Mock Assert-SantaSetupAzureTarget {}
                 Mock Invoke-SantaSetupAzJson { param($Arguments)
                     $Arguments[0..2] -join ' ' | Should -Be 'vm run-command invoke'

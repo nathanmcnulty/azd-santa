@@ -14,15 +14,15 @@ function New-SantaSetupTransportRequest {
         [Parameter(Mandatory)][string]$Username, [Parameter(Mandatory)][string]$Email,
         [Parameter(Mandatory)][string]$Reason)
     $names = @('TenantId', 'SubscriptionId', 'EnvironmentName', 'ResourceGroup', 'VmName', 'VmId',
-        'ImageId', 'ComposePath', 'ComposeSha256', 'SourceCommit', 'RecoverySha256', 'Origin', 'RemoteProgramSha256')
+        'VmInstanceId', 'ImageId', 'ComposePath', 'ComposeSha256', 'SourceCommit', 'RecoverySha256', 'SealedSha256', 'Origin', 'RemoteProgramSha256')
     if ($Binding.Count -ne $names.Count -or @($names | Where-Object { -not $Binding.ContainsKey($_) }).Count) { throw 'Exact setup binding fields required.' }
-    foreach ($name in @('TenantId', 'SubscriptionId')) {
+    foreach ($name in @('TenantId', 'SubscriptionId', 'VmInstanceId')) {
         if ($Binding[$name] -cnotmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') { throw 'Canonical selected tenant/subscription required.' }
     }
     if ($Binding.EnvironmentName -cnotmatch '^[a-z0-9-]{2,32}$' -or
         $Binding.ResourceGroup -cne "rg-azd-santa-vm-$($Binding.EnvironmentName)" -or $Binding.VmName -cne 'vm-santa-lab' -or
         $Binding.VmId -cne "/subscriptions/$($Binding.SubscriptionId)/resourceGroups/$($Binding.ResourceGroup)/providers/Microsoft.Compute/virtualMachines/vm-santa-lab") { throw 'Exact selected private pilot VM binding required.' }
-    foreach ($name in @('ComposeSha256', 'RecoverySha256', 'RemoteProgramSha256')) {
+    foreach ($name in @('ComposeSha256', 'RecoverySha256', 'SealedSha256', 'RemoteProgramSha256')) {
         if ($Binding[$name] -cnotmatch '^[a-f0-9]{64}$') { throw 'Exact source hashes required.' }
     }
     if ($Binding.ImageId -cnotmatch '^sha256:[a-f0-9]{64}$' -or $Binding.SourceCommit -cnotmatch '^[a-f0-9]{40}$' -or
@@ -69,7 +69,7 @@ function Assert-SantaSetupAzureTarget {
         $group.tags.'azd-solution' -cne 'azd-santa' -or $group.tags.purpose -cne 'synthetic-vm-lab' -or
         $group.tags.'azd-env-name' -cne $b.EnvironmentName) { throw 'Selected group is not the tagged private pilot.' }
     $vm = Invoke-SantaSetupAzJson @('vm', 'show', '--subscription', $b.SubscriptionId, '--resource-group', $b.ResourceGroup, '--name', $b.VmName)
-    if ($vm.id -ine $b.VmId -or $vm.provisioningState -cne 'Succeeded' -or
+    if ($vm.id -ine $b.VmId -or $vm.vmId -ine $b.VmInstanceId -or $vm.provisioningState -cne 'Succeeded' -or
         $vm.tags.'azd-solution' -cne 'azd-santa' -or $vm.tags.purpose -cne 'synthetic-vm-lab' -or
         $vm.tags.'azd-env-name' -cne $b.EnvironmentName) { throw 'Selected VM identity/tags/provisioning binding failed.' }
 }
@@ -156,13 +156,12 @@ function Send-SantaSetupRunCommand {
         [Parameter(Mandatory)][string]$RemoteProgramPath,
         [Parameter(Mandatory)][string]$CheckpointDirectory,
         [Parameter(Mandatory)][ValidateSet('create', 'readback')][string]$Operation)
-    # This primitive intentionally requires a separately reviewed remote program.
-    # That program must enforce all source/image/Compose bindings before mutation
-    # and implement ciphertext-only readback. No program is supplied/enabled here.
+    # The reviewed stdlib Python host program performs actual runtime checks
+    # before mutation and ciphertext-only readback; no customer-local upload.
     $rawProgram = [IO.File]::ReadAllBytes($RemoteProgramPath)
     $program = [Text.UTF8Encoding]::new($false, $true).GetString($rawProgram)
-    if ($rawProgram.Length -gt 16384 -or [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData($rawProgram)) -cne $Request.Binding.RemoteProgramSha256 -or
-        $program.Contains([char]0) -or $program.StartsWith([char]0xfeff)) { throw 'Reviewed UTF8 remote program hash/size mismatch.' }
+    if ($rawProgram.Length -gt 24576 -or [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData($rawProgram)) -cne $Request.Binding.RemoteProgramSha256 -or
+        $program.Contains([char]0) -or $program.StartsWith([char]0xfeff) -or $program -match '(?m)^AZD_SANTA_SETUP_PY\r?$') { throw 'Reviewed UTF8 remote program hash/size mismatch.' }
     if (-not [IO.Path]::IsPathFullyQualified($CheckpointDirectory) -or -not [IO.Directory]::Exists($CheckpointDirectory)) { throw 'Existing absolute checkpoint directory required.' }
     if ($Request.Context -cnotmatch '^[a-f0-9]{64}$' -or $Request.RequestId -cnotmatch '^[a-f0-9]{64}$' -or
         $Request.PayloadBase64.Length -gt 16384 -or $Request.PayloadBase64 -cnotmatch '^[A-Za-z0-9+/]+={0,2}$') { throw 'Invalid prepared request.' }
@@ -178,7 +177,8 @@ function Send-SantaSetupRunCommand {
     $temporary = Join-Path ([IO.Path]::GetTempPath()) ('santa-setup-' + [guid]::NewGuid() + '.sh')
     try {
         $script = "set -eu`nexport AZD_SANTA_SETUP_REQUEST_B64='$($Request.PayloadBase64)'`nexport AZD_SANTA_SETUP_OPERATION='$Operation'`n" +
-            "(`n" + $program + "`n)`nprintf '%s\n' 'SANTA_SETUP_TRANSPORT_DONE:$($Request.Context)'`n"
+            "python3 - <<'AZD_SANTA_SETUP_PY'`n" + $program + "`nAZD_SANTA_SETUP_PY`nprintf '%s\n' 'SANTA_SETUP_TRANSPORT_DONE:$($Request.Context)'`n"
+        if ([Text.Encoding]::UTF8.GetByteCount($script) -gt 45056) { throw 'Bounded transport script exceeded 44KiB.' }
         $file = [IO.FileStream]::new($temporary, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
         try { $file.Write([Text.Encoding]::UTF8.GetBytes($script)) } finally { $file.Dispose() }
         $b = $Request.Binding
