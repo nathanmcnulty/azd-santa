@@ -6,6 +6,25 @@ Lua cases pass on Redis. The coordinator creates and controls a disposable Redis
 container using the exact installed dependency image; this tool never creates,
 restarts, stops or removes containers and never discovers application Redis.
 
+## Selected actual result
+
+On 2026-11-07, harness SHA-256
+`33a2fd00f8e2c7bee5fb7989325605499e3d181c198ed216c7571d73f55a233b`
+passed all 27 observations with exit0 in26.25s on the selected private Ubuntu
+host. The disposable Redis image was
+`sha256:5b816bb37d9707a70f10ef5002ecf8ee431750d397010fc4314c93dca887962f`;
+the exact container was
+`61a2f00e649579a0bc138f9fb2f372da7b3156b7726d9c3e6d3749dad08d1ade`.
+It had no network, published ports or persistent volumes, and used only a
+bounded tmpfs for data. The source was transferred byte-for-byte and verified
+before execution. Private evidence is retained at
+`/var/lib/azd-santa-qualification/admission-lua-6063052/evidence-9482511`.
+Application Redis and the original seven application containers were not targets
+of this qualification. This is actual Lua/Redis acceptance for these cases;
+the integration and failure boundaries below remain open.
+
+## Coordinator invocation
+
 The selected container must have `--network none`, no published ports, label
 `io.azd-santa.qualification=santa-admission-lua-v1` and no persistent or bind
 mounts. Use `--tmpfs /data` if the image declares a `/data` volume. Only that
