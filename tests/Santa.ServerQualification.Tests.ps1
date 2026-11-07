@@ -65,6 +65,10 @@ Describe 'Private server qualification tooling' {
         $output = & python (Join-Path $root 'tests/test_resume_shell.py') 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
     }
+    It 'keeps automatic runtime startup bound and fails before admission offline' {
+        $output = & python (Join-Path $root 'tests/test_runtime_service.py') 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
+    }
     It 'parses privileged build submission without invoking Azure' {
         $tokens = $null
         $errors = $null
