@@ -52,3 +52,15 @@ enterprise backends are omitted from the core experiment, not reimplemented or
 license-bypassed. The experiment is private and unqualified for production or
 redistribution; each dependency retains its own terms. Zentral's name identifies
 the upstream candidate, not endorsement or an official Zentral distribution.
+
+## Optional Caddy HTTPS candidate
+
+The original configuration generator refers to official Caddy 2.11.9, pinned to
+source [`0d98caea58f794f88e709b1bef2880996a471bca`](https://github.com/caddyserver/caddy/tree/0d98caea58f794f88e709b1bef2880996a471bca)
+and release/archive hashes in `experiments/server/caddy.lock.json`. Caddy uses
+[Apache-2.0](https://github.com/caddyserver/caddy/blob/0d98caea58f794f88e709b1bef2880996a471bca/LICENSE),
+with separately licensed dependencies. No Caddy binary or source is redistributed
+here; development downloads remain ignored. Future distributions must preserve
+the upstream LICENSE, notices and dependency terms from the selected release,
+and review its SBOM. Our Unlicense does not replace those terms. The candidate
+does not imply Caddy endorsement or production TLS/admission acceptance.
