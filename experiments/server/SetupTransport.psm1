@@ -11,7 +11,7 @@ function Assert-SantaSetupBinding {
     param([hashtable]$Binding, [switch]$SourceBinding)
     $names = @('TenantId', 'SubscriptionId', 'EnvironmentName', 'ResourceGroup', 'VmName', 'VmId',
         'VmInstanceId', 'ImageId', 'ComposePath', 'ComposeSha256', 'Origin')
-    if ($SourceBinding) { $names += @('SourceCommit', 'RecoverySha256', 'SealedSha256', 'RemoteProgramSha256') }
+    if ($SourceBinding) { $names += @('SourceCommit', 'AdmissionSha256', 'RecoverySha256', 'SealedSha256', 'RemoteProgramSha256') }
     if ($Binding.Count -ne $names.Count -or @($names | Where-Object { -not $Binding.ContainsKey($_) }).Count) { throw 'Exact setup binding fields required.' }
     if (@($Binding.Keys | Where-Object { $_ -cnotin $names -or $Binding[$_] -isnot [string] }).Count) { throw 'Exact case-sensitive string binding fields required.' }
     foreach ($name in @('TenantId', 'SubscriptionId', 'VmInstanceId')) {
@@ -21,7 +21,7 @@ function Assert-SantaSetupBinding {
         $Binding.ResourceGroup -cne "rg-azd-santa-vm-$($Binding.EnvironmentName)" -or $Binding.VmName -cne 'vm-santa-lab' -or
         $Binding.VmId -cne "/subscriptions/$($Binding.SubscriptionId)/resourceGroups/$($Binding.ResourceGroup)/providers/Microsoft.Compute/virtualMachines/vm-santa-lab") { throw 'Exact selected private pilot VM binding required.' }
     $hashNames = @('ComposeSha256')
-    if ($SourceBinding) { $hashNames += @('RecoverySha256', 'SealedSha256', 'RemoteProgramSha256') }
+    if ($SourceBinding) { $hashNames += @('AdmissionSha256', 'RecoverySha256', 'SealedSha256', 'RemoteProgramSha256') }
     foreach ($name in $hashNames) {
         if ($Binding[$name] -cnotmatch '^[a-f0-9]{64}$') { throw 'Exact source hashes required.' }
     }
@@ -264,7 +264,7 @@ function Complete-SantaBackendInstallation {
         $source = New-SantaInstallationProgram $DeploymentId
         $binding = @{}; foreach ($key in $InstallationOutputs.Keys) { $binding[$key] = $InstallationOutputs[$key] }
         $binding.SourceCommit = (Get-Content (Join-Path $PSScriptRoot 'zentral-source.lock.json') -Raw | ConvertFrom-Json).commit
-        foreach ($pair in @(@('RecoverySha256', 'operator_recovery.py'), @('SealedSha256', 'sealed_setup.py'))) {
+        foreach ($pair in @(@('AdmissionSha256', 'santa_admission.py'), @('RecoverySha256', 'operator_recovery.py'), @('SealedSha256', 'sealed_setup.py'))) {
             $text = [IO.File]::ReadAllText((Join-Path $PSScriptRoot $pair[1]), [Text.UTF8Encoding]::new($false, $true)).Replace("`r`n", "`n")
             $binding[$pair[0]] = Get-SantaTransportHash $text
         }
@@ -291,7 +291,7 @@ function Complete-SantaBackendInstallation {
             $root.GetProperty('context_sha256').GetString() -cne $request.Context -or
             $root.GetProperty('attestor_sha256').GetString() -cne $source.AttestorSha256 -or
             $root.GetProperty('producer_sha256').GetString() -cne $source.ProducerSha256) { throw 'Installation readback source/selection mismatch.' }
-        $ready = $root.GetProperty('readiness'); $gates = @('database_authority', 'migrations', 'store', 'security_store', 'event_consumers', 'search')
+        $ready = $root.GetProperty('readiness'); $gates = @('database_authority', 'migrations', 'store', 'security_store', 'sync_admission', 'event_consumers', 'search')
         Assert-SantaReceiptFields $ready $gates
         foreach ($gate in $gates) { if (-not $ready.GetProperty($gate).GetBoolean()) { throw 'Runtime initialization is not complete.' } }
         $receipt = $root.GetProperty('installation')
@@ -312,7 +312,7 @@ function Complete-SantaBackendInstallation {
         $completed | Add-Member -NotePropertyMembers @{
             InitializationContextSha256 = $request.Context; AttestorSha256 = $source.AttestorSha256
             ProducerSha256 = $source.ProducerSha256; ProgramSha256 = $source.Sha256
-            SourceCommit = $binding.SourceCommit; RecoverySha256 = $binding.RecoverySha256; SealedSha256 = $binding.SealedSha256
+            SourceCommit = $binding.SourceCommit; AdmissionSha256 = $binding.AdmissionSha256; RecoverySha256 = $binding.RecoverySha256; SealedSha256 = $binding.SealedSha256
             InitializationReadback = 'database-authority-migrations-store-security-consumers-search'
         } -PassThru
     } catch { throw 'Deployment is not ready for operator setup: initialization/source/selection readback or local finalization failed. Preserve any local artifacts; no setup action was submitted.' }

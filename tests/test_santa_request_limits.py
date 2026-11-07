@@ -119,12 +119,15 @@ class Package(unittest.TestCase):
     def test_generated_layer_preserves_helper_checks_source_and_wires_rejections(self):
         # Small original source shape exercises the generated transform without
         # vendoring the full upstream tree or requiring Django in offline CI.
-        raw = ('from django.views.generic import View\nclass Sample:\n' + package.OLD +
+        raw = ('from django.views.generic import View\nclass Sample:\n    def _get_enrollment_secret_secret(self): pass\n' + package.OLD +
                '    def post(self, request):\n        self.request_data = self._get_json_data(request)\n').encode()
         text = raw.decode()
         for old, new in package.PATCHES:
             text = text.replace(old, new, 1)
         result = (package.NOTICE + text).encode()
+        admission = result.decode()
+        for old, new in package.ADMISSION_PATCHES: admission = admission.replace(old, new, 1)
+        admission = admission.encode()
         digest = lambda data: hashlib.sha256(data).hexdigest()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -134,15 +137,18 @@ class Package(unittest.TestCase):
             (root / 'server').mkdir()
             helper = root / 'limits.py'
             helper.write_bytes(b'ORIGINAL = True\n')
-            with patch.object(package, 'UPSTREAM_SHA256', digest(raw)), patch.object(package, 'INPUT_SHA256', digest(raw)), patch.object(package, 'OUTPUT_SHA256', digest(result)):
+            with patch.object(package, 'UPSTREAM_SHA256', digest(raw)), patch.object(package, 'INPUT_SHA256', digest(raw)), patch.object(package, 'OUTPUT_SHA256', digest(result)), patch.object(package, 'ADMISSION_OUTPUT_SHA256', digest(admission)):
                 self.assertEqual(package.transform(raw), result)
                 program, helper_hash = package.docker_program(root, helper)
                 self.assertEqual(helper_hash, digest(helper.read_bytes()))
                 program = program.replace('Path("/zentral")', 'Path(' + repr(root.as_posix()) + ')')
                 program = program.replace('"/zentral/server/azd_santa_request_limits.py"', repr((root / 'server/azd_santa_request_limits.py').as_posix()))
+                program = program.replace('\"/zentral/server/azd_santa_admission.py\"', repr((root / 'server/azd_santa_admission.py').as_posix()))
                 exec(compile(program, 'bounded-image-layer', 'exec'), {})
-                self.assertEqual(source.read_bytes(), result)
+                self.assertEqual(source.read_bytes(), admission)
                 self.assertEqual((root / 'server/azd_santa_request_limits.py').read_bytes(), helper.read_bytes())
+                self.assertEqual((root / 'server/azd_santa_admission.py').read_bytes(),
+                    package.Path(package.__file__).with_name('santa_admission.py').read_bytes().replace(b'\r\n', b'\n'))
                 self.assertIn(b'except RequestRejected as exc:', result)
                 source.write_bytes(b'changed')
                 with self.assertRaisesRegex(RuntimeError, 'Santa limits input mismatch'):

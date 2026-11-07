@@ -76,4 +76,32 @@ def docker_program(source_root, module_path):
         'path.write_bytes(result)\n'
         'Path("/zentral/server/azd_santa_request_limits.py").write_bytes(module)\n'
     )
+    admission = Path(__file__).with_name('santa_admission.py').read_bytes().replace(b'\r\n', b'\n')
+    ast.parse(admission)
+    program += (
+        f'if hashlib.sha256(path.read_bytes()).hexdigest()!={OUTPUT_SHA256!r}: raise RuntimeError("Admission input mismatch")\n'
+        'text=path.read_text()\n'
+        f'admission_patches={ADMISSION_PATCHES!r}\n'
+        'for old,new in admission_patches:\n'
+        '    if text.count(old)!=1: raise RuntimeError("Admission shape mismatch")\n'
+        '    text=text.replace(old,new,1)\n'
+        'raw=text.encode()\n'
+        f'if hashlib.sha256(raw).hexdigest()!={ADMISSION_OUTPUT_SHA256!r}: raise RuntimeError("Admission output mismatch")\n'
+        'ast.parse(raw)\npath.write_bytes(raw)\n'
+        f'admission=base64.b64decode({base64.b64encode(admission).decode()!r})\n'
+        f'if hashlib.sha256(admission).hexdigest()!={hashlib.sha256(admission).hexdigest()!r}: raise RuntimeError("Admission helper mismatch")\n'
+        'Path("/zentral/server/azd_santa_admission.py").write_bytes(admission)\n'
+    )
     return program, digest
+
+ADMISSION_PATCHES = (
+    ('from azd_santa_request_limits import decode_request, RequestRejected',
+     'from azd_santa_request_limits import decode_request, RequestRejected\nfrom azd_santa_admission import require_admission'),
+    ('    def _get_enrollment_secret_secret(self):',
+     '    # Modified by azd-santa: middleware admission must precede all sync work.\n'
+     '    def dispatch(self, request, *args, **kwargs):\n'
+     '        require_admission(request)\n'
+     '        return super().dispatch(request, *args, **kwargs)\n\n'
+     '    def _get_enrollment_secret_secret(self):'),
+)
+ADMISSION_OUTPUT_SHA256 = '55efd66eb2f7a281d7182a6aaa392f54fb449e5035213a22ce28253b9635ef32'

@@ -31,7 +31,7 @@ APPS = ('web', 'workers', 'celery')
 DEPENDENCIES = ('db', 'redis', 'rabbitmq', 'elastic')
 POLICIES = {'policy': 'azd_santa_operator.py',
             'recovery': 'azd_santa_operator_recovery.py',
-            'sealed': 'azd_santa_sealed_setup.py'}
+            'sealed': 'azd_santa_sealed_setup.py', 'admission': 'azd_santa_admission.py'}
 HELPERS = ('test_live_zentral.py', 'prepare_zentral_eval.py')
 _HELPER = None
 VOLUMES = {'db': ['postgres_data:/var/lib/postgresql'],
@@ -470,6 +470,7 @@ class Runtime:
         code += "from zentral.core.stores.models import Store; assert Store.objects.count()==1; s=Store.objects.get(provisioning_uid='elasticsearch'); assert s.backend=='ELASTICSEARCH' and s.admin_console"
         self.python('source-schema-store', code)
         self.oneoff('security-store', ['server/manage.py', 'operator_security_store', 'check'])
+        self.python('sync-admission', 'from azd_santa_admission import check; check(require_empty=True)')
         self.ensure_running()
         self.python('search', "import json,time,urllib.request; o=urllib.request.build_opener(urllib.request.ProxyHandler({})); deadline=time.monotonic()+45\nwhile True:\n try:\n  r=json.load(o.open('http://elastic:9200/_cluster/health',timeout=3)); assert r['status'] in ('yellow','green'); break\n except Exception:\n  if time.monotonic()>deadline: raise RuntimeError('Search not ready') from None\n  time.sleep(2)")
         self.start_ids('workers', ('workers', 'celery'))
@@ -494,6 +495,28 @@ class Runtime:
         self.wait('http', http_ready, seconds=45)
         self.ensure_running()
         print('SANTA_PRIVATE_RUNTIME_READY', flush=True)
+
+    def reconcile_admission(self, *, initialize_missing=False):
+        """Explicit host action, NEVER implicit startup or time-based cleanup."""
+        import fcntl
+        with (self.manifest_path.parent / 'supervisor.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            selected = self.inspect(running=False)
+            ids = [selected[name] for name in APPS]
+            rows = json.loads(self.call('admission-quiescence', DOCKER + ['inspect', *ids]).stdout)
+            if (len(rows) != len(ids) or {r['Id'] for r in rows} != set(ids) or
+                    any(r['State'].get('Running') is not False or r['State'].get('Paused') is not False
+                        or r['State'].get('Restarting') is not False or r['State'].get('Pid') != 0 for r in rows)):
+                raise ValueError('All exact old app processes must already be stopped')
+            # Recheck immutable configuration after establishing actual quiescence.
+            load_manifest(self.manifest_path, self.digest)
+            code = 'from pathlib import Path; import hashlib; '
+            code += f"assert hashlib.sha256(Path('/zentral/server/azd_santa_admission.py').read_bytes()).hexdigest()=={self.binding['policy_hashes']['admission']!r}; "
+            code += f'from azd_santa_admission import reconcile; reconcile(initialize_missing={initialize_missing!r})'
+            self.python('explicit-admission-reconcile', code)
+            private_write(self.evidence / 'admission-reconciled.json', dict(
+                scope='explicit-quiesced-sync-admission', app_ids=ids,
+                initialize_missing=initialize_missing, manifest_sha256=self.digest))
 
     def stop_helpers(self):
         for name in list(self.helpers):
@@ -564,10 +587,12 @@ def main():
     prepare_parser.add_argument('--destination', required=True)
     for name in POLICIES:
         prepare_parser.add_argument('--' + name + '-sha256', required=True)
-    for name in ('run', 'unit', 'install'):
+    for name in ('run', 'unit', 'install', 'admission-reconcile'):
         command = commands.add_parser(name)
         command.add_argument('--manifest', required=True)
         command.add_argument('--sha256', required=True)
+        if name == 'admission-reconcile':
+            command.add_argument('--initialize-missing', action='store_true')
         if name == 'install':
             command.add_argument('--enable-now', action='store_true')
     args = parser.parse_args()
@@ -581,6 +606,8 @@ def main():
         print(unit_text(Path(__file__).resolve(), Path(args.manifest), args.sha256), end='')
     elif args.operation == 'install':
         install_unit(args.manifest, args.sha256, enable_now=args.enable_now)
+    elif args.operation == 'admission-reconcile':
+        Runtime(args.manifest, args.sha256).reconcile_admission(initialize_missing=args.initialize_missing)
     else:
         Runtime(args.manifest, args.sha256).supervise()
 

@@ -9,7 +9,7 @@ import re
 import signal
 
 MARKER = 'SANTA_INSTALLATION_JSON:'
-READY = {'database_authority', 'migrations', 'store', 'security_store', 'event_consumers', 'search'}
+READY = {'database_authority', 'migrations', 'store', 'security_store', 'sync_admission', 'event_consumers', 'search'}
 PROBE = '''
 import json,urllib.request
 from django.db import connection
@@ -68,7 +68,7 @@ def produce_installation(host, deployment_id, attestor_sha256, producer_sha256):
                   and type(row['consumers']) is int and row['consumers'] >= 0 and row['name'] not in names)
         names[row['name']] = row['consumers']
     host.need(all(names.get(name, 0) > 0 for name in (projection['queue'], 'enrich_events', 'process_events')))
-    outputs = {k: v for k, v in binding.items() if k not in ('SourceCommit', 'RecoverySha256', 'SealedSha256', 'RemoteProgramSha256')}
+    outputs = {k: v for k, v in binding.items() if k not in ('SourceCommit', 'AdmissionSha256', 'RecoverySha256', 'SealedSha256', 'RemoteProgramSha256')}
     receipt = dict(schemaVersion=1, scope='azd-santa-backend-installation', state='installed', deploymentId=deployment_id, outputs=outputs)
     result = dict(scope='azd-santa-installation-readback', context_sha256=request['context_sha256'],
                   attestor_sha256=attestor_sha256, producer_sha256=producer_sha256,
