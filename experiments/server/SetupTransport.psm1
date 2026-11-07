@@ -313,7 +313,7 @@ function Complete-SantaBackendInstallation {
             InitializationContextSha256 = $request.Context; AttestorSha256 = $source.AttestorSha256
             ProducerSha256 = $source.ProducerSha256; ProgramSha256 = $source.Sha256
             SourceCommit = $binding.SourceCommit; RecoverySha256 = $binding.RecoverySha256; SealedSha256 = $binding.SealedSha256
-            InitializationReadback = 'migrations-store-security-consumers-search'
+            InitializationReadback = 'database-authority-migrations-store-security-consumers-search'
         } -PassThru
     } catch { throw 'Deployment is not ready for operator setup: initialization/source/selection readback or local finalization failed. Preserve any local artifacts; no setup action was submitted.' }
     finally {
