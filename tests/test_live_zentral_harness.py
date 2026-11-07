@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -15,6 +16,7 @@ from unittest.mock import patch
 import zlib
 
 PATH = Path(__file__).resolve().parents[1] / 'experiments/server/test_live_zentral.py'
+sys.path.insert(0, str(PATH.parent))
 SPEC = importlib.util.spec_from_file_location('live_zentral', PATH)
 live = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(live)
@@ -113,6 +115,24 @@ class Harness(unittest.TestCase):
             live.validate_fixture(self.fixture, self.compose_hash)
         with self.assertRaises(ValueError):
             live.validate_fixture(self.fixture, 'changed')
+
+    def test_security_redis_binding_rejects_durability_drift_external_or_shared_mount(self):
+        from prepare_zentral_eval import REDIS_COMMAND
+        data = json.loads(self.compose.read_text())
+        data['volumes'] = {'redis_data': {}}
+        data['services']['redis'].update(volumes=['redis_data:/data'], command=list(REDIS_COMMAND))
+        self.compose.write_text(json.dumps(data))
+        live.validate_compose(self.compose)
+        for mutate in (
+                lambda item: item['services']['redis']['command'].__setitem__(4, 'everysec'),
+                lambda item: item['volumes'].__setitem__('redis_data', {'external': True}),
+                lambda item: item['services']['web'].update(volumes=['redis_data:/data']),
+                lambda item: item['services']['redis'].update(volumes=[])):
+            bad = json.loads(json.dumps(data))
+            mutate(bad)
+            self.compose.write_text(json.dumps(bad))
+            with self.assertRaises(ValueError):
+                live.validate_compose(self.compose)
 
     def test_initialize_is_exclusive_and_never_prints_credentials(self):
         self.write_fixture()

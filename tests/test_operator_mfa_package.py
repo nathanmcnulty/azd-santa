@@ -22,6 +22,7 @@ class Integrity(unittest.TestCase):
             name = 'server/sample.py'
             path = root / name
             path.parent.mkdir()
+            (root / 'server/accounts/management/commands').mkdir(parents=True)
             source = b'VALUE = 1\n'
             result = (package.NOTICE + 'VALUE = 2\n').encode()
             path.write_bytes(source)
@@ -34,6 +35,7 @@ class Integrity(unittest.TestCase):
                 self.assertEqual(digest, hashlib.sha256(module.read_bytes()).hexdigest())
                 program = program.replace("Path('/zentral')", 'Path(' + repr(root.as_posix()) + ')')
                 program = program.replace("'/zentral/server/azd_santa_operator.py'", repr((root / 'server/azd_santa_operator.py').as_posix()))
+                program = program.replace("'/zentral/server/accounts/management/commands/operator_security_store.py'", repr((root / 'server/accounts/management/commands/operator_security_store.py').as_posix()))
                 exec(compile(program, 'reviewed-package', 'exec'), {})
                 self.assertEqual(path.read_bytes(), result)
                 self.assertEqual((root / 'server/azd_santa_operator.py').read_bytes(), module.read_bytes())

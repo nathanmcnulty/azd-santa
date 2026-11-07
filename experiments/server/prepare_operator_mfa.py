@@ -126,5 +126,9 @@ def docker_program(source_root, module_path):
         f"module=base64.b64decode({base64.b64encode(module).decode()!r})\n"
         f"if hashlib.sha256(module).hexdigest()!={hashlib.sha256(module).hexdigest()!r}: raise RuntimeError('MFA module mismatch')\n"
         "Path('/zentral/server/azd_santa_operator.py').write_bytes(module)\n"
+        "command=Path('/zentral/server/accounts/management/commands/operator_security_store.py')\n"
+        "with command.open('xb') as output:\n"
+        "    output.write(b'# Original Unlicense security-store command.\\nfrom azd_santa_operator import security_store_command_class\\nCommand = security_store_command_class()\\n')\n"
+        "command.chmod(0o644)\n"
     )
     return program, hashlib.sha256(module).hexdigest()
