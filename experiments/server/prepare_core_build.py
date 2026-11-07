@@ -13,6 +13,7 @@ import base64
 import hashlib
 import importlib.util
 import subprocess
+import zlib
 from pathlib import Path
 
 
@@ -486,9 +487,13 @@ def render_core_dockerfile(
         "    && python /tmp/prepare_sync_guard.py \\\n"
         "    && rm /tmp/prepare_sync_guard.py\n"
     )
-    operator_b64 = base64.b64encode(operator_program.encode('utf-8')).decode('ascii')
+    # Keep the combined MFA/recovery/setup installer below Docker's physical
+    # line limit. Module byte hashes are still verified by the decoded program.
+    operator_b64 = base64.b64encode(zlib.compress(operator_program.encode('utf-8'))).decode('ascii')
     stores_transform += (
-        "RUN printf '%s' '" + operator_b64 + "' | base64 -d > /tmp/prepare_operator_mfa.py \\\n"
+        "RUN printf '%s' '" + operator_b64 + "' | base64 -d"
+        " | python -c 'import sys,zlib; sys.stdout.buffer.write(zlib.decompress(sys.stdin.buffer.read()))'"
+        " > /tmp/prepare_operator_mfa.py \\\n"
         "    && python /tmp/prepare_operator_mfa.py \\\n"
         "    && rm /tmp/prepare_operator_mfa.py\n"
     )

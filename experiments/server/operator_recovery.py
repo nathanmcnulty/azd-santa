@@ -43,7 +43,8 @@ def reserve_output(value):
     return descriptor
 
 
-def apply_access(mode, username, email, reason, output):
+def apply_access(mode, username, email, reason, output, *, recipient_public_key=None,
+                 context_sha256=None, sealed_stdout=False):
     from django.conf import settings
     from django.contrib.contenttypes.models import ContentType
     from django.core.exceptions import ValidationError
@@ -61,6 +62,17 @@ def apply_access(mode, username, email, reason, output):
         raise AccessError('Provide a valid exact username and email identity.') from None
     if settings.PASSWORD_RESET_TIMEOUT != RESET_SECONDS:
         raise AccessError('The reviewed ten-minute reset policy is not installed.')
+    recipient = None
+    if recipient_public_key is not None:
+        try:
+            from zentral.conf import api_base_url
+            from azd_santa_sealed_setup import prepare_recipient
+            recipient = prepare_recipient(recipient_public_key, context_sha256, mode,
+                                          username, email, api_base_url())
+        except Exception:
+            raise AccessError('Recipient key/context/origin validation failed before user security changes.') from None
+    elif context_sha256 is not None or sealed_stdout:
+        raise AccessError('Sealed export requires an explicit recipient public key and context digest.')
     phase = 'unconfirmed'
     descriptor = reserve_output(output)
     with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
@@ -111,14 +123,21 @@ def apply_access(mode, username, email, reason, output):
                                 expires_at_unix=time.time() + RESET_SECONDS,
                                 audit='submission not delivery proof',
                                 session_invalidation='password/auth-hash invalidation; session rows are not purged')
+                # Encrypt/size-check while rollback is still possible. Only the
+                # sealed artifact is ever written when a recipient was supplied.
+                output_artifact = recipient.seal(artifact) if recipient else artifact
             phase = 'committed'
-            json.dump(artifact, stream, indent=2)
+            json.dump(output_artifact, stream, separators=(',', ':') if recipient else None,
+                      indent=None if recipient else 2)
             stream.write('\n')
             stream.flush()
             os.fsync(stream.fileno())
             phase = 'artifact-written'
             event.post()
-            return dict(target=artifact['target'], removed=removed)
+            result = dict(target=artifact['target'], removed=removed)
+            if sealed_stdout:
+                result['sealed'] = output_artifact
+            return result
         except AccessError:
             raise
         except Exception:
@@ -142,11 +161,16 @@ def command_class():
             parser.add_argument('--email', required=True)
             parser.add_argument('--reason', required=True)
             parser.add_argument('--output', required=True, help='Absent absolute private artifact path')
+            parser.add_argument('--recipient-public-key', help='Base64 DER SubjectPublicKeyInfo RSA-3072 recipient public key')
+            parser.add_argument('--context-sha256', help='Caller-verified selected deployment/request binding digest')
+            parser.add_argument('--sealed-stdout', action='store_true', help='Emit only the bounded sealed envelope after success')
 
         def handle(self, *args, **options):
             completed = False
             try:
-                apply_access(*(options[key] for key in ('mode', 'username', 'email', 'reason', 'output')))
+                result = apply_access(*(options[key] for key in ('mode', 'username', 'email', 'reason', 'output')),
+                                      recipient_public_key=options.get('recipient_public_key'),
+                                      context_sha256=options.get('context_sha256'), sealed_stdout=options.get('sealed_stdout', False))
                 completed = True
             except AccessError as error:
                 raise CommandError(str(error)) from None
@@ -159,6 +183,9 @@ def command_class():
                     status = 'Access committed and private setup artifact written' if completed else 'Access state requires inspection'
                     raise CommandError(status + '; audit flush failed. Inspect locally.') from None
             self.stdout.write('Operator access committed; private setup artifact written; audit submitted (not delivery proof).')
+            if options.get('sealed_stdout'):
+                # Keep this last and bounded for Azure Run Command's output tail.
+                self.stdout.write('SANTA_SEALED_SETUP_JSON:' + json.dumps(result['sealed'], separators=(',', ':')))
 
     return Command
 

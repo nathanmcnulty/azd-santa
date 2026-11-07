@@ -8,6 +8,19 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "principal": "Explicit selected cached Azure CLI operator (existing rights only)",
+      "phase": "deployment",
+      "feature": "operator-setup-transport",
+      "defaultEnabled": false,
+      "scope": "Exact selected tenant/subscription and tagged private pilot RG/VM only",
+      "rationale": "Optional transport primitives inspect selected account/group/VM and invoke one separately hash-pinned remote program. They do not authenticate, grant rights, provide remote source attestation, or enable an azd setup hook.",
+      "evidenceState": "code",
+      "evidence": [{ "path": "experiments/server/SetupTransport.psm1", "sha256": "d6679fa0d1531619db69f4379350a88401e6f3ea7d52878bd90c11120e110f73" }]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
       "permission": "Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/runCommand/action; Microsoft.DevTestLab/schedules/write",
       "principal": "Selected interactive qualification operator (existing permissions only)",
       "phase": "deployment",
@@ -17,7 +30,7 @@
       "rationale": "Privileged nonproduction evaluation installs Docker tooling, acquires checksum-verified upstream source and submits a bounded private build. It performs no real device enrollment, tenant grant, image publication or production deployment.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/Start-ZentralQualification.ps1", "sha256": "e281e33a9a4d370b4c48850ddffb30eaebba6c2c81136fc9afde3f46775b392b" },
+        { "path": "experiments/server/Start-ZentralQualification.ps1", "sha256": "7f57b0f3722472e7d617c891070df45ab186554e0e3c0880b4f9537b0fe677df" },
         { "path": "experiments/server/bootstrap-host.sh", "sha256": "0dc1df0e859ccb5874b95816c61738e12c09ccb526f7daf9768f86210f1ddddd" }
       ]
     },
@@ -244,6 +257,8 @@
     }
   ],
   "gaps": [
+    "Optional operator-setup transport has only offline mocked-Azure proof. Its source/image/Compose expectations are not remote attestation. A separately reviewed remote command with exact runtime binding and context-bound ciphertext-only artifact/readback, trusted HTTPS admission and actual Azure/browser qualification are required before azd wiring. No remote setup program or automatic hook is supplied.",
+    "The optional sealed operator setup transport adds local cryptography and private-output primitives, not new Azure permissions. Exact selected-deployment Run Command binding, terminal-result handling, encrypted recovery readback, trusted HTTPS and real-browser delivery remain unimplemented or unqualified; the portable module is not completed azd setup.",
     "The local operator_access bootstrap/recovery command uses existing privileged host/container and local application-database authority; it grants no Azure/Graph role and preserves other users, service identities and Santa device credentials. Eleven private isolated-database request cases passed; real-browser/TLS, customer private-link delivery, audit indexing and backup/restore remain unqualified. See docs/operator-recovery.md for exact bindings and limits. Metadata is not recovery authorization.",
     "The private real-server qualification tooling uses existing privileged Azure Run Command rights, not a new workload role. Generated Compose and source acquisition need no tenant permission. Community-only production packaging, trusted ingress, operator MFA, unique device enrollment, rotation/revocation, backup/restore and Container Apps parity remain unqualified; private evaluation must not be promoted by inference.",
     "Evidence sha256 fields bind current repository file bytes, not historical documentationUrl content. Existing immutable documentationUrl values preserve the earlier source provenance and may refer to different bytes. The 2026-11-06 reconciliation found only the added PowerShell 7.6 requirement header in the three previously stale Graph scripts; their requested delegated scope sets are unchanged. Current hashes and explicit scope declarations do not prove effective tenant grants or permission sufficiency.",

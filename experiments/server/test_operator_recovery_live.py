@@ -87,7 +87,11 @@ class OperatorRequests(TransactionTestCase):
         stdout = io.StringIO()
         call_command('operator_access', mode, stdout=stdout, **params)
         data = json.loads(Path(params['output']).read_text())
-        self.assertNotIn(data['setup_url'], stdout.getvalue())
+        if 'setup_url' in data:
+            self.assertNotIn(data['setup_url'], stdout.getvalue())
+        else:
+            self.assertEqual(data['scope'], 'azd-santa-sealed-setup')
+            self.assertNotIn('accounts/reset/', stdout.getvalue())
         self.assertEqual(Path(params['output']).stat().st_mode & 0o777, 0o600)
         return data
 
@@ -296,6 +300,60 @@ class OperatorRequests(TransactionTestCase):
         artifact = json.loads(path.read_text())
         self.assertIn('setup_url', artifact)
         self.assertIn('not delivery proof', artifact['audit'])
+
+    def test_sealed_recipient_validation_has_no_user_or_output_side_effects(self):
+        user, _ = self.user(factors=1)
+        previous = user.password
+        path = PRIVATE / (uuid.uuid4().hex + '.json')
+        with self.assertRaisesMessage(CommandError, 'before user security changes'):
+            self.command('recover', user, output=str(path), recipient_public_key='not-base64', context_sha256='c' * 64)
+        user.refresh_from_db()
+        self.assertEqual(user.password, previous)
+        self.assertEqual(user.usertotp_set.count(), 1)
+        self.assertFalse(path.exists())
+
+    def test_sealed_setup_export_and_encrypt_failure_are_private_and_transactional(self):
+        from cryptography.hazmat.primitives import serialization, hashes
+        from cryptography.hazmat.primitives.asymmetric import rsa, padding
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        import azd_santa_sealed_setup as sealed
+        user, _ = self.user(factors=1)
+        key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
+        public = base64.b64encode(key.public_key().public_bytes(serialization.Encoding.DER,
+                                                              serialization.PublicFormat.SubjectPublicKeyInfo)).decode()
+        previous = user.password
+        with patch.object(sealed.Recipient, 'seal', side_effect=RuntimeError('synthetic encryption failure')):
+            with self.assertRaisesMessage(CommandError, 'No confirmed access commit'):
+                self.command('recover', user, recipient_public_key=public, context_sha256='c' * 64, sealed_stdout=True)
+        user.refresh_from_db()
+        self.assertEqual(user.password, previous)
+        self.assertEqual(user.usertotp_set.count(), 1)
+        envelope = self.command('recover', user, recipient_public_key=public, context_sha256='c' * 64, sealed_stdout=True)
+        self.assertLessEqual(len(json.dumps(envelope, separators=(',', ':')).encode()), 2600)
+        decode = lambda name: base64.b64decode(envelope[name], validate=True)
+        symmetric = key.decrypt(decode('wrapped_key_base64'), padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None))
+        payload = json.loads(AESGCM(symmetric).decrypt(decode('nonce_base64'), decode('ciphertext_base64'),
+            sealed.aad(envelope['mode'], envelope['kid_sha256'], envelope['context_sha256'], envelope['target_sha256'])))
+        self.assertEqual(payload['target_pk'], user.pk)
+        self.assertEqual(set(payload), {'setup_url', 'expires_at_unix', 'target_pk'})
+        self.reset(payload)
+        # A write failure after commit must not export a success marker or a
+        # cleartext fallback. The account reset remains a real committed fact.
+        user.refresh_from_db()
+        previous = user.password
+        output = PRIVATE / (uuid.uuid4().hex + '.json')
+        stdout = io.StringIO()
+        with patch.object(recovery.json, 'dump', side_effect=OSError('synthetic sealed output failure')):
+            with self.assertRaisesMessage(CommandError, 'committed but setup artifact write failed'):
+                call_command('operator_access', 'recover', username=user.username, email=user.email,
+                             reason='Synthetic sealed output failure test', output=str(output),
+                             recipient_public_key=public, context_sha256='c' * 64,
+                             sealed_stdout=True, stdout=stdout)
+        user.refresh_from_db()
+        self.assertNotEqual(user.password, previous)
+        self.assertNotIn('SANTA_SEALED_SETUP_JSON:', stdout.getvalue())
+        self.assertNotIn('accounts/reset/', stdout.getvalue())
+        self.assertEqual(output.read_bytes(), b'')
 
     def test_counterless_webauthn_and_recovery_serialize_in_both_lock_orders(self):
         import cbor2

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import base64
+import re
+import zlib
 import ast
 import importlib.util
 import subprocess
@@ -368,6 +371,19 @@ class CoreBuildTests(unittest.TestCase):
         self.assertIn("Core registry input SHA256", rendered)
         self.assertIn("Core stores backend registry input SHA256", rendered)
         self.assertIn("Core stores serializers input SHA256", rendered)
+
+    def test_large_operator_installer_fits_docker_line_limit_without_changing_bytes(self):
+        program = "print('qualification')\n" * 4000
+        self.assertGreater(len(base64.b64encode(program.encode())), 65535)
+        rendered = core_build.render_core_dockerfile(
+            UPSTREAM_DOCKERFILE, UPSTREAM_LICENSE, UPSTREAM_REGISTRY,
+            UPSTREAM_STORES_BACKENDS, UPSTREAM_STORES_SERIALIZERS,
+            operator_program=program, request_limits_program='pass\n',
+            request_limits_sha256='0' * 64, operator_module_sha256='a' * 64)
+        self.assertLess(max(len(line.encode()) for line in rendered.splitlines()), 65535)
+        installer = next(line for line in rendered.splitlines() if ' > /tmp/prepare_operator_mfa.py' in line)
+        encoded = re.match(r"RUN printf '%s' '([A-Za-z0-9+/=]+)'", installer).group(1)
+        self.assertEqual(zlib.decompress(base64.b64decode(encoded)), program.encode())
 
     def test_registry_narrowing_removes_only_ee_backends(self) -> None:
         narrowed = core_build.narrow_core_registry(UPSTREAM_REGISTRY)

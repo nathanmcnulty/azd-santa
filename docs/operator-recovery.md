@@ -140,3 +140,9 @@ logs even if database cleanup fails. See [profile acceptance](santa-profile-qual
 and [durable store acceptance](security-store-durability.md) for the newer bindings.
 These results still do not prove indexed audit delivery or the final customer
 setup-link transport.
+
+The subsequent sealed-output image passed thirteen recovery cases, adding
+recipient validation, real encryption and transactional/output-failure checks.
+See [sealed setup acceptance](sealed-operator-setup.md) for exact image, module,
+harness and receipt bindings. This extends private Django acceptance; the complete
+Azure handoff and real browser/TLS setup remain open.
