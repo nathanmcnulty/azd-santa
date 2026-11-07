@@ -115,6 +115,13 @@ cases. Full-sync receipt:
 request-limit receipt:
 `synthetic-fixture.request-limits-b94762678c474ee5b26b13cdb52602a9.json`.
 
+Before cost shutdown, an independent persistence/index readback again verified
+two events. All seven inspected containers were stopped, and ARM subsequently
+confirmed `PowerState/deallocated`. Volumes, failed attempts and private evidence
+remain retained. `sealed-checkpoint.json` binds this checkpoint to project
+`santa-zentral-eval-49ec5092adb2` and qualification driver SHA-256
+`4821027c19c1b5503954d9c8a84b9adead0efb087659e85716aff3793b488ec9`.
+
 The first image build failed because the combined installer exceeded Docker's
 65,535-byte physical-line limit. The generator now compresses that installer for
 transport and restores identical bytes before its existing module hash checks
