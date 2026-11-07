@@ -51,9 +51,11 @@ still stops the inspected IDs. Named, ownership-checked startup helper container
 are also stopped on timeout/cancellation, without selecting another project.
 
 The controller never calls migrations, provisioning, marker initialization,
-bootstrap or credential recovery. Normal upstream application entrypoints still
-perform their own migration/provisioning checks when app containers start;
-database ownership/runtime-role separation remains open in #61. Missing data or
+bootstrap or credential recovery. The earlier shared-role image's application
+entrypoints still perform migration/provisioning checks when containers start.
+The fresh role-separated image instead runs read-only authority/schema checks;
+see [its separate qualification](database-role-separation.md#actual-private-qualification-2026-11-06).
+Missing data or
 an unadmitted security store blocks the listener; the controller does not repair
 or replace them. This is not backup restoration or external current-authority
 reconciliation (#54).

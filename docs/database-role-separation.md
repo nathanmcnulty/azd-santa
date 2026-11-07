@@ -1,9 +1,10 @@
 # Fresh core database authority candidate
 
-This is an offline-tested, fresh-only candidate for #61. No PostgreSQL, Docker,
-VM, authentication or cloud operation has qualified it. Existing stack receipts
-do not prove this new entrypoint, role layout or database grants. It adds no
-Azure service, Graph/Azure role or tenant grant.
+This fresh-only candidate for #61 has the selected private SQL, application and
+reboot qualification recorded below. Earlier shared-role stack receipts remain
+separate evidence. It adds no Azure service, Graph/Azure role or tenant grant;
+automatic azd installation, production operation and existing-volume upgrades
+remain separate gates.
 
 Fresh **core** preparation separates two local PostgreSQL login principals:
 
@@ -123,10 +124,64 @@ probe uses actual autocommit, so a transaction restriction cannot fake a denial.
 Other probe mutations are rolled back; a unique unexpectedly created probe
 database is removed before failing. Its output is a bounded nonsecret result.
 
-This harness has **not run**. Its empty-inventory scope does not establish
-nonempty retention results. Fresh bootstrap and failure receipts, normal HTTP
-sync/indexing/MFA/recovery, restart/runtime-role admission, nonempty cleanup,
-upgrades/default grants and separate owner-authorized developer test jobs all
-remain required real acceptance gates. Never give CREATEDB to runtime merely to
-make Django test-database creation pass. No existing-volume credential migration
-or external backup/current-authority reconciliation is implemented.
+The harness passed on the selected fresh image below. Its empty-inventory scope
+does not establish nonempty retention results. Failed/unknown initializer
+outcomes still need actual fault qualification; their no-retry guards have
+offline coverage. Nonempty cleanup, upgrades/default grants, existing-volume
+credential migration and external backup/current-authority reconciliation remain
+unqualified. Never give CREATEDB to runtime to make test-database creation pass.
+
+## Actual private qualification, 2026-11-06
+
+Fresh staging initialized the database through one owner-only job, then passed
+runtime authority, Django and Store checks using `zentral_runtime`. The real SQL
+harness passed original inventory TEMP cleanup and ten SQLSTATE 42501 denials:
+permanent table creation/alteration/index/drop, migration-ledger writes, schema
+creation, role creation/promotion, switching to owner and database creation.
+The database-create denial used real autocommit. Security-store fresh admission
+and its subsequent read-only check passed separately.
+
+The selected immutable image is
+`sha256:ebaff2f599f196b8f1902a9246afd0bd573a8b6c529a97607f7f893184271c92`.
+Its build executed the modified entrypoint as the non-root image user, proving
+the retained shebang and mode 0755. Database module SHA-256:
+`f636a4128c3089c21d6a780ef32f2ed3fbda891e03a331e3ecbc02810d0d1322`.
+Compose SHA-256:
+`f15cdbd08c0784941e2b356fd871fa7bf3f85b580744f639206cbaa6af63c266`;
+controller SHA-256:
+`e662b57c4a55a38a27785daa99cc09a6dd8c9e9d6792cef0b60ec0a9ab0d4f0e`.
+
+Normal runtime credentials passed full two-device Monitor sync, six-rule receipt,
+89 HTTP request checks, indexing of two Santa events and all 15 MFA request cases.
+The coordinated [receipt producer](https://github.com/nathanmcnulty/azd-santa/pull/68)
+passed all six live readiness gates and generated the operator binding. The
+supported setup entrypoint privately delivered bootstrap and targeted recovery;
+independent readback preserved the synthetic operator's flags, changed its
+password fingerprint and found the expected indexed audit records.
+
+The separate [recovery fixture](https://github.com/nathanmcnulty/azd-santa/pull/69)
+passed all 13 cases under `zentral_runtime`. Only owner fixture jobs created and
+dropped the disposable database. Exact name/OID and no-active-backend teardown
+completed, and an independent main-runtime query confirmed its absence. Its
+audit posting is mocked; the real setup audit result above is separate evidence.
+
+Clean stop closed the listener and stopped all seven original containers. A VM
+reboot changed boot ID from `eec71322-01ca-4117-891b-0e7844a7c69e` to
+`7d7121e3-ece3-4fc4-9e51-1ad8e0289a1e`. Independent post-start readback preserved
+the container IDs, Santa state, checked identity/password/flag fields for 28
+synthetic users, 16 TOTP seeds and one WebAuthn key/handle. A fresh Django-client
+login with an existing preboot TOTP then
+passed; password-only profile access remained denied. This is not held-session,
+real-browser, trusted HTTPS or native Mac acceptance.
+
+Private evidence is under
+`/var/lib/azd-santa-qualification/runtime-santa-role-split-searchwait/`, including
+`sql-role-receipt.json`, `role-foundation-ready.json`, `protocol-suite-ready.json`,
+`operator-role-recovery-receipt.json`, `recovery-runtime-fixture/receipt.json`,
+`role-reboot-before-receipt.json`, `role-reboot-after-receipt.json`,
+`post-reboot-mfa-receipt.json` and `qualification-summary.json`.
+All containers were cleanly stopped afterward; the unit remains enabled for the
+next boot. The earlier `runtime-santa-role-split/` attempt stopped before owner
+initialization because search was not listening. Its private receipt confirmed
+no runtime role and zero public relations; its four dependencies and all data
+were preserved. The bounded search wait fixes that demonstrated startup race.
