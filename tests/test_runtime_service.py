@@ -183,6 +183,31 @@ class Lifecycle(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'identity changed'):
             runtime.inspect(running=True, record=False)
 
+    def test_image_default_user_accepts_docker_null_to_empty_normalization_only(self):
+        runtime, rows = self.inspection_fixture()
+        for row in rows:
+            row['Config']['User'] = ''
+        # Docker image inspection reports null for an unspecified user while
+        # container inspection reports an empty string for the same default.
+        def call(label, args, **kwargs):
+            if label == 'container-selection':
+                value = '\n'.join(row['Id'] for row in rows)
+            elif label == 'container-inspection':
+                value = json.dumps(rows)
+            elif label == 'image-inspection':
+                row = next(row for row in rows if row['Image'] == args[-1])
+                image = {'Id': row['Image'], 'Config': {**row['Config'], 'User': None, 'Env': ['BASE=value'],
+                         'Labels': {'org.opencontainers.image.revision': service.COMMIT}}}
+                value = json.dumps([image])
+            else:
+                raise AssertionError(label)
+            return SimpleNamespace(stdout=value, returncode=0)
+        runtime.call = Mock(side_effect=call)
+        runtime.inspect(running=True)
+        rows[0]['Config']['User'] = 'unexpected-user'
+        with self.assertRaisesRegex(ValueError, 'privilege boundary'):
+            runtime.inspect(running=True)
+
     def test_security_admission_failure_prevents_worker_and_listener_start(self):
         runtime, _ = self.inspection_fixture()
         runtime.data['volumes'] = {'redis_data': {}}
