@@ -4,6 +4,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from test_live_zentral import load_fixture, validate_compose
 
@@ -16,6 +17,12 @@ def inspect(compose_path, fixture_path):
         key, value = line.split('=', 1)
         if any(part in key for part in ('PASS', 'SECRET', 'TOKEN', 'QUEUE_URL')):
             private_values.append(value)
+        if key == 'ZENTRAL_QUEUE_URL':
+            # The app-only environment no longer carries broker-bootstrap keys.
+            # Keep redacting a password printed separately from its full URL.
+            password = urlsplit(value).password
+            if password:
+                private_values.append(password)
     command = ['docker', '--host', 'unix:///var/run/docker.sock', 'compose', '-f', str(compose)]
     code = "import json; from zentral.core.stores.models import Store; print(json.dumps(list(Store.objects.values('backend','provisioning_uid'))))"
     rows = subprocess.run(command + ['exec', '-T', 'web', 'python', 'server/manage.py', 'shell', '--no-imports', '-c', code],

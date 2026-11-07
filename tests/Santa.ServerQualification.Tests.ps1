@@ -33,6 +33,10 @@ Describe 'Private server qualification tooling' {
         $output = & python (Join-Path $root 'tests/test_zentral_eval.py') 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
     }
+    It 'keeps event diagnostic errors redacted with application-only secrets' {
+        $output = & python (Join-Path $root 'tests/test_event_diagnostics.py') 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
+    }
     It 'passes canonical-byte core derivation tests' {
         $output = & python (Join-Path $root 'tests/test_core_build.py') 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")

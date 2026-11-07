@@ -84,13 +84,19 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
     config['notifier'] = {'url': 'redis://redis:6379/15'}
     config['apps']['zentral.core.stores']['provisioning']['stores']['elasticsearch']['elasticsearch_kwargs']['hosts'] = ['http://elastic:9200']
     rabbit_password = secrets.token_urlsafe(36)
-    runtime = {
+    database = {
         'POSTGRES_DB': 'zentral', 'POSTGRES_USER': 'zentral',
         'POSTGRES_PASSWORD': secrets.token_urlsafe(48),
-        'POSTGRES_HOST': 'db', 'ZENTRAL_DJANGO_SECRET': secrets.token_urlsafe(64),
+    }
+    broker = {'RABBITMQ_DEFAULT_USER': 'zentral', 'RABBITMQ_DEFAULT_PASS': rabbit_password}
+    # The application still uses the existing database role. Separate bootstrap
+    # and runtime DB authority needs its own migration/ownership qualification;
+    # separating environment files alone does not reduce that role's authority.
+    runtime = {
+        'POSTGRES_PASSWORD': database['POSTGRES_PASSWORD'],
+        'ZENTRAL_DJANGO_SECRET': secrets.token_urlsafe(64),
         'ZENTRAL_METRICS_TOKEN': secrets.token_urlsafe(48),
         'AZD_SANTA_SECURITY_STORE_ID': secrets.token_hex(32),
-        'RABBITMQ_DEFAULT_USER': 'zentral', 'RABBITMQ_DEFAULT_PASS': rabbit_password,
         'ZENTRAL_QUEUE_URL': f'amqp://zentral:{rabbit_password}@rabbitmq:5672//',
     }
     logging = {'driver': 'json-file', 'options': {'max-size': '10m', 'max-file': '3'}}
@@ -101,12 +107,12 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
                 'security_opt': ['no-new-privileges:true']}
 
     services = {
-        'db': {**service(lock['postgres'], '384m'), 'env_file': ['./runtime.env'],
+        'db': {**service(lock['postgres'], '384m'), 'env_file': ['./db.env'],
                'volumes': ['postgres_data:/var/lib/postgresql']},
         'redis': {**service(lock['redis'], '128m'), 'command': list(REDIS_COMMAND),
                   'volumes': ['redis_data:/data']},
         'rabbitmq': {**service(lock['rabbitmq'], '320m'), 'hostname': 'rabbitmq',
-                     'env_file': ['./runtime.env'],
+                     'env_file': ['./rabbitmq.env'],
                      'volumes': ['rabbitmq_data:/var/lib/rabbitmq']},
         'elastic': {**service(lock['elasticsearch'], '896m'),
                     'environment': {'ES_JAVA_OPTS': '-Xms256m -Xmx256m',
@@ -139,7 +145,8 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
     (destination / 'conf').chmod(0o755)
     write_new(destination / 'conf/base.json', json_text(config), 0o644)
     (destination / 'conf/base.json').chmod(0o644)
-    write_new(destination / 'runtime.env', ''.join(f'{key}={value}\n' for key, value in runtime.items()))
+    for filename, values in (('db.env', database), ('rabbitmq.env', broker), ('runtime.env', runtime)):
+        write_new(destination / filename, ''.join(f'{key}={value}\n' for key, value in values.items()))
     write_new(destination / 'compose.json', json_text(compose))
     write_new(destination / 'LICENSE.upstream', (source / 'LICENSE').read_text(encoding='utf-8'))
     write_new(destination / 'provenance.json', json_text({
@@ -148,12 +155,16 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
         'local_image_id': image, 'dependency_images': lock,
         'declared_image_variant': variant,
         'app_profile': app_profile,
+        'secret_environment_files': {
+            'db': 'db.env', 'rabbitmq': 'rabbitmq.env',
+            'web': 'runtime.env', 'workers': 'runtime.env', 'celery': 'runtime.env'},
         'security_store': {'persistence': 'AOF always; no truncated load; no eviction',
                            'initialization': 'not initialized; explicit privileged fresh/migrate command required',
                            'restore_authority': 'not reconciled; marker is not an external rollback anchor'},
         'limitations': ['Image variant is a caller declaration, not production license clearance',
                         'Caller must verify full source archive and build binding',
                         'Memory caps are test constraints, not proven sizing',
+                        'Database bootstrap and application still share one role; least-privilege DB roles are unqualified',
                         'No real device enrollment, public TLS or device authentication'],
     }))
     variant_notice = (
