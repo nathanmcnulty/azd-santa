@@ -2,7 +2,9 @@
 import copy
 import importlib.util
 import json
+import os
 from pathlib import Path
+import py_compile
 import subprocess
 import sys
 import tempfile
@@ -298,7 +300,7 @@ class Lifecycle(unittest.TestCase):
 
     def test_helper_import_is_guarded_and_unsafe_sibling_code_never_executes(self):
         with patch.object(service, 'trusted_sources', side_effect=ValueError('Untrusted helper')), \
-                patch.object(service.importlib.util, 'spec_from_file_location') as spec:
+                patch.object(service.types, 'ModuleType') as spec:
             with self.assertRaises(ValueError):
                 service.compose_helper()
             spec.assert_not_called()
@@ -312,6 +314,33 @@ class Lifecycle(unittest.TestCase):
                                     capture_output=True, text=True, timeout=15)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(canary.exists())
+
+    def test_helper_executes_checked_source_instead_of_matching_timestamp_bytecode(self):
+        controller = self.root / 'runtime_service.py'
+        helper = self.root / 'prepare_zentral_eval.py'
+        unsafe = "CACHE_EXECUTED = True\n"
+        safe = "CACHE_EXECUTED = None\n"
+        self.assertEqual(len(unsafe), len(safe))
+        helper.write_bytes(unsafe.encode())
+        timestamp = helper.stat().st_mtime_ns
+        py_compile.compile(str(helper), doraise=True,
+                           invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP)
+        helper.write_bytes(safe.encode())
+        os.utime(helper, ns=(timestamp, timestamp))
+        (self.root / 'test_live_zentral.py').write_text(
+            f'from prepare_zentral_eval import CACHE_EXECUTED\nCOMMIT = {service.COMMIT!r}\n')
+        names = ('prepare_zentral_eval', 'test_live_zentral')
+        previous = {name: sys.modules.get(name) for name in names}
+        try:
+            with patch.object(service, 'trusted_sources', return_value=controller), \
+                    patch.object(service, '_HELPER', None):
+                self.assertIsNone(service.compose_helper().CACHE_EXECUTED)
+        finally:
+            for name, module in previous.items():
+                if module is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = module
 
     def test_empty_or_wrong_version_postgres_is_rejected_without_starting_it(self):
         root = self.root / 'postgres'
