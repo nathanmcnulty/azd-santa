@@ -15,6 +15,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import signal
+import secrets
 import socket
 import stat
 import subprocess
@@ -54,6 +55,12 @@ def private_write(path, data):
         json.dump(data, stream, sort_keys=True)
         stream.flush()
         os.fsync(stream.fileno())
+
+
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try: os.fsync(fd)
+    finally: os.close(fd)
 
 
 def checked_path(value, *, private=False):
@@ -451,9 +458,63 @@ class Runtime:
         for path in metadata:
             state_path(elastic, path.relative_to(elastic), nonempty=True)
 
+    def container_generation(self, selected):
+        """Require the separately produced original generation, never adopt labels."""
+        path = checked_path(self.manifest_path.parent / 'container-generation.json', private=True)
+        value = json.loads(path.read_bytes())
+        keys = {'scope', 'manifest_sha256', 'project', 'image_id', 'generation', 'container_ids'}
+        if (set(value) != keys or value['scope'] != 'private-runtime-container-generation-v1'
+                or value['manifest_sha256'] != self.digest or value['project'] != self.project
+                or value['image_id'] != self.data['services']['web']['image']
+                or not re.fullmatch(r'[a-f0-9]{32}', value['generation'])
+                or set(value['container_ids']) != set((*APPS, *DEPENDENCIES))
+                or any(not re.fullmatch(r'[a-f0-9]{64}', cid) for cid in value['container_ids'].values())
+                or len(set(value['container_ids'].values())) != 7
+                or value['container_ids'] != selected):
+            raise ValueError('Original admission container generation differs or is missing')
+        return value
+
+    def bind_admission_fresh(self):
+        """Machine-produce a first generation before any app has ever started."""
+        import fcntl
+        with (self.manifest_path.parent / 'supervisor.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            target = self.manifest_path.parent / 'container-generation.json'
+            if target.exists() or target.is_symlink() or UNIT.exists() or UNIT.is_symlink():
+                raise ValueError('Fresh binding requires no existing anchor or installed runtime unit')
+            selected = self.inspect(running=False)
+            ids = list(selected.values())
+            rows = json.loads(self.call('admission-fresh-generation', DOCKER + ['inspect', *ids]).stdout)
+            if len(rows) != 7 or {r['Id'] for r in rows} != set(ids):
+                raise ValueError('Exact seven-container generation required')
+            states = {r['Id']: r['State'] for r in rows}
+            for name, cid in selected.items():
+                state = states[cid]
+                if (state.get('Paused') is not False or state.get('Restarting') is not False
+                        or state.get('OOMKilled') is not False):
+                    raise ValueError('Stable generation required')
+                if name in APPS:
+                    if (state.get('Status') != 'created' or state.get('Running') is not False
+                            or state.get('Pid') != 0 or not state.get('StartedAt', '').startswith('0001-')):
+                        raise ValueError('Fresh generation requires all exact apps never started')
+                elif (state.get('Status') != 'running' or state.get('Running') is not True
+                        or type(state.get('Pid')) is not int or state['Pid'] <= 0
+                        or not state.get('StartedAt') or state['StartedAt'].startswith('0001-')):
+                    raise ValueError('Initialized dependencies must be running')
+            self.backing_data()
+            load_manifest(self.manifest_path, self.digest)
+            if self.inspect(running=False) != selected:
+                raise ValueError('Fresh container generation changed during binding')
+            private_write(target, dict(scope='private-runtime-container-generation-v1',
+                manifest_sha256=self.digest, project=self.project, image_id=self.data['services']['web']['image'],
+                generation=secrets.token_hex(16), container_ids=selected))
+            sync_directory(target.parent)
+            return target
+
     def start(self):
         self.ensure_running()
         selected = self.inspect(running=False)
+        self.container_generation(selected)
         # A deliberate hot start must close admission before inspecting stores.
         self.call('close-admission', DOCKER + ['stop', '--time', '30', *(selected[name] for name in APPS)], timeout=100)
         self.call('compose-config', self.command + ['config', '--quiet'])
@@ -502,6 +563,7 @@ class Runtime:
         with (self.manifest_path.parent / 'supervisor.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             selected = self.inspect(running=False)
+            generation = self.container_generation(selected)
             ids = [selected[name] for name in APPS]
             rows = json.loads(self.call('admission-quiescence', DOCKER + ['inspect', *ids]).stdout)
             if (len(rows) != len(ids) or {r['Id'] for r in rows} != set(ids) or
@@ -516,7 +578,8 @@ class Runtime:
             self.python('explicit-admission-reconcile', code)
             private_write(self.evidence / 'admission-reconciled.json', dict(
                 scope='explicit-quiesced-sync-admission', app_ids=ids,
-                initialize_missing=initialize_missing, manifest_sha256=self.digest))
+                initialize_missing=initialize_missing, manifest_sha256=self.digest,
+                generation=generation['generation']))
 
     def stop_helpers(self):
         for name in list(self.helpers):
@@ -587,7 +650,7 @@ def main():
     prepare_parser.add_argument('--destination', required=True)
     for name in POLICIES:
         prepare_parser.add_argument('--' + name + '-sha256', required=True)
-    for name in ('run', 'unit', 'install', 'admission-reconcile'):
+    for name in ('run', 'unit', 'install', 'admission-reconcile', 'admission-bind-fresh'):
         command = commands.add_parser(name)
         command.add_argument('--manifest', required=True)
         command.add_argument('--sha256', required=True)
@@ -606,6 +669,8 @@ def main():
         print(unit_text(Path(__file__).resolve(), Path(args.manifest), args.sha256), end='')
     elif args.operation == 'install':
         install_unit(args.manifest, args.sha256, enable_now=args.enable_now)
+    elif args.operation == 'admission-bind-fresh':
+        print(Runtime(args.manifest, args.sha256).bind_admission_fresh())
     elif args.operation == 'admission-reconcile':
         Runtime(args.manifest, args.sha256).reconcile_admission(initialize_missing=args.initialize_missing)
     else:

@@ -96,8 +96,14 @@ RELEASE = VALIDATE + '''
 if redis.call('HGET',KEYS[2],ARGV[4]) ~= ARGV[5] then return 0 end
 redis.call('HDEL',KEYS[2],ARGV[4]); return 1
 '''
-CHECK = VALIDATE + 'return 1'
-EMPTY = VALIDATE + "if redis.call('HLEN',KEYS[2])~=2 then return redis.error_reply('ADMISSION_QUIESCENCE_REQUIRED') end; return 1"
+GLOBAL_COUNTER = '''
+local counter_type=redis.call('TYPE',KEYS[3]).ok
+if counter_type~='none' and counter_type~='string' then return redis.error_reply('ADMISSION_UNAVAILABLE') end
+local v=redis.call('GET',KEYS[3]); local ttl=redis.call('TTL',KEYS[3])
+if v and (not string.match(v,'^%d+$') or #v>5 or tonumber(v)<1 or tostring(tonumber(v))~=v or tonumber(v)>tonumber(ARGV[5]) or ttl<0 or ttl>tonumber(ARGV[4])) then return redis.error_reply('ADMISSION_UNAVAILABLE') end
+'''
+CHECK = VALIDATE + GLOBAL_COUNTER + 'return 1'
+EMPTY = VALIDATE + GLOBAL_COUNTER + "if redis.call('HLEN',KEYS[2])~=2 then return redis.error_reply('ADMISSION_QUIESCENCE_REQUIRED') end; return 1"
 RECONCILE = VALIDATE + '''
 for i=0,tonumber(ARGV[3])-1 do redis.call('HDEL',KEYS[2],tostring(i)) end
 redis.call('HSET',KEYS[2],'generation',ARGV[4]); return 1
@@ -139,7 +145,7 @@ redis.call('HSET',KEYS[2],'config',ARGV[2],'generation',ARGV[4]);return 1
 
 def check(*, require_empty=False):
     if type(require_empty) is not bool: raise ValueError('Explicit admission readiness mode required')
-    if _eval(EMPTY if require_empty else CHECK) != 1: raise ValueError('Admission state unavailable')
+    if _eval(EMPTY if require_empty else CHECK, ('sync-global',), (CONFIG.window, CONFIG.global_max)) != 1: raise ValueError('Admission state unavailable')
 
 
 def identity(meta, credential, key):
