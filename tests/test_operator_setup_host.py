@@ -122,6 +122,9 @@ class RuntimeGuards(unittest.TestCase):
         value = request(); b = value['context']['binding']
         compose = Path(directory) / 'compose.json'; b['ComposePath'] = str(compose)
         project = 'santa-zentral-eval-' + 'a' * 12
+        environments = {name: {key: 'synthetic' for key in keys} for name, keys in host.ENV_KEYS.items()}
+        environments['db.env'].update(POSTGRES_USER='zentral_owner', POSTGRES_PASSWORD='synthetic-owner')
+        environments['runtime.env'].update(POSTGRES_USER='zentral_runtime', POSTGRES_PASSWORD='synthetic-runtime')
         services = {}
         names = ('web', 'workers', 'celery', 'db', 'redis', 'rabbitmq', 'elastic')
         volumes = dict(db=['postgres_data:/var/lib/postgresql'], redis=['redis_data:/data'],
@@ -145,7 +148,7 @@ class RuntimeGuards(unittest.TestCase):
                 mounts.append(dict(Destination=destination, Type='bind' if source == './conf' else 'volume',
                     Source=str(Path(directory) / 'conf') if source == './conf' else 'unused',
                     Name=project + '_' + source, RW=not mode))
-            env = ['PATH=/synthetic'] + ([] if name in ('redis', 'elastic') else [key + '=synthetic' for key in host.ENV_KEYS[envfile]])
+            env = ['PATH=/synthetic'] + ([] if name in ('redis', 'elastic') else [key + '=' + item for key, item in environments[envfile].items()])
             infos[ids[name]] = dict(Config={'Image': image, 'Env': env, 'Labels': {'com.docker.compose.project': project,
                 'com.docker.compose.service': name, 'org.opencontainers.image.revision': b['SourceCommit']}},
                 State={'Running': True}, Image=image_id, Mounts=mounts,
@@ -155,8 +158,8 @@ class RuntimeGuards(unittest.TestCase):
             images[image] = dict(Id=image_id, Config={'Labels': {'io.azd-santa.variant': 'core-experiment'}, 'ExposedPorts': {'5432/tcp': {}}})
         data = dict(name=project, services=services, volumes={name: {} for name in host.VOLUMES})
         compose.write_bytes(host.encoded(data)); (Path(directory) / 'conf').mkdir(); (Path(directory) / 'conf/base.json').write_text('{}')
-        for filename, keys in host.ENV_KEYS.items():
-            (Path(directory) / filename).write_text(''.join(key + '=synthetic\n' for key in keys))
+        for filename, items in environments.items():
+            (Path(directory) / filename).write_text(''.join(key + '=' + item + '\n' for key, item in items.items()))
         b['ComposeSha256'] = host.sha(compose.read_bytes())
         def docker(args, **kwargs):
             if args[0] == 'compose': return ids[args[-1]].encode()

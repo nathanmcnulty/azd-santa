@@ -27,6 +27,8 @@ $recoveryPolicyEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join
 $sealedSetupEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'sealed_setup.py')))
 $limitsBuildEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'prepare_request_limits.py')))
 $limitsEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'santa_request_limits.py')))
+$databaseBuildEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'prepare_database_roles.py')))
+$databaseRolesEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'database_roles.py')))
 $script = @"
 set -eu
 umask 077
@@ -58,6 +60,10 @@ with path.with_name('prepare_request_limits.py').open('xb') as output:
     output.write(base64.b64decode('$limitsBuildEncoded'))
 with path.with_name('santa_request_limits.py').open('xb') as output:
     output.write(base64.b64decode('$limitsEncoded'))
+with path.with_name('prepare_database_roles.py').open('xb') as output:
+    output.write(base64.b64decode('$databaseBuildEncoded'))
+with path.with_name('database_roles.py').open('xb') as output:
+    output.write(base64.b64decode('$databaseRolesEncoded'))
 PY
 python3 "`$root/prepare_source.py" "`$root/source-$($lock.commit)"
 python3 "`$root/prepare_core_build.py" --source "`$root/source-$($lock.commit)/zentral-$($lock.commit)" --output "`$root/source-$($lock.commit)/zentral-$($lock.commit)/Dockerfile.core"

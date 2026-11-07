@@ -4,6 +4,9 @@ Fresh output from `experiments/server/prepare_zentral_eval.py` separates the
 environment files consumed by PostgreSQL, RabbitMQ and the application. This is
 an offline-qualified generator change, not a running-stack migration or proof
 that existing containers have discarded their old environments.
+The table below describes unmodified upstream evaluation. The fresh core
+[database-role candidate](database-role-separation.md) adds runtime
+`POSTGRES_USER`, a distinct database password and a job-only `migration.env`.
 
 | Services | Environment file | Exact keys |
 | --- | --- | --- |
@@ -40,7 +43,7 @@ of this generator change, and it adds no secret, service, cloud role or grant.
 
 ## Database authority remains a separate gate
 
-This change deliberately retains the same database user/password for database
+Upstream evaluation deliberately retains the same database user/password for database
 initialization and application connections. Separate files reduce unrelated
 secret exposure; they do not reduce that database role's authority.
 
@@ -52,13 +55,15 @@ A separate bootstrap/migration owner and restricted runtime role require an
 explicit initialization and ownership/grant design, an entrypoint transition,
 and real PostgreSQL migration/runtime validation. The isolated request harnesses
 also create and drop test databases; their administrative authority must stay
-separate from any future production runtime role. Renaming the current role or
+separate from the production runtime role. The fresh core candidate now has
+[selected private SQL/application qualification](database-role-separation.md#actual-private-qualification-2026-11-06).
+Renaming the current role or
 merely placing its password in another file would not prove this separation.
 
-Separate database roles, credential rotation of existing volumes and
-restart/restore behavior after such a role change remain unqualified. Earlier
-shared-environment receipts are not evidence for this layout; its later fresh
-startup and actual-container acceptance follow below.
+Fresh role separation and its selected reboot behavior passed independently.
+Credential rotation of existing volumes, upgrades and restoration after a role
+change remain unqualified. Earlier shared-environment receipts are not evidence
+for the new layout; the historical secret-split acceptance follows below.
 
 ## Actual fresh-stack acceptance, 2026-11-06
 
