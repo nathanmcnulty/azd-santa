@@ -1,6 +1,10 @@
 #Requires -Version 7.6
 Describe 'Private server qualification tooling' {
     BeforeAll { $root = Split-Path $PSScriptRoot -Parent }
+    It 'binds original runtime container generation before reconciliation' {
+        $output = & python (Join-Path $root 'tests/test_admission_generation.py') 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
+    }
     It 'guards shared Santa admission without claiming live overload acceptance' {
         $output = & python (Join-Path $root 'tests/test_santa_admission.py') 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")

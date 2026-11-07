@@ -163,7 +163,7 @@ class AdmissionTests(unittest.TestCase):
         self.assertNotIn("EXPIRE',KEYS[2]",script)
         self.assertNotIn('SCAN',script); self.assertNotIn('KEYS *',script)
         self.assertIn("~= ARGV[5]",admission.RELEASE)
-        self.assertNotIn('SET',admission.CHECK[len(admission.VALIDATE):])
+        self.assertNotIn("redis.call('SET'",admission.CHECK)
 
     def test_backstop_and_existing_operator_isolation(self):
         exceptions=ModuleType('django.core.exceptions'); exceptions.PermissionDenied=ValueError
@@ -178,6 +178,13 @@ class AdmissionTests(unittest.TestCase):
         with patch.object(admission, '_eval', return_value=1) as evaluate:
             admission.check(require_empty=True)
             self.assertEqual(evaluate.call_args.args[0], admission.EMPTY)
+            self.assertEqual(evaluate.call_args.args[1:], (('sync-global',), (admission.CONFIG.window, admission.CONFIG.global_max)))
+            for check in (admission.CHECK, admission.EMPTY):
+                self.assertIn(admission.GLOBAL_COUNTER, check)
+                self.assertIn("counter_type~='none' and counter_type~='string'", check)
+                self.assertIn('tonumber(v)>tonumber(ARGV[5])', check)
+                self.assertIn('ttl<0 or ttl>tonumber(ARGV[4])', check)
+                self.assertNotIn('tonumber(v)>=tonumber(ARGV[5])', check)
             self.assertNotIn('HDEL', admission.EMPTY)
         with patch.object(admission, '_eval', side_effect=RuntimeError('held permit')):
             with self.assertRaises(RuntimeError): admission.check(require_empty=True)
@@ -202,6 +209,7 @@ class AdmissionTests(unittest.TestCase):
                 if change=='replacement': rows[0]['Id']='f'*64
                 elif change=='missing': rows.pop()
                 else: rows[0]['State'][{'running':'Running','paused':'Paused','restarting':'Restarting','pid':'Pid'}[change]]=77 if change=='pid' else True
+                runtime.container_generation=Mock(return_value={'generation':'c'*32})
                 runtime.inspect=Mock(return_value=ids); runtime.call=Mock(return_value=SimpleNamespace(stdout=json.dumps(rows)))
                 runtime.python=Mock()
                 fcntl=ModuleType('fcntl'); fcntl.LOCK_EX=1; fcntl.LOCK_NB=2; fcntl.flock=Mock()
@@ -218,6 +226,7 @@ class AdmissionTests(unittest.TestCase):
             runtime.binding={'policy_hashes':{'admission':'b'*64}}
             ids={name:str(i)*64 for i,name in enumerate(lifecycle.APPS,1)}
             rows=[{'Id':cid,'State':{'Running':False,'Paused':False,'Restarting':False,'Pid':0}} for cid in ids.values()]
+            runtime.container_generation=Mock(return_value={'generation':'c'*32})
             runtime.inspect=Mock(return_value=ids); runtime.call=Mock(return_value=SimpleNamespace(stdout=json.dumps(rows)))
             runtime.python=Mock()
             fcntl=ModuleType('fcntl'); fcntl.LOCK_EX=1; fcntl.LOCK_NB=2; fcntl.flock=Mock()
