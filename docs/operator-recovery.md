@@ -146,3 +146,48 @@ recipient validation, real encryption and transactional/output-failure checks.
 See [sealed setup acceptance](sealed-operator-setup.md) for exact image, module,
 harness and receipt bindings. This extends private Django acceptance; the complete
 Azure handoff and real browser/TLS setup remain open.
+
+## Restricted-role recovery qualification fixture
+
+`experiments/server/run_recovery_fixture.py` is the opt-in host wrapper for the
+role-separated fresh core image. Supply the selected `--compose`, reviewed
+`--harness` (`test_operator_recovery_live.py`), new `--destination`, immutable
+`--image`, `--policy-sha256`, and `--recovery-sha256`. Run it only on the selected
+privileged private Linux qualification host after fresh database/security-store
+initialization. It is not a startup hook or a retry/upgrade tool.
+
+The owner-only job consumes `migration.env`, creates a uniquely named absent
+`azd_recovery_<24 hex>` database, migrates it, and grants the already-existing
+runtime role CONNECT/TEMP, table DML and sequence access. It grants no permanent
+schema CREATE, database/role creation, ownership or TRUNCATE. The migration
+ledger remains read-only to runtime. A job-only configuration copy overrides
+POSTGRES_NAME before Django loads; the selected main configuration is unchanged.
+
+The subsequent request container inherits only normal `runtime.env`. It receives
+read-only secret-free fixture configuration and a receipt binding the database
+name/OID, image, Compose, environment and source hashes. It receives neither the
+owner env file nor owner credentials. The harness verifies actual SQL identity
+`zentral_runtime`, DB name/OID, role flags and denied permanent-schema/ledger/
+TRUNCATE authority before any fixture cleanup. All 13 cases and their genuine
+PostgreSQL row-lock/concurrent WebAuthn checks are preserved. `SimpleTestCase`
+allows explicit database access without a global transaction or Django's
+privileged CREATE DATABASE/flush machinery. Cleanup deletes only suite-prefixed
+users (including their dependent credentials) and its exact group. Unknown rows
+fail closed. Session rows can remain in this disposable DB until teardown;
+sequences are never reset. Audit posting stays mocked to prevent isolated DB
+object IDs entering the main pipeline.
+
+Only accepted, known-terminal requests permit a separate owner teardown job.
+It checks exact name/OID/owner and absence of active database backends before
+DROP; it does not terminate other sessions. This assumes the selected trusted
+host/DB owner serializes the private namespace, not a malicious concurrent DBA.
+Timeouts, setup/request failures, identity changes and unknown outcomes retain
+private evidence and the fixture for deliberate inspection. No automatic retry,
+existing-volume migration, runtime privilege broadening or held-restart
+adaptation is supplied.
+
+Offline guards are not real PostgreSQL or request acceptance. The first live
+qualification must demonstrate owner setup, all 13 requests with the restricted
+SQL identity, retained fixture on failure, exact teardown, and no main database
+row/schema change. Browser/TLS/native Mac, audit delivery and restore safety
+remain separate gates.

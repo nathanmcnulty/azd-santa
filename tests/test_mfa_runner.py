@@ -27,8 +27,17 @@ class PrivateExport(unittest.TestCase):
     def invoke(self, receipt, destination, recovery=None):
         result = subprocess.CompletedProcess([], 0, 'SECRET-DO-NOT-EXPORT\n' + json.dumps(receipt), 'PRIVATE-STDERR')
         output = io.StringIO()
+        fixture_directory = None
+        if recovery:
+            fixture_directory = self.h.root / 'fixture'
+            fixture_directory.mkdir(exist_ok=True)
+            (fixture_directory / 'fixture.json').write_text(json.dumps({'binding': {'database': 'azd_recovery_' + 'a' * 24}, 'database_oid': 42}))
+            receipt['database_identity'] = dict(database='azd_recovery_' + 'a' * 24, database_oid=42, sql_user='zentral_runtime',
+                fixture_sha256=hashlib.sha256((fixture_directory / 'fixture.json').read_bytes()).hexdigest())
+            result.stdout = 'SECRET-DO-NOT-EXPORT\n' + json.dumps(receipt)
         with patch.object(runner.subprocess, 'run', return_value=result), contextlib.redirect_stdout(output):
-            runner.run(self.h.compose, self.script, destination, 'b' * 64, recovery)
+            runner.run(self.h.compose, self.script, destination, 'b' * 64, recovery, fixture_directory)
+            self.command = runner.subprocess.run.call_args[0][0]
         return output.getvalue()
 
     def test_only_bound_receipt_is_exported_and_existing_run_is_not_replaced(self):
@@ -52,6 +61,11 @@ class PrivateExport(unittest.TestCase):
         receipt = dict(self.receipt, scope='private-real-django-operator-recovery', recovery_sha256='d' * 64,
                        database_scope='Disposable isolated PostgreSQL test database; audit posting mocked, delivery unproven')
         self.assertIn('recovery', self.invoke(receipt, self.h.root / 'recovery', 'd' * 64))
+        self.assertNotIn('--env-from-file', self.command)
+        self.assertNotIn('--user', self.command)
+        self.assertNotIn('migration.env', json.dumps(self.command))
+        self.assertIn(':/run/azd-recovery-conf:ro', json.dumps(self.command))
+        self.assertIn('types.ModuleType', self.command[-1])
         for index, change in enumerate(({'recovery_sha256': 'e' * 64}, {'database_scope': 'main database'})):
             with self.assertRaises(RuntimeError):
                 self.invoke(dict(receipt, **change), self.h.root / ('wrong-recovery-' + str(index)), 'd' * 64)
