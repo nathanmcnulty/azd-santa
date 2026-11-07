@@ -28,7 +28,7 @@ def request():
         VmId=f'/subscriptions/{sub}/resourceGroups/rg-azd-santa-vm-synthetic/providers/Microsoft.Compute/virtualMachines/vm-santa-lab',
         VmInstanceId='33333333-3333-4333-8333-333333333333', ImageId='sha256:' + 'a' * 64,
         ComposePath='/var/lib/azd-santa-qualification/synthetic/compose.json', ComposeSha256='b' * 64,
-        SourceCommit='c' * 40, RecoverySha256='d' * 64, SealedSha256='e' * 64,
+        SourceCommit='c' * 40, AdmissionSha256='9' * 64, RecoverySha256='d' * 64, SealedSha256='e' * 64,
         Origin='https://santa.example.invalid', RemoteProgramSha256='f' * 64)
     context = dict(scope='azd-santa-setup-request-v1', nonce='a' * 64,
         binding={k: b[k] for k in host.BINDINGS}, mode='recover', target_sha256=host.target('synthetic-é', 'synthetic@example.invalid'),

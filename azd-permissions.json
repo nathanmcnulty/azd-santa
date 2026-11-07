@@ -17,9 +17,9 @@
       "rationale": "Source-pinned read-only host observer verifies selected initialized runtime and machine-produces a nonsecret installation receipt and local operator binding. No setup mutation, cloud deployment, service restart, marker initialization, grant or authentication flow is performed by finalization; the actual installer/hook remains a separate gate.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/SetupTransport.psm1", "sha256": "fb0abe994b52845d7d2da5ae95c84476056c543c25ef75d8014296515e484f4c" },
-        { "path": "experiments/server/installation_readback.py", "sha256": "935db2716c89c78bb0c5ace4b330589c75ca00b28db8bcc0d76f128c2b27b602" },
-        { "path": "experiments/server/operator_setup_host.py", "sha256": "0b0fe20a28e99fb2455d2e311d60d397f274ef617072836f7116364254501dc8" }
+        { "path": "experiments/server/SetupTransport.psm1", "sha256": "ea76a3170ee163d4e3ca253400ec60293c6c39f7610e946b465a6c0e03c75b21" },
+        { "path": "experiments/server/installation_readback.py", "sha256": "78ee746115226404f1239febf5cc2c9a90dc0de0ffff3a93484779161bb887dd" },
+        { "path": "experiments/server/operator_setup_host.py", "sha256": "3a7f83972cc3d29b6d20aacf437b5169b054a4837d38983f30a0290056c3f3d7" }
       ]
     },
     {
@@ -33,7 +33,7 @@
       "scope": "Exact selected tenant/subscription, environment and tagged private pilot RG/VM only",
       "rationale": "Generate a local operator binding from a trusted checksum-pinned selected installation receipt after reusing read-only account/group/immutable-VM preflight. This function does not invoke Run Command, authenticate, mutate azd state or grant permissions; receipt producer and live qualification remain separate gates.",
       "evidenceState": "code",
-      "evidence": [{ "path": "experiments/server/SetupTransport.psm1", "sha256": "fb0abe994b52845d7d2da5ae95c84476056c543c25ef75d8014296515e484f4c" }]
+      "evidence": [{ "path": "experiments/server/SetupTransport.psm1", "sha256": "ea76a3170ee163d4e3ca253400ec60293c6c39f7610e946b465a6c0e03c75b21" }]
     },
     {
       "resource": "Azure Resource Manager",
@@ -47,9 +47,9 @@
       "rationale": "Optional operator setup checks cached selected account/group/VM, then sends a hash-pinned stdlib host program to verify private runtime bindings and invoke the installed sealed operator command or ciphertext-only readback. It creates no grants and enables no azd hook; runtime checks are not live acceptance evidence.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/SetupTransport.psm1", "sha256": "fb0abe994b52845d7d2da5ae95c84476056c543c25ef75d8014296515e484f4c" },
-        { "path": "experiments/server/Invoke-SantaOperatorSetup.ps1", "sha256": "fbf2b05ec819ce651113cb37f6b215394e19744a06f5a203562978ba779e6d1a" },
-        { "path": "experiments/server/operator_setup_host.py", "sha256": "0b0fe20a28e99fb2455d2e311d60d397f274ef617072836f7116364254501dc8" }
+        { "path": "experiments/server/SetupTransport.psm1", "sha256": "ea76a3170ee163d4e3ca253400ec60293c6c39f7610e946b465a6c0e03c75b21" },
+        { "path": "experiments/server/Invoke-SantaOperatorSetup.ps1", "sha256": "cf7d4e36a2dea3a44e5342deb1bbd5b6402250a7495e8165fbf2f9cc09b25e49" },
+        { "path": "experiments/server/operator_setup_host.py", "sha256": "3a7f83972cc3d29b6d20aacf437b5169b054a4837d38983f30a0290056c3f3d7" }
       ]
     },
     {
@@ -292,6 +292,7 @@
   ],
   "gaps": [
     "Issue #54 cold encrypted capture component adds no cloud/API permission or online service. experiments/server/cold_backup.py requires trusted machine-produced VM/original-container/source/recipient bindings, a stopped initialized runtime and an independently held recipient key. Offline crypto/filesystem/mocked-boundary tests are not live backup, consistency, disaster protection or restore acceptance. Selected distro crypto supplier, actual clean-stop semantics, machine producer and automatic stop/capture/resume packaging remain integration gates. Full current-authority restore, external rollback continuity, replay protection and isolated actual restore remain open; restoring an old Redis marker never establishes current authority. See docs/cold-backup.md.",
+    "Santa shared admission candidate adds no Azure/Graph grant or new secret/service. It uses existing guarded Redis for bounded global/source/HMAC-credential counters and persistent fixed permits; only privileged fresh initialization or explicit exact-process-quiesced lifecycle reconciliation may initialize/reclaim state. Source/offline checks are not real Lua, Redis-failure, concurrent overload, proxy, native-retry or memory/backlog qualification. Operator budget cardinality and backup rollback authority remain separate gaps; public ingress remains held.",
     "Offline held-closed HTTPS candidate (#64/#58) adds no Azure/Graph permission, ingress, DNS or certificate order. experiments\\server\\prepare_https_proxy.py sha256 7fa2dcb6a621b330bd42cc44640abe48cb7edd70dbbf6a99b097787d77fcccb1; experiments\\server\\caddy.lock.json sha256 d1919c8a19b9e282a1985d91383139eff5d9b45c382093ad5d22c138d4c0c5ea. Authoritative ARM endpoint facts producer, Linux proxy/load/admission budgets and trusted TLS/renewal remain unqualified; Windows Caddy validate is provisioning-only and does not close those gates.",
     "Recovery13 passed selected owner-only disposable fixture setup, thirteen request cases under runtime-only credentials, exact name/OID/no-active-backend teardown and independent verification of database absence. No Azure/Graph permission or normal runtime privilege was added; see docs/operator-recovery.md. Failed/unknown outcome retention has offline coverage and needs live fault qualification. Held-restart fixture adaptation, browser/TLS/native and restore gates remain open.",
     "Fresh core role separation passed selected private initialization, ten administrative SQL denials, original empty-inventory TEMP cleanup, normal sync/indexing/MFA/recovery and reboot qualification. Owner-only developer fixture jobs and normal runtime requests have separate receipts; see docs/database-role-separation.md. It adds no Azure/Graph permission or tenant grant. Nonempty retention, unknown initializer fault recovery, upgrades/default grants and existing-volume rotation remain unqualified.",

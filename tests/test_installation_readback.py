@@ -21,7 +21,7 @@ def fixture():
         ResourceGroup='rg-azd-santa-vm-synthetic', VmName='vm-santa-lab', VmId='/selected/validated/by/host',
         VmInstanceId='33333333-3333-4333-8333-333333333333', ImageId='sha256:' + 'a' * 64,
         ComposePath='/var/lib/azd-santa-qualification/synthetic/compose.json', ComposeSha256='b' * 64,
-        Origin='https://santa.example.invalid', SourceCommit='c' * 40, RecoverySha256='d' * 64,
+        Origin='https://santa.example.invalid', SourceCommit='c' * 40, AdmissionSha256='9' * 64, RecoverySha256='d' * 64,
         SealedSha256='e' * 64, RemoteProgramSha256='f' * 64)
     request = dict(context={'binding': binding}, context_sha256='1' * 64)
     services = {name: str(index + 1) * 64 for index, name in enumerate(('web', 'workers', 'celery', 'db', 'redis', 'rabbitmq', 'elastic'))}
@@ -57,7 +57,7 @@ class Producer(unittest.TestCase):
             result = self.run_producer(host)
         self.assertTrue(output.getvalue().startswith(producer.MARKER))
         self.assertLessEqual(len(output.getvalue().encode()), 3200 + len(producer.MARKER) + 1)
-        self.assertEqual(set(result['installation']['outputs']), set(host_guard.BINDINGS) - {'SourceCommit', 'RecoverySha256', 'SealedSha256', 'RemoteProgramSha256'})
+        self.assertEqual(set(result['installation']['outputs']), set(host_guard.BINDINGS) - {'SourceCommit', 'AdmissionSha256', 'RecoverySha256', 'SealedSha256', 'RemoteProgramSha256'})
         self.assertEqual(result['context_sha256'], request['context_sha256'])
         self.assertEqual(result['readiness'], {key: True for key in producer.READY})
         self.assertEqual(len(calls), 2)

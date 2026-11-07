@@ -28,6 +28,7 @@ function Get-NormalizedSourceHash([string]$Path) {
 $program = Join-Path $PSScriptRoot 'operator_setup_host.py'
 $binding.RemoteProgramSha256 = (Get-FileHash -LiteralPath $program -Algorithm SHA256).Hash.ToLowerInvariant()
 $binding.SourceCommit = (Get-Content (Join-Path $PSScriptRoot 'zentral-source.lock.json') -Raw | ConvertFrom-Json).commit
+$binding.AdmissionSha256 = Get-NormalizedSourceHash (Join-Path $PSScriptRoot 'santa_admission.py')
 $binding.RecoverySha256 = Get-NormalizedSourceHash (Join-Path $PSScriptRoot 'operator_recovery.py')
 $binding.SealedSha256 = Get-NormalizedSourceHash (Join-Path $PSScriptRoot 'sealed_setup.py')
 $request = $null

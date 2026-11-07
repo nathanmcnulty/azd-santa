@@ -75,7 +75,10 @@ class OperatorRequests(SimpleTestCase):
         policy.initialize_security_store('fresh')
         cache, client = policy._security_client()
         marker = cache.make_key(policy.STORE_MARKER)
-        self.addCleanup(lambda: client.delete(marker))
+        from azd_santa_admission import STATE
+        # Fresh initialization now owns one persistent admission hash as well.
+        # No sync handler runs in this case; clean only this exact test prefix.
+        self.addCleanup(lambda: client.delete(marker, cache.make_key(STATE)))
 
     def new_client(self):
         return Client(enforce_csrf_checks=True, HTTP_HOST='localhost', HTTP_USER_AGENT='Mozilla/5.0 synthetic-recovery')

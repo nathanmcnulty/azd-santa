@@ -78,7 +78,7 @@ print(''' + repr(live.MARKER) + ''' + json.dumps(dict(
     view_sha256=hashlib.sha256(Path(public_views.__file__).read_bytes()).hexdigest())))
 ''')
     expected = hashlib.sha256(Path(__file__).with_name('santa_request_limits.py').read_bytes().replace(b'\r\n', b'\n')).hexdigest()
-    live.require(runtime.get('helper_sha256') == expected and runtime.get('view_sha256') == package.OUTPUT_SHA256,
+    live.require(runtime.get('helper_sha256') == expected and runtime.get('view_sha256') == package.ADMISSION_OUTPUT_SHA256,
                  'Runtime request boundary differs from selected source')
     bounds = runtime['bounds']
     # This gate intentionally qualifies the reviewed defaults. Custom deployment
@@ -102,7 +102,7 @@ print(''' + repr(live.MARKER) + ''' + json.dumps(dict(
     live.require(after == before, 'Rejected/empty requests changed selected fixture state')
     receipt = fixture_path.with_name(fixture_path.stem + '.request-limits-' + uuid.uuid4().hex + '.json')
     data = dict(scope='synthetic-loopback-request-limits', compose_sha256=compose_hash,
-                helper_sha256=expected, view_sha256=package.OUTPUT_SHA256,
+                helper_sha256=expected, view_sha256=package.ADMISSION_OUTPUT_SHA256,
                 harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                 results=results, selected_database_projection_unchanged=True,
                 limitation='Real loopback HTTP only; no native Mac, public TLS, load/rate or full-database proof')
