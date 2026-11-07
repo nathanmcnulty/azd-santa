@@ -21,6 +21,10 @@ import types
 PINS = {'santa_admission.py': 'ebe2abef0cb9786f677a08dacf96b27acd944fcdd4e1465afa5c74701249629b',
         'operator_mfa.py': '0d5eb3b850b58c4f6092206734114fdbf931e965cb6b448feb60a4068aee4b8d'}
 LABEL = 'santa-admission-lua-v1'
+FAILURE_KINDS = frozenset(('redis_rejection', 'command_exit', 'malformed_json',
+                           'output_limit', 'invariant', 'timeout', 'internal_error'))
+OPERATIONS = frozenset(('EVAL', 'EXISTS', 'TTL', 'GET', 'HGET', 'SET', 'DEL',
+                        'LPUSH', 'HSET', 'EXPIRE', 'TIME', 'KEYS', 'PING', 'INSPECT'))
 SNAPSHOT = '''
 local keys=redis.call('KEYS',ARGV[1]);table.sort(keys);local result={}
 for _,key in ipairs(keys) do
@@ -37,9 +41,17 @@ return cjson.encode(result)
 '''
 
 
+class HarnessFailure(ValueError):
+    def __init__(self, kind, operation=None, exit_code=None):
+        self.kind = kind if kind in FAILURE_KINDS else 'internal_error'
+        self.operation = operation if operation in OPERATIONS else None
+        self.exit_code = exit_code if type(exit_code) is int and -64 <= exit_code <= 255 else None
+        super().__init__('Admission Redis qualification failed; inspect private receipt')
+
+
 def need(value):
     if not value:
-        raise ValueError('Admission Redis qualification failed; inspect private receipt')
+        raise HarnessFailure('invariant')
 
 
 def sources():
@@ -72,18 +84,37 @@ def sources():
 
 
 class RedisError(Exception):
-    pass
+    def __init__(self, operation=None, exit_code=None):
+        self.operation = operation if operation in OPERATIONS else None
+        self.exit_code = exit_code if type(exit_code) is int and -64 <= exit_code <= 255 else None
+        super().__init__('Redis rejected script')
 
 
-def parse_reply(result):
-    need(len(result.stdout) <= 65536 and len(result.stderr) <= 4096)
+def failure_diagnostic(error):
+    if isinstance(error, RedisError):
+        return dict(kind='redis_rejection', operation=error.operation, exit_code=error.exit_code)
+    if isinstance(error, HarnessFailure):
+        return dict(kind=error.kind, operation=error.operation, exit_code=error.exit_code)
+    return dict(kind='internal_error', operation=None, exit_code=None)
+
+
+def parse_reply(result, operation=None):
+    if len(result.stdout) > 65536 or len(result.stderr) > 4096:
+        raise HarnessFailure('output_limit', operation, result.returncode)
     text = result.stdout.strip()
     if text.startswith('error:'):
         # redis-cli --json encodes Redis error replies with this explicit prefix.
-        json.loads(text[6:])
-        raise RedisError('Redis rejected script')
-    need(result.returncode == 0 and not result.stderr.strip())
-    return json.loads(text)
+        # Expected negative callbacks must still see RedisError even when the
+        # CLI reports a nonzero status. Never inspect process status first.
+        try: json.loads(text[6:])
+        except ValueError: raise HarnessFailure('malformed_json', operation, result.returncode) from None
+        raise RedisError(operation, result.returncode)
+    if result.returncode != 0:
+        raise HarnessFailure('command_exit', operation, result.returncode)
+    if result.stderr.strip():
+        raise HarnessFailure('invariant', operation, result.returncode)
+    try: return json.loads(text)
+    except ValueError: raise HarnessFailure('malformed_json', operation, result.returncode) from None
 
 
 class Target:
@@ -97,10 +128,15 @@ class Target:
         template = ('{"id":{{json .Id}},"image":{{json .Image}},"running":{{json .State.Running}},'
                     '"network":{{json .HostConfig.NetworkMode}},"mounts":{{json .Mounts}},'
                     '"ports":{{json .HostConfig.PortBindings}},"labels":{{json .Config.Labels}}}')
-        result = subprocess.run(self.docker + ['inspect', '--format', template, self.cid],
-                                capture_output=True, text=True, timeout=15, env=self.environment)
-        need(result.returncode == 0 and len(result.stdout) <= 65536)
-        value = json.loads(result.stdout)
+        try:
+            result = subprocess.run(self.docker + ['inspect', '--format', template, self.cid],
+                                    capture_output=True, text=True, timeout=15, env=self.environment)
+        except subprocess.TimeoutExpired: raise HarnessFailure('timeout', 'INSPECT') from None
+        if len(result.stdout) > 65536:
+            raise HarnessFailure('output_limit', 'INSPECT', result.returncode)
+        if result.returncode != 0: raise HarnessFailure('command_exit', 'INSPECT', result.returncode)
+        try: value = json.loads(result.stdout)
+        except ValueError: raise HarnessFailure('malformed_json', 'INSPECT', result.returncode) from None
         need(value['id'] == self.cid and value['image'] == self.image and value['running'] is True)
         need(value['network'] == 'none' and not value['ports'])
         need((value['labels'] or {}).get('io.azd-santa.qualification') == LABEL)
@@ -110,10 +146,13 @@ class Target:
 
     def command(self, *arguments):
         need(all(isinstance(arg, (str, int)) for arg in arguments))
-        result = subprocess.run(self.docker + ['exec', self.cid, 'redis-cli', '--json',
-                               *map(str, arguments)], capture_output=True, text=True,
-                                timeout=15, env=self.environment)
-        return parse_reply(result)
+        operation = arguments[0] if arguments and arguments[0] in OPERATIONS else None
+        try:
+            result = subprocess.run(self.docker + ['exec', self.cid, 'redis-cli', '--json',
+                                   *map(str, arguments)], capture_output=True, text=True,
+                                    timeout=15, env=self.environment)
+        except subprocess.TimeoutExpired: raise HarnessFailure('timeout', operation) from None
+        return parse_reply(result, operation)
 
     def eval(self, script, count, *arguments):
         return self.command('EVAL', script, count, *arguments)
@@ -184,7 +223,7 @@ def rejected(callback):
         callback()
     except RedisError:
         return
-    raise ValueError('Corrupt state was accepted')
+    raise HarnessFailure('invariant')
 
 
 def unchanged(case, callback, *, reject=False, expected=None):
@@ -403,8 +442,9 @@ def run(args):
         target.inspect()
         write(destination / 'receipt.json', dict(base, passed=True, observations=observations,
             limitation='Disposable Redis Lua only; no HTTP, Django security-client persistence, timeout-held request, restart, native or host reconciliation proof'))
-    except BaseException:
+    except BaseException as error:
         write(destination / 'failed.json', dict(base, passed=False, completed=observations,
+              diagnostic=failure_diagnostic(error),
               action='Preserve selected disposable container and receipt; no automatic replay'))
         raise
     print('SANTA_ADMISSION_REDIS_LUA_OK')

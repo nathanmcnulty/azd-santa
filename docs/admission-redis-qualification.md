@@ -54,6 +54,16 @@ Lua execution, host PID/container/PostgreSQL quiescence, supervisor locking,
 host timeout handling or safe production recovery. The coordinator must first
 verify exact source bytes and the independently selected disposable target.
 
+Failure receipts additionally carry one fixed `diagnostic` object with only
+`kind`, `operation` and `exit_code`. Kinds distinguish an unconsumed Redis error,
+process exit, malformed JSON, output bound, invariant, timeout or internal error.
+Operations are from a static Redis-command/INSPECT whitelist or null; exit codes
+are integers from -64 through255 or null. No messages, arguments, output, keys,
+tokens or script text are exported. Expected Redis errors in negative cases
+remain consumable before process-exit classification. Success receipt fields,
+CLI, stdout marker, Lua cases and resource limits are unchanged. Diagnostics do
+not themselves establish a resource-exhaustion cause or justify changing bounds.
+
 ## Coordinator invocation
 
 The selected container must have `--network none`, no published ports, label

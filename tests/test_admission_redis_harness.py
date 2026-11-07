@@ -24,6 +24,56 @@ class Guards(unittest.TestCase):
                        subprocess.CompletedProcess([], 0, 'x' * 65537, '')]:
             with self.assertRaises(ValueError): live.parse_reply(result)
 
+    def test_expected_redis_error_precedes_nonzero_status_and_remains_consumable(self):
+        result=subprocess.CompletedProcess([],1,'error:"ADMISSION_UNAVAILABLE"','private diagnostic')
+        # Existing negative-case semantics survive a nonzero redis-cli status.
+        live.rejected(lambda: live.parse_reply(result,'EVAL'))
+        with self.assertRaises(live.RedisError) as caught: live.parse_reply(result,'EVAL')
+        self.assertEqual(live.failure_diagnostic(caught.exception),
+                         dict(kind='redis_rejection',operation='EVAL',exit_code=1))
+
+    def test_failure_only_classification_never_exports_raw_process_data(self):
+        secret='private-key-token-qualification-secret'
+        cases=[(subprocess.CompletedProcess([],137,secret,secret),'command_exit'),
+               (subprocess.CompletedProcess([],0,secret,''),'malformed_json'),
+               (subprocess.CompletedProcess([],0,'1',secret),'invariant'),
+               (subprocess.CompletedProcess([],0,'x'*65537,secret),'output_limit'),
+               (subprocess.CompletedProcess([],0,'error:'+secret,''),'malformed_json')]
+        for result,kind in cases:
+            with self.subTest(kind=kind):
+                with self.assertRaises(live.HarnessFailure) as caught: live.parse_reply(result,'EVAL')
+                diagnostic=live.failure_diagnostic(caught.exception)
+                self.assertEqual(diagnostic,dict(kind=kind,operation='EVAL',exit_code=result.returncode))
+                self.assertNotIn(secret,json.dumps(diagnostic)); self.assertNotIn(secret,str(caught.exception))
+        self.assertEqual(live.failure_diagnostic(ValueError(secret)),
+                         dict(kind='internal_error',operation=None,exit_code=None))
+        self.assertEqual(live.failure_diagnostic(live.HarnessFailure(secret,secret,99999)),
+                         dict(kind='internal_error',operation=None,exit_code=None))
+        self.assertEqual(live.failure_diagnostic(live.HarnessFailure('invariant','SET',True)),
+                         dict(kind='invariant',operation='SET',exit_code=None))
+
+    def test_command_timeout_exports_only_static_operation_not_arguments(self):
+        target=live.Target('a'*64,'sha256:'+'b'*64)
+        with patch.object(live.subprocess,'run',side_effect=subprocess.TimeoutExpired(['secret'],15,output='private')):
+            with self.assertRaises(live.HarnessFailure) as caught: target.eval('secret script',0)
+        self.assertEqual(live.failure_diagnostic(caught.exception),
+                         dict(kind='timeout',operation='EVAL',exit_code=None))
+
+    def test_success_schema_unchanged_and_only_failed_receipt_adds_fixed_diagnostic(self):
+        tree=ast.parse(PATH.read_bytes())
+        run=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='run')
+        writes={}
+        for node in ast.walk(run):
+            if isinstance(node,ast.Call) and isinstance(node.func,ast.Name) and node.func.id=='write':
+                path=node.args[0]
+                if (isinstance(path,ast.BinOp) and isinstance(path.right,ast.Constant)
+                        and isinstance(node.args[1],ast.Call)):
+                    writes[path.right.value]={kw.arg for kw in node.args[1].keywords}
+        self.assertNotIn('diagnostic',writes['receipt.json'])
+        self.assertEqual(writes['failed.json'],{'passed','completed','diagnostic','action'})
+        self.assertEqual(live.OPERATIONS,{'EVAL','EXISTS','TTL','GET','HGET','SET','DEL','LPUSH','HSET',
+                                         'EXPIRE','TIME','KEYS','PING','INSPECT'})
+
     def valid(self):
         return dict(id='a' * 64, image='sha256:' + 'b' * 64, running=True,
                     network='none', mounts=[dict(Type='tmpfs', Destination='/data')],
