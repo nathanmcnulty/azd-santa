@@ -15,6 +15,11 @@ RUNTIME = 'zentral_runtime'
 DATABASE = 'zentral'
 ENV_KEYS = {'POSTGRES_USER', 'POSTGRES_PASSWORD', 'ZENTRAL_DJANGO_SECRET',
             'ZENTRAL_METRICS_TOKEN', 'AZD_SANTA_SECURITY_STORE_ID', 'ZENTRAL_QUEUE_URL'}
+# PostgreSQL excludes our own temporary TOAST namespace from
+# pg_is_other_temp_schema too; derive it from the actual current temp namespace.
+PERMANENT_SCHEMAS = '''n.oid <> pg_my_temp_schema() AND NOT pg_is_other_temp_schema(n.oid)
+    AND n.nspname NOT IN (SELECT 'pg_toast_temp_' || substr(t.nspname,9)
+                         FROM pg_namespace t WHERE t.oid=pg_my_temp_schema())'''
 
 
 def need(condition):
@@ -50,19 +55,20 @@ def check_role(cursor):
     need(cursor.fetchone() == (False, True, False, True))
     cursor.execute('SELECT datdba=(SELECT oid FROM pg_roles WHERE rolname=current_user) FROM pg_database WHERE datname=current_database()')
     need(not cursor.fetchone()[0])
-    cursor.execute('''SELECT EXISTS (SELECT 1 FROM pg_namespace n WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'
+    cursor.execute('''SELECT EXISTS (SELECT 1 FROM pg_namespace n WHERE ''' + PERMANENT_SCHEMAS + '''
                                      AND (n.nspowner=(SELECT oid FROM pg_roles WHERE rolname=current_user)
                                           OR has_schema_privilege(current_user,n.oid,'CREATE')))''')
     need(not cursor.fetchone()[0])
     cursor.execute('''SELECT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-                                     WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'
+                                     WHERE ''' + PERMANENT_SCHEMAS + '''
                                      AND c.relowner=(SELECT oid FROM pg_roles WHERE rolname=current_user))''')
     need(not cursor.fetchone()[0])
     cursor.execute("SELECT has_table_privilege(current_user,'public.django_migrations','SELECT'), has_table_privilege(current_user,'public.django_migrations','INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER,REFERENCES')")
     need(cursor.fetchone() == (True, False))
     cursor.execute('''SELECT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-                                     WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'
-                                     AND (p.prosecdef OR p.proowner=(SELECT oid FROM pg_roles WHERE rolname=current_user)))''')
+                                     WHERE ''' + PERMANENT_SCHEMAS + '''
+                                     AND ((p.prosecdef AND n.nspname NOT IN ('pg_catalog','information_schema'))
+                                          OR p.proowner=(SELECT oid FROM pg_roles WHERE rolname=current_user)))''')
     need(not cursor.fetchone()[0])
 
 

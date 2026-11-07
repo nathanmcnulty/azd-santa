@@ -571,6 +571,8 @@ def render_core_dockerfile(
         "'/zentral/server/azd_santa_operator.py', "
         "'/zentral/server/azd_santa_request_limits.py', "
         "'/zentral/zentral/contrib/santa/public_views.py')]\"\n"
+        "# tini executes this file directly: prove shebang and non-root execute access.\n"
+        "RUN python -c \"import subprocess; r=subprocess.run(['/zentral/docker-entrypoint.py'], capture_output=True); assert r.returncode == 2\"\n"
     )
     return rendered
 
