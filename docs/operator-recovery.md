@@ -132,3 +132,11 @@ Audit delivery remains unproven because this suite deliberately mocks event
 posting in its disposable database. The `azd` setup-link transport, fresh
 Santa-only app profile, durable replay state/restore, real browser/TLS and native
 Mac validation remain separate gates; #51/#53 are not closed by this result.
+
+The later durable image passed the same eleven cases on a fresh nine-app Santa
+profile, including its authenticated empty Santa page. The harness explicitly
+closes each worker thread's persistent database connections and retains private
+logs even if database cleanup fails. See [profile acceptance](santa-profile-qualification.md)
+and [durable store acceptance](security-store-durability.md) for the newer bindings.
+These results still do not prove indexed audit delivery or the final customer
+setup-link transport.
