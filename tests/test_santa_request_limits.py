@@ -157,6 +157,34 @@ class Package(unittest.TestCase):
 
 
 class LiveGateGuards(unittest.TestCase):
+    def test_shared_transport_preserves_hostile_bytes_and_final_semantic_status(self):
+        with patch.object(gate.live,'http_send',return_value=(413,b'bounded rejection')) as send:
+            self.assertEqual(gate.post_raw('eventupload','00000000-0000-4000-8000-'+'1'*12,
+                             b'not compressed','gzip','s'*64),413)
+        request=send.call_args.args[0]
+        self.assertEqual(request.data,b'not compressed')
+        self.assertEqual(request.get_header('Content-encoding'),'gzip')
+        self.assertEqual(request.get_header('Zentral-authorization'),'Bearer '+'s'*64)
+
+    def test_all_89_semantic_cases_remain_in_receipt_with_pacing_separate(self):
+        bounds=dict(compressed=1048576,expanded=4194304,depth=32,events=100)
+        helper_hash=hashlib.sha256((Path(gate.__file__).parent/'santa_request_limits.py').read_bytes().replace(b'\r\n',b'\n')).hexdigest()
+        expected=list(gate.cases(bounds));statuses=[entry[3] for entry in expected]*4+[200]*5
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);compose=root/'compose.json';fixture=root/'fixture.json'
+            data={'devices':[dict(uuid='00000000-0000-4000-8000-'+'1'*12,secret='s'*64)]}
+            with patch.object(gate.live,'validate_compose',return_value=(compose,'a'*64)), \
+                 patch.object(gate.live,'load_fixture',return_value=data),patch.object(gate.live,'snapshot',return_value={}), \
+                 patch.object(gate.live,'assert_committed'),patch.object(gate.live,'orm',return_value=dict(
+                    helper_sha256=helper_hash,view_sha256=package.ADMISSION_OUTPUT_SHA256,bounds=bounds)), \
+                 patch.object(gate,'post_raw',side_effect=statuses) as post:
+                receipt=json.loads(gate.run(compose,fixture).read_text())
+            self.assertEqual(len(receipt['results']),89);self.assertEqual(post.call_count,89)
+            self.assertEqual([row['status'] for row in receipt['results']],statuses)
+            self.assertEqual([row['stage'] for row in receipt['results'][:84]],
+                [stage for stage in ('preflight','ruledownload','eventupload','postflight') for _ in expected])
+            self.assertEqual(receipt['http_transport']['rate_limit_waits'],[])
+
     def test_stale_runtime_hash_rejects_before_any_http(self):
         root = Path(__file__).resolve().parents[1]
         compose = root / 'not-a-real-compose.json'

@@ -24,6 +24,8 @@ UUID_PATTERN = re.compile(r'00000000-0000-4000-8000-[0-9a-f]{12}')
 RULE_COUNT = 6
 BATCH_SIZE = 5
 MARKER = 'SANTA_SYNTHETIC_JSON:'
+QUALIFICATION_VERSION = 'synthetic-loopback-admission-six-volume-v2'
+_HTTP_TRANSPORT = None
 
 
 def require(condition, message):
@@ -218,6 +220,80 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+class HttpTransport:
+    """Qualification-only 429 pacing; never retry an ambiguous mutation."""
+    def __init__(self):
+        self.started = None
+        self.attempts = 0
+        self.requests = 0
+        self.completed = 0
+        self.waits = []
+
+    def receipt(self):
+        return dict(scope='synthetic-http-pacing-v1', helper_version=QUALIFICATION_VERSION, http_attempts=self.attempts,
+                    semantic_requests=self.requests, completed_requests=self.completed,
+                    rate_limit_waits=[dict(row) for row in self.waits],
+                    limits=dict(attempts_per_request=4, total_attempts=512,
+                                request_seconds=240, session_seconds=1200,
+                                retry_after_seconds=60, total_requested_wait_seconds=600))
+
+    def send(self, request):
+        # Clients may vary encoding/legacy credentials, never destination.
+        require(request.get_method() == 'POST' and re.fullmatch(re.escape(BASE_URL) +
+                r'(?:[A-Za-z0-9]{64}/)?(?:preflight|ruledownload|eventupload|postflight)/'
+                + UUID_PATTERN.pattern, request.full_url), 'Only synthetic loopback sync HTTP is supported')
+        now = time.monotonic()
+        if self.started is None: self.started = now
+        deadline = min(self.started + 1200, now + 240)
+        self.requests += 1
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+        for attempt in range(1, 5):
+            remaining = deadline - time.monotonic()
+            require(remaining > 0 and self.attempts < 512, 'HTTP qualification budget exhausted')
+            self.attempts += 1
+            try:
+                response = opener.open(request, timeout=min(15, remaining))
+            except urllib.error.HTTPError as error:
+                response = error
+            # URLError/timeouts/other errors deliberately escape with no replay.
+            with response:
+                payload = response.read(65537)
+                require(len(payload) <= 65536, 'HTTP response exceeded bound')
+                require(time.monotonic() < deadline, 'HTTP qualification deadline exceeded')
+                if response.status != 429:
+                    self.completed += 1
+                    return response.status, payload
+                wait = dict(request=self.requests, attempt=attempt, status=429,
+                            retry_after_seconds=None, wait_completed=False)
+                self.waits.append(wait)
+                values = response.headers.get_all('Retry-After')
+                require(isinstance(values, list) and len(values) == 1
+                        and isinstance(values[0], str) and re.fullmatch(r'[1-9][0-9]?', values[0])
+                        and int(values[0]) <= 60, 'Invalid qualification Retry-After')
+                delay = int(values[0]); wait['retry_after_seconds'] = delay
+            require(attempt < 4 and self.attempts < 512
+                    and sum(row['retry_after_seconds'] or 0 for row in self.waits) <= 600
+                    and time.monotonic() + delay < deadline, 'HTTP 429 qualification budget exhausted')
+            started = time.monotonic(); time.sleep(delay)
+            wait['wait_seconds'] = round(time.monotonic() - started, 3)
+            wait['wait_completed'] = True
+        raise ValueError('HTTP qualification did not reach a semantic response')
+
+
+def reset_http_transport():
+    global _HTTP_TRANSPORT
+    _HTTP_TRANSPORT = HttpTransport()
+    return _HTTP_TRANSPORT
+
+
+def http_transport():
+    return _HTTP_TRANSPORT if _HTTP_TRANSPORT is not None else reset_http_transport()
+
+
+def http_send(request):
+    return http_transport().send(request)
+
+
 def post(stage, device, body, credential=None):
     require(stage in ('preflight', 'ruledownload', 'eventupload', 'postflight'), 'Invalid sync stage')
     require(UUID_PATTERN.fullmatch(device), 'Only synthetic UUIDs are supported')
@@ -228,20 +304,10 @@ def post(stage, device, body, credential=None):
         headers['Zentral-Authorization'] = 'Bearer ' + credential
     request = urllib.request.Request(BASE_URL + stage + '/' + device,
                                      zlib.compress(json.dumps(body).encode()), headers, method='POST')
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
-    try:
-        response = opener.open(request, timeout=15)
-    except urllib.error.HTTPError as error:
-        response = error
-    with response:
-        payload = response.read(65537)
-        require(len(payload) <= 65536, 'HTTP response exceeded bound')
-        if response.status == 200:
-            value = json.loads(payload)
-            require(isinstance(value, dict), 'Expected JSON object response')
-        else:
-            value = None
-        return response.status, value
+    status, payload = http_send(request)
+    value = json.loads(payload) if status == 200 else None
+    require(status != 200 or isinstance(value, dict), 'Expected JSON object response')
+    return status, value
 
 
 def assert_committed(state, fixture):
@@ -262,6 +328,7 @@ def assert_committed(state, fixture):
 
 def run(compose, fixture_path, initialize=False):
     compose, compose_hash = validate_compose(compose)
+    transport = reset_http_transport()
     fixture_path = Path(fixture_path).absolute()
     fixture = (initialize_fixture(compose, fixture_path, compose_hash) if initialize
                else load_fixture(fixture_path, compose_hash))
@@ -323,8 +390,9 @@ def run(compose, fixture_path, initialize=False):
     receipt = fixture_path.with_name(fixture_path.stem + '.receipt-' + uuid.uuid4().hex + '.json')
     descriptor = os.open(receipt, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
-        json.dump(dict(scope='synthetic-loopback-only', commit=COMMIT, compose_sha256=compose_hash,
+        json.dump(dict(scope='synthetic-loopback-only', helper_version=QUALIFICATION_VERSION, commit=COMMIT, compose_sha256=compose_hash,
                        reopened=not initialize, before=before, after=after,
+                       http_transport=transport.receipt(),
                        event_store_indexing='not verified; app/PostgreSQL counter receipt only',
                        limitation='Server database/client-reported receipt only; no native Mac or device identity proof'), stream)
     return receipt
