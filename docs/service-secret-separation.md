@@ -55,11 +55,10 @@ also create and drop test databases; their administrative authority must stay
 separate from any future production runtime role. Renaming the current role or
 merely placing its password in another file would not prove this separation.
 
-Still unqualified: fresh image startup with these files, actual container secret
-sets, separate database roles, credential rotation of existing volumes, and
-restart/restore behavior after such a role change. Existing acceptance receipts
-describe their original shared-environment stacks and are not evidence for this
-new layout.
+Separate database roles, credential rotation of existing volumes and
+restart/restore behavior after such a role change remain unqualified. Earlier
+shared-environment receipts are not evidence for this layout; its later fresh
+startup and actual-container acceptance follow below.
 
 ## Actual fresh-stack acceptance, 2026-11-06
 

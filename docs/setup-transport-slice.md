@@ -112,9 +112,10 @@ Offline tests exercise real PowerShell/Python canonical-request interoperability
 source bounds, metadata/Docker guard shapes, concurrent reservation and timeout
 state, readback with no second mutation, strict ciphertext parsing, and entrypoint
 orchestration. Mocked metadata/Docker/Django output is not runtime proof. Real
-target IMDS/Compose/image/module/config readback, bootstrap/recover, unknown-response
-ciphertext readback, Azure tail behavior and native browser/password/MFA completion
-require independent review and live qualification. Authoritative deployment-binding
+target IMDS/Compose/image/module/config readback, bootstrap/recover and a reply-tail
+readback case subsequently passed the private acceptance below. Network-loss or
+running-mutator timeout recovery and native browser/password/MFA completion still
+require live qualification. Authoritative deployment-binding
 generation, trusted reachable HTTPS admission and azd hook wiring remain required
 before describing this as automated azd setup.
 
