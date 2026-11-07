@@ -5,8 +5,8 @@ path. With a selected fresh azd environment and `SANTA_PRIVATE_BACKEND_INSTALL`
 set to `true`, `azd up` invokes the installation pipeline without manual source
 builds, container commands, image IDs or JSON. Root Intune hooks, Monitor mode
 and device/profile assignments are unchanged. No public ingress, tunnel, managed
-identity or grant is added. The new complete hook/ARM/cold-install path is
-**unqualified live**; source/offline checks are not a live deployment receipt.
+identity or grant is added. Selected private live deployment results are below;
+first-attempt cold end-to-end acceptance remains open.
 
 Preprovision automatically supplies Azure Linux's public provisioning key. It
 generates RSA-3072 in memory, exports only the OpenSSH public portion and disposes
@@ -27,8 +27,34 @@ empty key. Existing public-key overrides remain authoritative. See the pinned
 and [hook runner](https://github.com/Azure/azure-dev/blob/azure-dev-cli_1.34.1/cli/azd/pkg/ext/hooks_runner.go),
 plus the [`up` entry](https://github.com/Azure/azure-dev/blob/azure-dev-cli_1.34.1/cli/azd/cmd/up.go)
 and [up graph](https://github.com/Azure/azure-dev/blob/azure-dev-cli_1.34.1/cli/azd/internal/cmd/up_graph.go).
-Source inspection and compiled-template checks do not prove either real CLI
-entry point; genuine cold `azd up` and `azd provision` remain separate gates.
+Source inspection and compiled-template checks are separate from the actual
+CLI results below.
+
+## Selected private deployment results
+
+On 2026-11-07, a genuine cold `azd up` in
+`rg-azd-santa-vm-privatehook2-20261107` provisioned the selected VM and completed
+the guest installation, including pinned prerequisites, source build, fresh
+initialization and runtime startup. The content-addressed guest bundle was
+`8aec7cd6262a9780b563310f9dc065fa517f6c7eb84ec00cf66f81f28098c197`.
+The client finalizer failed after guest success; its cause remains unexplained.
+This cold invocation therefore did **not** pass end to end.
+
+Separate readback produced the installation receipt and operator binding.
+The normal postprovision hook then succeeded, followed by a genuine unchanged-
+source `azd up` rerun in1m49s without ARM changes or initialization replay.
+Standalone `azd provision` also succeeded after clearing only the local public-
+key environment value: the preprovision hook restored the same saved public
+key without a manual remote task. These successful reruns do not replace the
+missing first-attempt cold finalization evidence.
+
+Controlled reboot subsequently returned the same seven containers and selected
+credential/rule state, followed by seventeen HTTP checks; see
+[credential rotation qualification](credential-rotation-qualification.md).
+This selected image predates admission and native-snapshot candidates, which
+need their own build and live qualification.
+
+## Installation flow
 
 Postprovision verifies authoritative Bicep VM resource/instance/deployment outputs
 against cached selected account/group/VM readback. Every azd command explicitly
@@ -104,7 +130,7 @@ This remains a private lab: the configured HTTPS origin is bound to
 `https://localhost:8000`, while the actual listener is loopback HTTP. It does not
 establish reachable trusted admin TLS, native Santa enrollment or customer
 password/MFA completion. Do not open that placeholder as a qualified browser URL.
-Those gates, actual ARM/hook delivery and cold host/package/build/boot acceptance
-must be qualified independently before promotion. `azd down` retains its normal
+Those remaining gates and first-attempt cold finalization must be qualified
+independently before promotion. `azd down` retains its normal
 destructive infrastructure semantics; stopping/restarting the runtime is not a
 backup or restore qualification.
