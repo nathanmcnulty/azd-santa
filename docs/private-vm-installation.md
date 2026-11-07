@@ -97,8 +97,12 @@ The job verifies immutable IMDS VM/subscription identity and pilot tags, then:
    three stopped application containers. It prepares/installs the existing
    seven-container runtime supervisor, whose backing/source/schema/store/security,
    consumer and HTTP gates control listener admission and boot behavior.
+   The installer includes the admission module, binds its reviewed bytes in the
+   runtime manifest and creates the first exact-container generation anchor
+   before installing or enabling the unit. A binding failure cannot start the
+   unit. Existing installations are never automatically adopted or rebound.
 5. Returns nonsecret source/image/Compose/VM facts only after unit readiness.
-   The client calls `Complete-SantaBackendInstallation` for six initialized-state
+   The client calls `Complete-SantaBackendInstallation` for seven initialized-state
    readbacks and machine-produced installation receipt/operator binding. It records
    only the local binding path in azd state. No human operator is created/reset.
 

@@ -15,6 +15,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import signal
+import secrets
 import socket
 import stat
 import subprocess
@@ -31,7 +32,7 @@ APPS = ('web', 'workers', 'celery')
 DEPENDENCIES = ('db', 'redis', 'rabbitmq', 'elastic')
 POLICIES = {'policy': 'azd_santa_operator.py',
             'recovery': 'azd_santa_operator_recovery.py',
-            'sealed': 'azd_santa_sealed_setup.py'}
+            'sealed': 'azd_santa_sealed_setup.py', 'admission': 'azd_santa_admission.py'}
 HELPERS = ('test_live_zentral.py', 'prepare_zentral_eval.py')
 _HELPER = None
 VOLUMES = {'db': ['postgres_data:/var/lib/postgresql'],
@@ -54,6 +55,12 @@ def private_write(path, data):
         json.dump(data, stream, sort_keys=True)
         stream.flush()
         os.fsync(stream.fileno())
+
+
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try: os.fsync(fd)
+    finally: os.close(fd)
 
 
 def checked_path(value, *, private=False):
@@ -294,6 +301,7 @@ class Runtime:
         config_directory.mkdir(mode=0o700)
         self.environment['DOCKER_CONFIG'] = str(config_directory)
         self.ids = []
+        self.cleanup_ids = ()  # Inspection alone never authorizes container stops.
         self.images = {}
         self.rendered = None
         self.stopping = False
@@ -451,9 +459,64 @@ class Runtime:
         for path in metadata:
             state_path(elastic, path.relative_to(elastic), nonempty=True)
 
+    def container_generation(self, selected):
+        """Require the separately produced original generation, never adopt labels."""
+        path = checked_path(self.manifest_path.parent / 'container-generation.json', private=True)
+        value = json.loads(path.read_bytes())
+        keys = {'scope', 'manifest_sha256', 'project', 'image_id', 'generation', 'container_ids'}
+        if (set(value) != keys or value['scope'] != 'private-runtime-container-generation-v1'
+                or value['manifest_sha256'] != self.digest or value['project'] != self.project
+                or value['image_id'] != self.data['services']['web']['image']
+                or not re.fullmatch(r'[a-f0-9]{32}', value['generation'])
+                or set(value['container_ids']) != set((*APPS, *DEPENDENCIES))
+                or any(not re.fullmatch(r'[a-f0-9]{64}', cid) for cid in value['container_ids'].values())
+                or len(set(value['container_ids'].values())) != 7
+                or value['container_ids'] != selected):
+            raise ValueError('Original admission container generation differs or is missing')
+        return value
+
+    def bind_admission_fresh(self):
+        """Machine-produce a first generation before any app has ever started."""
+        import fcntl
+        with (self.manifest_path.parent / 'supervisor.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            target = self.manifest_path.parent / 'container-generation.json'
+            if target.exists() or target.is_symlink() or UNIT.exists() or UNIT.is_symlink():
+                raise ValueError('Fresh binding requires no existing anchor or installed runtime unit')
+            selected = self.inspect(running=False)
+            ids = list(selected.values())
+            rows = json.loads(self.call('admission-fresh-generation', DOCKER + ['inspect', *ids]).stdout)
+            if len(rows) != 7 or {r['Id'] for r in rows} != set(ids):
+                raise ValueError('Exact seven-container generation required')
+            states = {r['Id']: r['State'] for r in rows}
+            for name, cid in selected.items():
+                state = states[cid]
+                if (state.get('Paused') is not False or state.get('Restarting') is not False
+                        or state.get('OOMKilled') is not False):
+                    raise ValueError('Stable generation required')
+                if name in APPS:
+                    if (state.get('Status') != 'created' or state.get('Running') is not False
+                            or state.get('Pid') != 0 or not state.get('StartedAt', '').startswith('0001-')):
+                        raise ValueError('Fresh generation requires all exact apps never started')
+                elif (state.get('Status') != 'running' or state.get('Running') is not True
+                        or type(state.get('Pid')) is not int or state['Pid'] <= 0
+                        or not state.get('StartedAt') or state['StartedAt'].startswith('0001-')):
+                    raise ValueError('Initialized dependencies must be running')
+            self.backing_data()
+            load_manifest(self.manifest_path, self.digest)
+            if self.inspect(running=False) != selected:
+                raise ValueError('Fresh container generation changed during binding')
+            private_write(target, dict(scope='private-runtime-container-generation-v1',
+                manifest_sha256=self.digest, project=self.project, image_id=self.data['services']['web']['image'],
+                generation=secrets.token_hex(16), container_ids=selected))
+            sync_directory(target.parent)
+            return target
+
     def start(self):
         self.ensure_running()
         selected = self.inspect(running=False)
+        generation = self.container_generation(selected)
+        self.cleanup_ids = tuple(generation['container_ids'].values())
         # A deliberate hot start must close admission before inspecting stores.
         self.call('close-admission', DOCKER + ['stop', '--time', '30', *(selected[name] for name in APPS)], timeout=100)
         self.call('compose-config', self.command + ['config', '--quiet'])
@@ -470,6 +533,7 @@ class Runtime:
         code += "from zentral.core.stores.models import Store; assert Store.objects.count()==1; s=Store.objects.get(provisioning_uid='elasticsearch'); assert s.backend=='ELASTICSEARCH' and s.admin_console"
         self.python('source-schema-store', code)
         self.oneoff('security-store', ['server/manage.py', 'operator_security_store', 'check'])
+        self.python('sync-admission', 'from azd_santa_admission import check; check(require_empty=True)')
         self.ensure_running()
         self.python('search', "import json,time,urllib.request; o=urllib.request.build_opener(urllib.request.ProxyHandler({})); deadline=time.monotonic()+45\nwhile True:\n try:\n  r=json.load(o.open('http://elastic:9200/_cluster/health',timeout=3)); assert r['status'] in ('yellow','green'); break\n except Exception:\n  if time.monotonic()>deadline: raise RuntimeError('Search not ready') from None\n  time.sleep(2)")
         self.start_ids('workers', ('workers', 'celery'))
@@ -494,6 +558,30 @@ class Runtime:
         self.wait('http', http_ready, seconds=45)
         self.ensure_running()
         print('SANTA_PRIVATE_RUNTIME_READY', flush=True)
+
+    def reconcile_admission(self, *, initialize_missing=False):
+        """Explicit host action, NEVER implicit startup or time-based cleanup."""
+        import fcntl
+        with (self.manifest_path.parent / 'supervisor.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            selected = self.inspect(running=False)
+            generation = self.container_generation(selected)
+            ids = [selected[name] for name in APPS]
+            rows = json.loads(self.call('admission-quiescence', DOCKER + ['inspect', *ids]).stdout)
+            if (len(rows) != len(ids) or {r['Id'] for r in rows} != set(ids) or
+                    any(r['State'].get('Running') is not False or r['State'].get('Paused') is not False
+                        or r['State'].get('Restarting') is not False or r['State'].get('Pid') != 0 for r in rows)):
+                raise ValueError('All exact old app processes must already be stopped')
+            # Recheck immutable configuration after establishing actual quiescence.
+            load_manifest(self.manifest_path, self.digest)
+            code = 'from pathlib import Path; import hashlib; '
+            code += f"assert hashlib.sha256(Path('/zentral/server/azd_santa_admission.py').read_bytes()).hexdigest()=={self.binding['policy_hashes']['admission']!r}; "
+            code += f'from azd_santa_admission import reconcile; reconcile(initialize_missing={initialize_missing!r})'
+            self.python('explicit-admission-reconcile', code)
+            private_write(self.evidence / 'admission-reconciled.json', dict(
+                scope='explicit-quiesced-sync-admission', app_ids=ids,
+                initialize_missing=initialize_missing, manifest_sha256=self.digest,
+                generation=generation['generation']))
 
     def stop_helpers(self):
         for name in list(self.helpers):
@@ -520,9 +608,10 @@ class Runtime:
         try:
             self.stop_helpers()
         finally:
-            if self.ids:
+            authorized = getattr(self, 'cleanup_ids', ())
+            if authorized:
                 current = self.call('cleanup-selection', DOCKER + ['ps', '--all', '--quiet', '--no-trunc'], allow_stopping=True).stdout.split()
-                selected = [cid for cid in self.ids if cid in current]
+                selected = [cid for cid in authorized if cid in current]
                 if selected:
                     self.call('stop', DOCKER + ['stop', '--time', '30', *selected], timeout=100, allow_stopping=True)
 
@@ -564,10 +653,12 @@ def main():
     prepare_parser.add_argument('--destination', required=True)
     for name in POLICIES:
         prepare_parser.add_argument('--' + name + '-sha256', required=True)
-    for name in ('run', 'unit', 'install'):
+    for name in ('run', 'unit', 'install', 'admission-reconcile', 'admission-bind-fresh'):
         command = commands.add_parser(name)
         command.add_argument('--manifest', required=True)
         command.add_argument('--sha256', required=True)
+        if name == 'admission-reconcile':
+            command.add_argument('--initialize-missing', action='store_true')
         if name == 'install':
             command.add_argument('--enable-now', action='store_true')
     args = parser.parse_args()
@@ -581,6 +672,10 @@ def main():
         print(unit_text(Path(__file__).resolve(), Path(args.manifest), args.sha256), end='')
     elif args.operation == 'install':
         install_unit(args.manifest, args.sha256, enable_now=args.enable_now)
+    elif args.operation == 'admission-bind-fresh':
+        print(Runtime(args.manifest, args.sha256).bind_admission_fresh())
+    elif args.operation == 'admission-reconcile':
+        Runtime(args.manifest, args.sha256).reconcile_admission(initialize_missing=args.initialize_missing)
     else:
         Runtime(args.manifest, args.sha256).supervise()
 

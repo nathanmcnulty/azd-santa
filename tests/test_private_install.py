@@ -169,6 +169,32 @@ class Relay(unittest.TestCase):
 
 
 class Installer(unittest.TestCase):
+    def test_activation_binds_fresh_generation_before_install_and_stops_on_binding_failure(self):
+        from unittest.mock import MagicMock
+        with tempfile.TemporaryDirectory() as folder:
+            bundle = Path(folder); manifest = bundle / 'manifest.json'; manifest.write_bytes(b'bound-runtime')
+            for name in ('operator_mfa.py', 'operator_recovery.py', 'sealed_setup.py', 'santa_admission.py'):
+                (bundle / name).write_bytes(name.encode())
+            for failure in (False, True):
+                with self.subTest(binding_failure=failure):
+                    events = []; runtime = MagicMock(); runtime.prepare.return_value = manifest
+                    def bind():
+                        events.append('bind')
+                        if failure: raise ValueError('Unbound generation')
+                    runtime.Runtime.return_value.bind_admission_fresh.side_effect = bind
+                    runtime.install_unit.side_effect = lambda *a, **kw: events.append('install')
+                    with patch.object(installer, 'load', side_effect=lambda _, name: runtime if name == 'runtime_service' else None):
+                        if failure:
+                            with self.assertRaises(ValueError): installer.activate_runtime(bundle, bundle / 'compose.json', bundle)
+                            runtime.install_unit.assert_not_called()
+                        else:
+                            installer.activate_runtime(bundle, bundle / 'compose.json', bundle)
+                            self.assertEqual(events, ['bind', 'install'])
+                            digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+                            runtime.Runtime.assert_called_once_with(manifest, digest)
+                            runtime.install_unit.assert_called_once_with(manifest, digest, enable_now=True)
+                    self.assertEqual(runtime.prepare.call_args.args[2]['admission'], hashlib.sha256(b'santa_admission.py').hexdigest())
+
     def verification_bundle(self, root, entries):
         raw = json.dumps(dict(scope='private-azd-source-v1', files=entries), sort_keys=True).encode()
         digest = hashlib.sha256(raw).hexdigest()
@@ -268,7 +294,7 @@ class Installer(unittest.TestCase):
         self.assertEqual(installer.DOCKER_VERSION, '29.1.3-0ubuntu3~24.04.2')
         self.assertEqual(installer.COMPOSE_SHA, 'd87a11e944c990dc9f2186115b1136c1cbffffc870845caff0cbdcce0780f41d')
         self.assertLess(source.index('stage.stage('), source.index("'operator_security_store', 'fresh'"))
-        self.assertLess(source.index("'operator_security_store', 'fresh'"), source.index('runtime.install_unit('))
+        self.assertLess(source.index("'operator_security_store', 'fresh'"), source.index('activate_runtime(bundle, compose, work)', source.index('def install(')))
         self.assertNotIn('operator_access', source)
         self.assertNotIn("'migrate'", source) # Existing explicit fresh-stage API owns schema authority.
 

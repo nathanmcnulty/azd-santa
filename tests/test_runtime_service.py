@@ -216,6 +216,7 @@ class Lifecycle(unittest.TestCase):
         runtime.inspect = Mock(return_value={name: format(i + 1, '064x') for i, name in enumerate(runtime.data['services'])})
         runtime.python = Mock()
         runtime.backing_data = Mock()
+        runtime.container_generation = Mock(return_value={'container_ids': runtime.inspect.return_value})
         calls = []
         def call(label, args, **kwargs):
             calls.append((label, args))
@@ -306,7 +307,8 @@ class Lifecycle(unittest.TestCase):
 
     def test_helper_cleanup_failure_does_not_skip_original_container_stop(self):
         runtime = service.Runtime.__new__(service.Runtime)
-        runtime.ids = ['a' * 64]
+        runtime.ids = ['b' * 64]  # Unrelated latest inspection cannot retarget cleanup.
+        runtime.cleanup_ids = ('a' * 64,)
         runtime.stop_helpers = Mock(side_effect=RuntimeError('Helper cleanup failed'))
         runtime.call = Mock(return_value=SimpleNamespace(stdout='a' * 64))
         with self.assertRaises(RuntimeError):

@@ -20,7 +20,7 @@ ROOT = Path('/var/lib/azd-santa-qualification')
 DOCKER = ['docker', '--host', 'unix:///var/run/docker.sock']
 MARKER = 'SANTA_SEALED_SETUP_JSON:'
 BINDINGS = sorted(('TenantId', 'SubscriptionId', 'EnvironmentName', 'ResourceGroup', 'VmName', 'VmId',
-    'VmInstanceId', 'ImageId', 'ComposePath', 'ComposeSha256', 'SourceCommit', 'RecoverySha256',
+    'VmInstanceId', 'ImageId', 'ComposePath', 'ComposeSha256', 'SourceCommit', 'AdmissionSha256', 'RecoverySha256',
     'SealedSha256', 'Origin', 'RemoteProgramSha256'))
 HEX = re.compile('[0-9a-f]{64}')
 GUID = re.compile('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
@@ -83,7 +83,7 @@ def request_from_environment():
     need(len(key) <= 768 and base64.b64encode(key).decode() == request['recipient_public_key']
          and sha(key) == context['recipient_sha256'])
     need(all(GUID.fullmatch(binding[k]) for k in ('TenantId', 'SubscriptionId', 'VmInstanceId')))
-    need(all(HEX.fullmatch(binding[k]) for k in ('ComposeSha256', 'RecoverySha256', 'SealedSha256', 'RemoteProgramSha256')))
+    need(all(HEX.fullmatch(binding[k]) for k in ('ComposeSha256', 'AdmissionSha256', 'RecoverySha256', 'SealedSha256', 'RemoteProgramSha256')))
     need(re.fullmatch('sha256:[0-9a-f]{64}', binding['ImageId']) and re.fullmatch('[0-9a-f]{40}', binding['SourceCommit']))
     need(re.fullmatch('[a-z0-9-]{2,32}', binding['EnvironmentName'])
          and binding['ResourceGroup'] == 'rg-azd-santa-vm-' + binding['EnvironmentName'] and binding['VmName'] == 'vm-santa-lab')
@@ -249,6 +249,7 @@ from zentral.conf import api_base_url
 import azd_santa_operator_recovery as recovery
 import azd_santa_sealed_setup as sealed
 import azd_santa_operator as policy
+import azd_santa_admission as admission
 p=json.loads(base64.b64decode(os.environ['AZD_SANTA_SETUP_REQUEST_B64']))
 b=p['context']['binding']
 assert not settings.DEBUG and version.strip()==b['SourceCommit']
@@ -257,6 +258,8 @@ cache=urlsplit(settings.CACHES['azd_santa_security']['LOCATION'])
 assert cache.hostname=='redis' and cache.path=='/2' and cache.scheme in ('redis','rediss')
 assert hashlib.sha256(Path(recovery.__file__).read_bytes()).hexdigest()==b['RecoverySha256']
 assert hashlib.sha256(Path(sealed.__file__).read_bytes()).hexdigest()==b['SealedSha256']
+assert hashlib.sha256(Path(admission.__file__).read_bytes()).hexdigest()==b['AdmissionSha256']
+admission.check()
 assert sealed.origin(api_base_url())==sealed.origin(b['Origin'])
 recovery.validate_request(p['context']['mode'],p['username'],p['email'],p['reason'])
 sealed.prepare_recipient(p['recipient_public_key'],p['context_sha256'],p['context']['mode'],p['username'],p['email'],api_base_url())

@@ -11,6 +11,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'experiments/server'))
 import test_security_store_live as gate
+import santa_admission
+sys.modules['azd_santa_admission'] = santa_admission
 POLICY = ROOT / 'experiments/server/operator_mfa.py'
 
 
@@ -123,7 +125,8 @@ class SecurityStore(unittest.TestCase):
                 namespace['initialize_security_store'](mode)
         client.eval.assert_not_called()
         namespace['initialize_security_store']('fresh')
-        self.assertEqual(client.eval.call_args.args[-1], 0)
+        self.assertEqual(client.eval.call_args.args[-3], 0)
+        self.assertIn('HSET', client.eval.call_args.args[0])
         namespace['initialize_security_store']('migrate', confirm_quiesced=True)
         self.assertEqual(client.eval.call_args.args[-1], 360)
         self.assertIn("redis.call('EXISTS', KEYS[1])", client.eval.call_args.args[0])

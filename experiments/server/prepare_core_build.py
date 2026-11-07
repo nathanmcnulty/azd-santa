@@ -569,6 +569,7 @@ def render_core_dockerfile(
         "('/zentral/server/server/settings.py', "
         "'/zentral/server/realms/backends/registry.py', "
         "'/zentral/server/azd_santa_operator.py', "
+        "'/zentral/server/azd_santa_admission.py', "
         "'/zentral/server/azd_santa_request_limits.py', "
         "'/zentral/zentral/contrib/santa/public_views.py')]\"\n"
         "# tini executes this file directly: prove shebang and non-root execute access.\n"
