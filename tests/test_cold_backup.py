@@ -50,8 +50,8 @@ class ColdBackup(unittest.TestCase):
                 roots['volumes/' + name] = path
             # Encryption is byte-oriented. Use a noncredential control sentinel
             # to prove private-file coverage without creating password fixtures.
-            secret = b'BACKUP_TEST_SENTINEL=synthetic-private-control-content\n'
-            env = root / 'migration.env'; env.write_bytes(secret); roots['control/0/migration.env'] = env
+            control_sentinel = b'BACKUP_TEST_SENTINEL=synthetic-private-control-content\n'
+            env = root / 'migration.env'; env.write_bytes(control_sentinel); roots['control/0/migration.env'] = env
             output = io.BytesIO()
             sink = backup.EncryptedSink(output, self.public, 10*backup.CHUNK, time.monotonic()+30)
             signature = backup.signature
@@ -74,11 +74,11 @@ class ColdBackup(unittest.TestCase):
             with patch.object(backup.os, 'O_NOFOLLOW', getattr(os, 'O_NOFOLLOW', 0), create=True), patch.object(backup, 'signature', side_effect=portable_signature), patch.object(backup, 'directory_entries', side_effect=portable_entries):
                 count = backup.archive(sink, roots, {'scope': 'offline-roundtrip', 'current_authority': 'not_established'}, 100)
             sink.finish(); ciphertext = output.getvalue()
-            self.assertNotIn(secret, ciphertext)
+            self.assertNotIn(control_sentinel, ciphertext)
             self.assertEqual(backup.digest(ciphertext), sink.hasher.hexdigest())
             self.assertEqual(sink.total, len(ciphertext)); self.assertEqual(count, 11)
             with tarfile.open(fileobj=io.BytesIO(self.decrypt(ciphertext))) as archive:
-                self.assertEqual(archive.extractfile('control/0/migration.env').read(), secret)
+                self.assertEqual(archive.extractfile('control/0/migration.env').read(), control_sentinel)
                 for name in ('postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_snapshot_repository', 'media_data'):
                     self.assertEqual(archive.extractfile('volumes/'+name+'/sample').read(), (name+'-sentinel').encode())
                 self.assertEqual(json.load(archive.extractfile('backup/capture.json'))['current_authority'], 'not_established')
