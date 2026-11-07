@@ -45,7 +45,7 @@ initialization and application connections. Separate files reduce unrelated
 secret exposure; they do not reduce that database role's authority.
 
 At pinned Zentral source `88e67b3ce49033aab028029937a6e14f7c489073`,
-`docker-entrypoint.py:135-140` runs migrations and provisioning before the normal
+`docker-entrypoint.py:139-141` runs migrations and provisioning before the normal
 web/worker/Celery commands. `server/server/settings.py:193-225` supplies one
 configured database credential to those operations and normal runtime queries.
 A separate bootstrap/migration owner and restricted runtime role require an
@@ -55,8 +55,26 @@ also create and drop test databases; their administrative authority must stay
 separate from any future production runtime role. Renaming the current role or
 merely placing its password in another file would not prove this separation.
 
-Still unqualified: fresh image startup with these files, actual container secret
-sets, separate database roles, credential rotation of existing volumes, and
-restart/restore behavior after such a role change. Existing acceptance receipts
-describe their original shared-environment stacks and are not evidence for this
-new layout.
+Separate database roles, credential rotation of existing volumes and
+restart/restore behavior after such a role change remain unqualified. Earlier
+shared-environment receipts are not evidence for this layout; its later fresh
+startup and actual-container acceptance follow below.
+
+## Actual fresh-stack acceptance, 2026-11-06
+
+A separate fresh Santa-profile stack with these files passed 15 real MFA cases,
+13 isolated-database recovery cases, Redis interruption, full Monitor fixture
+sync, 89 bounded HTTP checks and independent indexing of two Santa events.
+Image:
+`sha256:4533b2fdb0922ab50a8fa78d423b0613c1b5b2a843cb33244d1c8887a8804fec`;
+Compose SHA-256:
+`ee8ac38e730e16415d59dd5980bca03c0530135f8675846ba5d5b0ecfb6103eb`.
+Private receipts are under `runtime-santa-separated/`.
+
+The subsequent blank-human namespace passed actual host attestation of all seven
+containers, including the protected environment key/value sets and independent
+ports/image/source checks, before encrypted bootstrap/recovery. See
+[handoff acceptance](setup-transport-slice.md) for that namespace's bindings.
+The former retains its MFA fixtures and all data; its Santa state/index were
+read back before explicitly pausing it. Neither result proves separate database
+roles, existing-volume secret rotation, restoration or the final azd workflow.

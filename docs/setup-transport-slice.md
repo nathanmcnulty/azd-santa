@@ -1,9 +1,9 @@
 # Operator setup transport candidate
 
 The source now connects the PowerShell transport to an actual stdlib Linux host
-program and installed `operator_access` command. This is an offline-tested
-candidate, not completed azd integration or live acceptance. No Azure, VM,
-authentication or browser operation was performed to implement it.
+program and installed `operator_access` command. Subsequent private Azure
+acceptance is recorded below. Complete azd integration, a public trusted endpoint
+and browser/password/MFA completion remain unverified.
 
 `experiments/server/Invoke-SantaOperatorSetup.ps1` is the one-command entrypoint:
 select a reviewed deployment-binding artifact, mode (`bootstrap` or `recover`),
@@ -112,8 +112,64 @@ Offline tests exercise real PowerShell/Python canonical-request interoperability
 source bounds, metadata/Docker guard shapes, concurrent reservation and timeout
 state, readback with no second mutation, strict ciphertext parsing, and entrypoint
 orchestration. Mocked metadata/Docker/Django output is not runtime proof. Real
-target IMDS/Compose/image/module/config readback, bootstrap/recover, unknown-response
-ciphertext readback, Azure tail behavior and native browser/password/MFA completion
-require independent review and live qualification. Authoritative deployment-binding
+target IMDS/Compose/image/module/config readback, bootstrap/recover and a reply-tail
+readback case subsequently passed the private acceptance below. Network-loss or
+running-mutator timeout recovery and native browser/password/MFA completion still
+require live qualification. Authoritative deployment-binding
 generation, trusted reachable HTTPS admission and azd hook wiring remain required
 before describing this as automated azd setup.
+
+## Actual private Azure handoff acceptance, 2026-11-06
+
+The selected cached ARM account, tagged pilot VM and immutable VM instance passed
+the real metadata/runtime guards. Actual container environments matched the fresh
+per-service contract, and both configured and observed ports remained loopback
+only. The immutable application image was
+`sha256:4533b2fdb0922ab50a8fa78d423b0613c1b5b2a843cb33244d1c8887a8804fec`;
+host program SHA-256:
+`3c0dad48976dbb11287f01fbe13fbe17d9c3f5a070bbe3d4825af44f896bf9f4`.
+Compose SHA-256:
+`092f05fac6aca2f262887556e7a9bf4910f849ef6be2f7eac94408a93a1f0769`.
+The private runtime is `runtime-santa-host-setup/` under the qualification root.
+
+First-admin bootstrap ran only after actual readback confirmed zero human
+accounts. A successful create and a separate original-context readback returned
+identical ciphertext. The Windows receiver decrypted it into an exclusive
+owner-only file; no browser navigation or plaintext URL export occurred.
+Bootstrap context SHA-256:
+`63be82f14144cc301b5cd18527e570ceccc07bed5e377f59e769bf79671e5a91`.
+
+The supported one-command entrypoint then recovered that exact synthetic user
+and privately delivered a new artifact. An independent database readback found
+one human, unchanged privilege flags and a rotated password fingerprint.
+Independent event-store queries found the corresponding `zentral_audit`
+bootstrap and recovery records. Indexed payload inspection found none of the
+checked credential/setup-URL field names for these actions. This does not prove
+all authentication audit paths or arbitrary diagnostic logs are secret-free.
+
+A separate qualification-only host-program copy added 8 KiB of harmless stdout
+padding after successful create, leaving the canonical program unchanged.
+The guest stream contained 9,502 bytes: its final 4,096 bytes retained the done
+marker but excluded the ciphertext marker. The client correctly refused a
+terminal-ciphertext checkpoint. Explicit readback with the original in-memory
+recipient recovered and privately delivered the committed artifact. Guest
+`exit.json` recorded zero, and the event store contained exactly one action for
+the unique truncation-test reason. No mutation was repeated.
+That context SHA-256 was
+`86cb48b3b869b1cf4fcfb0f29489181b960355eb6d3a4c31cce7a29f0f9be2a1`.
+It proves reply-tail recovery, not a network disconnect or timeout while a
+mutator is still running.
+
+Private server receipts include `operator-entrypoint-recovery-state-receipt.json`
+and `operator-truncated-reply-proof.json`; per-context request/attempt/exit and
+sealed artifacts remain in `operator-setup/<context>/`. Local checkpoints and
+delivery receipts remain in the selected private qualification directory; the
+recipient private keys were disposed rather than persisted.
+
+The original full MFA suite retains synthetic humans in its main lab database.
+That stack was preserved and paused before creating this separate first-operator
+namespace. Bootstrap was not made to pass by deleting existing users. Its blank
+namespace also passed full Monitor fixture sync, 89 request checks and indexing
+before operator work. These are private management and synthetic-device results;
+no native Mac, public TLS, browser, production sizing or automatic azd deployment
+acceptance follows from them.
