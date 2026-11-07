@@ -145,6 +145,14 @@ failure receipt. No case names, command, stdout/stderr or exception text cross
 that boundary. Successful cleanup preserves the original failure phase; failed
 cleanup reports its own phase. This changes diagnostics only, not acceptance,
 container tolerance, retries or private-artifact policy.
+Failure-only resource metrics add the owned container's `OOMKilled` boolean,
+cgroup-v2 `memory.events` oom/oom_kill and `pids.events` max counters, and optional
+`memory.peak` bytes. The path comes only from that exact container's current PID,
+must be canonical beneath `/sys/fs/cgroup` with its full CID as a path component,
+and is rechecked against the same current CID/PID. Reads are bounded; unsupported,
+unreadable or changed data is null. Only bounded counters/booleans are exported,
+never PID, cgroup path, file contents or argv. These cumulative observations do
+not identify a failing subcase or establish causation; limits remain unchanged.
 
 The exporter admits only the reviewed `disposable-redis-admission-lua-v1` scope
 with27 unique observation families or `disposable-redis-admission-fenced-lua-v2`

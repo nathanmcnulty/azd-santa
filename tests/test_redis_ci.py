@@ -21,7 +21,8 @@ TOKEN = 'd'*32
 
 def row(running=True):
     return dict(id=CID,image=IMAGE,labels={'io.azd-santa.qualification':ci.LABEL,'io.azd-santa.ci-owner':TOKEN},
-        user='999:999',running=running,ports={'6379/tcp':None},mounts=[dict(Type='tmpfs',Destination='/data',RW=True)],
+        user='999:999',running=running,state_pid=123 if running else 0,oom_killed=False,
+        ports={'6379/tcp':None},mounts=[dict(Type='tmpfs',Destination='/data',RW=True)],
         host=dict(ReadonlyRootfs=True,NetworkMode='none',PortBindings={},PublishAllPorts=False,
             Memory=ci.MEMORY,MemorySwap=ci.MEMORY,NanoCpus=500000000,PidsLimit=32,RestartPolicy={'Name':'no'},
             CapDrop=['ALL'],CapAdd=None,Privileged=False,PidMode='',Devices=[],SecurityOpt=['no-new-privileges:true'],
@@ -184,6 +185,51 @@ class Boundaries(unittest.TestCase):
             with self.assertRaises(ValueError):ci.completed_count(bad,CID,IMAGE,hashes)
         self.assertIsNone(ci.CiFailure('UNKNOWN PRIVATE PHASE','PRIVATE KIND',999999,999999).diagnostic()['completed_observations'])
         self.assertNotIn('PRIVATE',json.dumps(ci.CiFailure('UNKNOWN PRIVATE PHASE','PRIVATE KIND').diagnostic()))
+
+    def test_cgroup_path_requires_unified_exact_cid_canonical_path_under_selected_root(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder).resolve();group=root/('docker-'+CID+'.scope');group.mkdir()
+            with patch.object(ci,'CGROUP_ROOT',root):
+                self.assertEqual(ci.cgroup_path('0::/docker-'+CID+'.scope\n',CID),group)
+                for text in ('0::/foreign\n','1:memory:/docker-'+CID+'.scope\n',
+                             '0::/docker-'+CID+'.scope/../foreign\n','0:://docker-'+CID+'.scope\n',
+                             '0::/docker-'+CID+'.scope\n0::/second\n','x'*4097):
+                    with self.subTest(text=text[:40]),self.assertRaises(ValueError):ci.cgroup_path(text,CID)
+
+    def test_failure_metrics_use_only_owned_current_pid_and_export_numeric_whitelist(self):
+        runner=MagicMock();runner.call.return_value=json.dumps(row())
+        def small(path):
+            if path.name=='cgroup':
+                self.assertEqual(path,Path('/proc/123/cgroup'));return '0::/docker-'+CID+'.scope\n'
+            return {'memory.events':'low 0\nhigh 0\nmax 0\noom 1\noom_kill 2\n',
+                    'pids.events':'max 3\n','memory.peak':'65536\n'}[path.name]
+        with patch.object(ci,'small_file',side_effect=small),patch.object(ci,'cgroup_path',return_value=Path('/synthetic/cgroup')):
+            metrics=ci.resource_metrics(runner,CID,IMAGE,TOKEN)
+        self.assertEqual(metrics,dict(oom_killed=False,memory_oom=1,memory_oom_kill=2,pids_max=3,memory_peak_bytes=65536))
+        for call in runner.call.call_args_list:
+            self.assertEqual(call.args[1],ci.DOCKER+['inspect','--format',ci.INSPECT,CID])
+            self.assertEqual(call.kwargs,dict(timeout=5))
+        self.assertNotIn('/synthetic',json.dumps(metrics));self.assertNotIn('123',json.dumps(metrics))
+        changed=row();changed['state_pid']=456
+        runner.call.side_effect=[json.dumps(row()),json.dumps(changed)]
+        with patch.object(ci,'small_file',side_effect=small),patch.object(ci,'cgroup_path',return_value=Path('/synthetic/cgroup')):
+            drift=ci.resource_metrics(runner,CID,IMAGE,TOKEN)
+        self.assertTrue(all(drift[key] is None for key in ci.RESOURCE_KEYS[1:]))
+
+    def test_unreadable_or_foreign_resource_metrics_are_unknown_without_path_or_raw_text(self):
+        runner=MagicMock();runner.call.return_value=json.dumps(row())
+        with patch.object(ci,'small_file',side_effect=PermissionError('PRIVATE PATH AND TEXT')):
+            metrics=ci.resource_metrics(runner,CID,IMAGE,TOKEN)
+        self.assertEqual(metrics['oom_killed'],False)
+        self.assertTrue(all(metrics[key] is None for key in ci.RESOURCE_KEYS[1:]))
+        foreign=row();foreign['id']='e'*64;runner.call.return_value=json.dumps(foreign)
+        with patch.object(ci,'small_file') as small:
+            self.assertEqual(ci.resource_metrics(runner,CID,IMAGE,TOKEN),ci.safe_metrics(None));small.assert_not_called()
+        for raw in ('oom PRIVATE\n','oom -1\n','oom 01\n','oom 1\noom 2\n','oom 99999999999999999999\n'):
+            with self.assertRaises(ValueError):ci.counters(raw)
+        public=ci.CiFailure('harness','command_exit',1);public.resources={'pids_max':True,'memory_oom':-1,'extra':'PRIVATE'}
+        self.assertEqual(public.diagnostic()['resource_metrics'],ci.safe_metrics(None))
+        self.assertNotIn('PRIVATE',json.dumps(public.diagnostic()))
 
     def test_workflow_token_artifact_and_trigger_contract(self):
         workflow=(REPO/'.github/workflows/qualify-redis-lua.yml').read_text()

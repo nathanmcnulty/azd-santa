@@ -7,7 +7,7 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import stat
 import subprocess
@@ -26,11 +26,14 @@ TMPFS = 'rw,nosuid,nodev,noexec,size=67108864,uid=999,gid=999,mode=0700'
 DOCKER = ['/usr/bin/docker', '--host', 'unix:///var/run/docker.sock']
 INSPECT = ('{"id":{{json .Id}},"image":{{json .Image}},"labels":{{json .Config.Labels}},'
            '"user":{{json .Config.User}},"host":{{json .HostConfig}},"mounts":{{json .Mounts}},'
-           '"running":{{json .State.Running}},"ports":{{json .NetworkSettings.Ports}}}')
+           '"running":{{json .State.Running}},"state_pid":{{json .State.Pid}},'
+           '"oom_killed":{{json .State.OOMKilled}},"ports":{{json .NetworkSettings.Ports}}}')
+CGROUP_ROOT = Path('/sys/fs/cgroup')
+RESOURCE_KEYS = ('oom_killed', 'memory_oom', 'memory_oom_kill', 'pids_max', 'memory_peak_bytes')
 PHASES = {'preflight', 'source_staging', 'docker_pull', 'image_readback', 'docker_create',
           'created_inspection', 'docker_start', 'started_inspection', 'redis_readiness',
           'harness', 'harness_marker', 'receipt_validation', 'cleanup_owner', 'cleanup_stop',
-          'cleanup_stopped', 'internal'}
+          'cleanup_stopped', 'failure_resources', 'internal'}
 _PHASE = 'preflight'
 
 
@@ -38,7 +41,8 @@ def select_phase(value):
     global _PHASE
     aliases = {'pull': 'docker_pull', 'image': 'image_readback', 'create': 'docker_create',
                'created': 'created_inspection', 'start': 'docker_start', 'started': 'started_inspection',
-               'cleanup-owner': 'cleanup_owner', 'stop-owned': 'cleanup_stop', 'cleanup-stopped': 'cleanup_stopped'}
+               'cleanup-owner': 'cleanup_owner', 'stop-owned': 'cleanup_stop', 'cleanup-stopped': 'cleanup_stopped',
+               'failure-resources': 'failure_resources', 'failure-resource-confirm': 'failure_resources'}
     value = 'redis_readiness' if re.fullmatch(r'ready-[0-9]{1,2}', value) else aliases.get(value, value)
     _PHASE = value if value in PHASES else 'internal'
 
@@ -50,11 +54,13 @@ class CiFailure(Exception):
                                     'interrupted', 'io_error', 'internal_error'} else 'internal_error'
         self.exit_code = exit_code if type(exit_code) is int and -64 <= exit_code <= 255 else None
         self.completed = completed if type(completed) is int and 0 <= completed <= 37 else None
+        self.resources = None
         super().__init__('Disposable Redis CI failed')
 
     def diagnostic(self):
         return dict(scope='disposable-redis-ci-failure-v1', phase=self.phase, kind=self.kind,
-                    exit_code=self.exit_code, completed_observations=self.completed, automatic_replay=False)
+                    exit_code=self.exit_code, completed_observations=self.completed,
+                    resource_metrics=safe_metrics(self.resources), automatic_replay=False)
 
 
 def failure(error):
@@ -180,6 +186,77 @@ def failed_count(path, cid, image, hashes):
         return None  # Missing/untrusted diagnostic is never success or count zero.
 
 
+def safe_metrics(value):
+    value = value if type(value) is dict else {}
+    result = {key: None for key in RESOURCE_KEYS}
+    if type(value.get('oom_killed')) is bool: result['oom_killed'] = value['oom_killed']
+    for key in RESOURCE_KEYS[1:]:
+        number = value.get(key)
+        if type(number) is int and 0 <= number <= 2**63-1: result[key] = number
+    return result
+
+
+def small_file(path):
+    need(path == path.resolve(strict=True) and path.is_file() and not path.is_symlink())
+    with path.open('rb') as stream: raw = stream.read(4097)
+    need(len(raw) <= 4096)
+    return raw.decode('ascii')
+
+
+def cgroup_path(raw, cid):
+    need(type(raw) is str and len(raw) <= 4096 and re.fullmatch(r'[a-f0-9]{64}', cid))
+    rows = raw.splitlines(); need(len(rows) == 1 and rows[0].startswith('0::/'))
+    value = rows[0][3:]; relative = PurePosixPath(value)
+    need(relative.is_absolute() and not value.startswith('//') and relative.as_posix() == value and '..' not in relative.parts
+         and any(part in (cid, 'docker-' + cid + '.scope') for part in relative.parts))
+    path = CGROUP_ROOT.joinpath(*relative.parts[1:])
+    need(path.is_relative_to(CGROUP_ROOT) and path == path.resolve(strict=True) and path.is_dir())
+    return path
+
+
+def counters(raw):
+    need(type(raw) is str and len(raw) <= 4096)
+    values = {}
+    for line in raw.splitlines():
+        match = re.fullmatch(r'([a-z_]+) (0|[1-9][0-9]{0,18})', line)
+        need(match is not None and match[1] not in values and int(match[2]) <= 2**63-1)
+        values[match[1]] = int(match[2])
+    return values
+
+
+def resource_metrics(runner, cid, image, token):
+    result = safe_metrics(None)
+    try:
+        need(type(cid) is str and re.fullmatch(r'[a-f0-9]{64}', cid))
+        def inspect(phase):
+            row = json.loads(runner.call(phase, DOCKER + ['inspect', '--format', INSPECT, cid], timeout=5))
+            owned(row, cid, image, token)
+            return row
+        row = inspect('failure-resources')
+        result['oom_killed'] = row.get('oom_killed') if type(row.get('oom_killed')) is bool else None
+        pid = row.get('state_pid')
+        need(type(pid) is int and 0 < pid <= 2**31-1 and row['running'] is True)
+        group = cgroup_path(small_file(Path('/proc') / str(pid) / 'cgroup'), cid)
+        measured = {}
+        for filename, fields in (('memory.events', {'oom': 'memory_oom', 'oom_kill': 'memory_oom_kill'}),
+                                 ('pids.events', {'max': 'pids_max'})):
+            try:
+                values = counters(small_file(group / filename))
+                for source, destination in fields.items(): measured[destination] = values.get(source)
+            except BaseException: pass
+        try:
+            raw = small_file(group / 'memory.peak').strip()
+            need(re.fullmatch(r'0|[1-9][0-9]{0,18}', raw) and int(raw) <= 2**63-1)
+            measured['memory_peak_bytes'] = int(raw)
+        except BaseException: pass
+        again = inspect('failure-resource-confirm')
+        result['oom_killed'] = again.get('oom_killed') if type(again.get('oom_killed')) is bool else None
+        need(again.get('state_pid') == pid and again['running'] is True)
+        result.update(measured)
+    except BaseException: pass
+    return safe_metrics(result)
+
+
 class Runner:
     def __init__(self, root):
         self.root = root
@@ -258,6 +335,7 @@ def run(source_root, source_commit):
         original = failure(error)
         if original.phase == 'harness':
             original.completed = failed_count(ROOT / 'evidence/failed.json', cid, image, hashes)
+        original.resources = resource_metrics(runner, cid, image, token)
         raise original from None
     finally:
         try:
