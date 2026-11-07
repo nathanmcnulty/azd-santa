@@ -47,12 +47,11 @@ python tools/sync_spike/test_conformance.py
 The durability suite is also registered in Pester. It tests reopen/restart, device
 isolation, revocation, stale revisions, competing connections, transaction rollback,
 abrupt subprocess exit before commit, damaged/missing state and persistence errors.
-The HTTP model drains only bounded rejected transport bodies before closing to
-avoid Windows unread-body connection resets. This reads at most 64 KiB + one
-oversize-test byte with a two-second timeout, never decodes unauthenticated JSON,
-and does not increase the accepted JSON size limit. Larger/ambiguous rejected
-bodies are not drained and may reset the connection. This single-threaded local
-harness is not a production denial-of-service control or server.
+Header-admission rejection tests send headers without a body to avoid Windows
+unread-body connection resets. Admitted payload and compression-expansion tests
+still send their complete bodies. The HTTP model does not drain rejected bodies;
+this single-threaded local harness is not a production denial-of-service control
+or server.
 
 There is no trusted external restore anchor. Restoring an old *valid* database
 can restore older rules, reports and revocation state; hashes cannot detect that.
