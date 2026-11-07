@@ -8,6 +8,19 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "principal": "Explicit selected cached Azure CLI operator (existing rights only)",
+      "phase": "deployment",
+      "feature": "operator-setup-transport",
+      "defaultEnabled": false,
+      "scope": "Exact selected tenant/subscription and tagged private pilot RG/VM only",
+      "rationale": "Optional transport primitives inspect selected account/group/VM and invoke one separately hash-pinned remote program. They do not authenticate, grant rights, provide remote source attestation, or enable an azd setup hook.",
+      "evidenceState": "code",
+      "evidence": [{ "path": "experiments/server/SetupTransport.psm1", "sha256": "d6679fa0d1531619db69f4379350a88401e6f3ea7d52878bd90c11120e110f73" }]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
       "permission": "Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/runCommand/action; Microsoft.DevTestLab/schedules/write",
       "principal": "Selected interactive qualification operator (existing permissions only)",
       "phase": "deployment",
@@ -244,6 +257,7 @@
     }
   ],
   "gaps": [
+    "Optional operator-setup transport has only offline mocked-Azure proof. Its source/image/Compose expectations are not remote attestation. A separately reviewed remote command with exact runtime binding and context-bound ciphertext-only artifact/readback, trusted HTTPS admission and actual Azure/browser qualification are required before azd wiring. No remote setup program or automatic hook is supplied.",
     "The optional sealed operator setup transport adds local cryptography and private-output primitives, not new Azure permissions. Exact selected-deployment Run Command binding, terminal-result handling, encrypted recovery readback, trusted HTTPS and real-browser delivery remain unimplemented or unqualified; the portable module is not completed azd setup.",
     "The local operator_access bootstrap/recovery command uses existing privileged host/container and local application-database authority; it grants no Azure/Graph role and preserves other users, service identities and Santa device credentials. Eleven private isolated-database request cases passed; real-browser/TLS, customer private-link delivery, audit indexing and backup/restore remain unqualified. See docs/operator-recovery.md for exact bindings and limits. Metadata is not recovery authorization.",
     "The private real-server qualification tooling uses existing privileged Azure Run Command rights, not a new workload role. Generated Compose and source acquisition need no tenant permission. Community-only production packaging, trusted ingress, operator MFA, unique device enrollment, rotation/revocation, backup/restore and Container Apps parity remain unqualified; private evaluation must not be promoted by inference.",
