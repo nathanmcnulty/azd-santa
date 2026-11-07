@@ -92,8 +92,12 @@ def isolated(row, cid, image, token):
          and not host['Devices'] and host['SecurityOpt'] == ['no-new-privileges:true']
          and host['LogConfig']['Type'] == 'none' and host['Tmpfs'] == {'/data': TMPFS}
          and all(value is None for value in (row['ports'] or {}).values()))
-    need(len(row['mounts']) == 1 and row['mounts'][0]['Type'] == 'tmpfs'
-         and row['mounts'][0]['Destination'] == '/data' and row['mounts'][0]['RW'] is True)
+    # Docker stores --tmpfs in HostConfig.Tmpfs; some versions omit it from
+    # Mounts entirely. The exact bounded host map above is mandatory either way.
+    mounts = row['mounts']
+    need(type(mounts) is list and (not mounts or len(mounts) == 1
+         and mounts[0]['Type'] == 'tmpfs' and mounts[0]['Destination'] == '/data'
+         and mounts[0]['RW'] is True))
 
 
 def public_receipt(value, cid, image, hashes, source_commit, reference):

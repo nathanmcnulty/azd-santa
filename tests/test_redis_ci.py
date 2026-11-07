@@ -59,6 +59,23 @@ class Boundaries(unittest.TestCase):
                           ('mounts',[dict(Type='volume',Destination='/data',RW=True)])]:
             with self.subTest(key=key),self.assertRaises(ValueError):ci.isolated(dict(row(),**{key:value}),CID,IMAGE,TOKEN)
 
+    def test_both_docker_tmpfs_representations_require_exact_bounded_host_map(self):
+        for mounts in ([],[dict(Type='tmpfs',Destination='/data',RW=True)]):
+            fixture=dict(row(),mounts=mounts)
+            ci.isolated(fixture,CID,IMAGE,TOKEN)
+            for host_map in ({},{'/foreign':ci.TMPFS},{'/data':'rw'},
+                             {'/data':ci.TMPFS,'/foreign':ci.TMPFS}):
+                bad=copy.deepcopy(fixture);bad['host']['Tmpfs']=host_map
+                with self.subTest(mounts=mounts,host_map=host_map),self.assertRaises(ValueError):
+                    ci.isolated(bad,CID,IMAGE,TOKEN)
+        for mounts in ([dict(Type='bind',Destination='/data',RW=True)],
+                       [dict(Type='volume',Destination='/data',RW=True)],
+                       [dict(Type='tmpfs',Destination='/foreign',RW=True)],
+                       [dict(Type='tmpfs',Destination='/data',RW=False)],
+                       [dict(Type='tmpfs',Destination='/data',RW=True)]*2):
+            with self.subTest(mounts=mounts),self.assertRaises(ValueError):
+                ci.isolated(dict(row(),mounts=mounts),CID,IMAGE,TOKEN)
+
     def test_only_matching_owned_container_can_be_stopped(self):
         for cid,image,token in [('e'*64,IMAGE,TOKEN),(CID,'sha256:'+'e'*64,TOKEN),(CID,IMAGE,'e'*32)]:
             with self.assertRaises(ValueError):ci.owned(row(),cid,image,token)
