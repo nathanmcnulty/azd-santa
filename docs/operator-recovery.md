@@ -1,7 +1,7 @@
 # Local operator bootstrap and lost-factor recovery
 
-Candidate qualification tooling, not a live recovery or browser/TLS acceptance
-receipt. The core image builder installs the original Unlicense command and
+Private qualification tooling; actual Django acceptance is recorded below and
+does not prove browser/TLS or customer deployment readiness. The core image builder installs the original Unlicense command and
 locked reset view automatically. No customer SQL, paid SSO, SMTP service, or
 customer-authored script is required.
 
@@ -84,3 +84,51 @@ concurrency acceptance claim.
 Security-cache keys use a unique namespace per harness run and test method while
 retaining the actual shared Redis backend/options. Tests neither flush shared
 caches nor collide with main-application budgets when test user IDs reset.
+
+## Actual private acceptance, 2026-11-06
+
+The combined core image
+`sha256:44c06dadff5bc3a3182eec49b4c87ed8ee256a93c6a6da62622da1ce5a088921`
+passed all **11 actual Django/PostgreSQL recovery cases**, with zero failures,
+errors or skipped tests. The accepted recovery module SHA-256 is
+`9fdddd7d3da5a629f18ecb731bd2f1f2d63849a87240036962ddbfc0282136b5`;
+harness SHA-256 is
+`d7d5db80284a6a725b5da33b3500662fc4c1cc89576fb0095d4f6ea90f53b28c`;
+Compose SHA-256 is
+`8280c8b972d698a0ce8b7d64ed7580988e894a8b8a732352b192216117125a8d`.
+The private receipt is
+`runtime-fixed/backend-hardening-recovery-current-user/receipt.json` under the
+qualification root.
+
+The cases exercised first-admin setup through password, TOTP and normal MFA;
+existing-human/bootstrap conflicts; exact target/type checks; preserved roles
+and other accounts; removed human factors/tokens/issuers; old session, challenge,
+seed and reset-link invalidation; expired and reused links; simultaneous reset
+and bootstrap requests; output collisions; and truthful post-commit output/audit
+failure handling. The counterless security-key race used genuine ES256/COSE
+verification in both recovery/login orders. PostgreSQL's `pg_blocking_pids`
+confirmed the follower actually waited for the leader before release. Verification
+now locks the user before its factor, matching recovery/factor-management order.
+
+The same image passed all fourteen operator-MFA request cases, all 89 bounded
+request HTTP checks, and the retained two-device full HTTP sync regression.
+A separate event-store query counted exactly ten Santa events for that fixture.
+The full-sync receipt is
+`runtime-fixed/synthetic-fixture-backend-hardening.receipt-fb36ee760e534144b037ef29bab62e4a.json`.
+The 139-test offline suite and hosted checks passed; independent review checked
+the source transforms and recovery/security boundaries.
+
+Earlier failed evidence remains private. The first recovery harness collided
+with Django's reserved `client` attribute. After renaming the helper, two
+assertions were corrected to accept a safe local login `next` query and one
+baseline reset link was regenerated from current `last_login` state. These were
+test fixes; the installed recovery module was unchanged. Subtest failure receipts
+now export validated parent method names without private parameter values.
+The failed process output in `runtime-fixed/backend-hardening-recovery-blocked/`
+and failed receipt in `runtime-fixed/backend-hardening-recovery-clients-fixed/`
+remain retained; the accepted run used a new namespace and evidence directory.
+
+Audit delivery remains unproven because this suite deliberately mocks event
+posting in its disposable database. The `azd` setup-link transport, fresh
+Santa-only app profile, durable replay state/restore, real browser/TLS and native
+Mac validation remain separate gates; #51/#53 are not closed by this result.

@@ -55,3 +55,35 @@ global admission limits; credentials must be HMAC-digested before keying. Keep
 this as a separate [ingress/admission change (#58)](https://github.com/nathanmcnulty/azd-santa/issues/58)
 with actual overload/Redis-failure tests. Certificates, operator recovery, durable replay state, reboot readiness
 and the native Mac gate remain separate work.
+
+## Actual private HTTP acceptance, 2026-11-06
+
+The combined image
+`sha256:44c06dadff5bc3a3182eec49b4c87ed8ee256a93c6a6da62622da1ce5a088921`
+passed **89 real loopback HTTP checks**: 21 hostile cases against each of four
+sync stages plus five valid empty-upload encodings. Actual helper/view hashes
+were checked before sending requests; the selected database projection remained
+unchanged. Helper SHA-256:
+`5abded58bc8a31864bfe5c116dd086fbef3f7f2738d1f87cf2d7ffab918bca1e`;
+patched view SHA-256:
+`205315d6cf592fe53efaebb58fb6843c4f17f842d85b7c74816964385df1ec6a`;
+harness SHA-256:
+`58c4a4229753540be0e15321ec22fd9184177c614cc42619854b3423fa9b11cd`;
+Compose SHA-256:
+`8280c8b972d698a0ce8b7d64ed7580988e894a8b8a732352b192216117125a8d`.
+The private receipt is
+`runtime-fixed/synthetic-fixture-backend-hardening.request-limits-9724b18a1b7d4a87a767acbf2ac2e8e3.json`.
+
+The same image separately passed normal two-device Monitor HTTP sync, exact rule
+pagination, positive event upload and committed postflight. Elasticsearch then
+contained exactly ten Santa events for the retained fixture. Operator MFA and
+recovery were qualified separately; see their request-suite receipts.
+
+Earlier cold-start attempts remain retained. The first index query failed before
+image transition; later diagnostics found a healthy retained index with eight
+events. A later immediate HTTP gate also failed before its successful warm-runtime
+run. Their generic errors do not establish an exact startup failure cause.
+They do establish that the developer resume/upgrade path lacks sufficient
+readiness evidence; #53 must gate event-store and listener readiness before
+product admission. These successful warm-runtime checks do not prove cold-start,
+load/rate, public TLS, native Mac or automatic recovery readiness.
