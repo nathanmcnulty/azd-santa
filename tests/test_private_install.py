@@ -169,7 +169,7 @@ class Relay(unittest.TestCase):
 
 
 class Installer(unittest.TestCase):
-    def test_override_canary_rejected_before_bootstrap_or_plugin_metadata_execution(self):
+    def plugin_canary(self, allowed):
         import io
         from unittest.mock import MagicMock
         with tempfile.TemporaryDirectory() as folder:
@@ -186,11 +186,27 @@ class Installer(unittest.TestCase):
             with patch.object(installer.os, 'geteuid', return_value=0, create=True), patch.object(installer.os, 'umask'), \
                  patch.object(installer.platform, 'machine', return_value='x86_64'), patch.object(installer, 'ROOT', root), \
                  patch.object(installer, 'verified', return_value=(dict(target=target), root)), \
-                 patch.object(installer, 'OVERRIDING_PLUGINS', (str(canary),)), \
+                 patch.object(installer, 'OVERRIDING_PLUGINS', () if allowed else (str(canary),)), \
+                 patch.object(installer, 'COMPOSE_PLUGIN', canary if allowed else root / 'absent-compose'), \
                  patch.object(installer.urllib.request, 'build_opener', return_value=opener), \
                  patch.object(installer.subprocess, 'run') as external, patch.object(installer, 'write'):
                 with self.assertRaises(ValueError): installer.install('/synthetic/context', 'a' * 64)
                 external.assert_not_called()
+
+    def test_override_canary_rejected_before_bootstrap_or_plugin_metadata_execution(self):
+        self.plugin_canary(False)
+
+    def test_mismatched_allowed_plugin_rejected_before_bootstrap_or_execution(self):
+        self.plugin_canary(True)
+
+    def test_absent_allowed_plugin_preserves_fresh_path_and_exact_existing_bytes_pass(self):
+        with tempfile.TemporaryDirectory() as folder:
+            plugin = (Path(folder) / 'compose').resolve()
+            with patch.object(installer, 'COMPOSE_PLUGIN', plugin), patch.object(installer, 'OVERRIDING_PLUGINS', ()):
+                installer.reject_plugin_overrides()
+                plugin.write_bytes(b'qualified synthetic bytes')
+                with patch.object(installer, 'COMPOSE_SHA', hashlib.sha256(plugin.read_bytes()).hexdigest()):
+                    installer.reject_plugin_overrides()
 
     def test_wrong_immutable_vm_fails_before_package_or_data_operations(self):
         import io

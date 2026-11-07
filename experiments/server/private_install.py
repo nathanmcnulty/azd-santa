@@ -21,6 +21,7 @@ ROOT = Path('/var/lib/azd-santa-qualification')
 COMPOSE_VERSION = '2.40.3+ds1-0ubuntu1~24.04.1'
 DOCKER_VERSION = '29.1.3-0ubuntu3~24.04.2'
 COMPOSE_SHA = 'd87a11e944c990dc9f2186115b1136c1cbffffc870845caff0cbdcce0780f41d'
+COMPOSE_PLUGIN = Path('/usr/libexec/docker/cli-plugins/docker-compose')
 OVERRIDING_PLUGINS = ('/usr/local/lib/docker/cli-plugins/docker-compose',
     '/usr/local/libexec/docker/cli-plugins/docker-compose', '/usr/lib/docker/cli-plugins/docker-compose',
     '/root/.docker/cli-plugins/docker-compose')
@@ -78,6 +79,9 @@ def reject_plugin_overrides():
     for value in OVERRIDING_PLUGINS:
         path = Path(value)
         require(not path.exists() and not path.is_symlink())
+    if COMPOSE_PLUGIN.exists() or COMPOSE_PLUGIN.is_symlink():
+        require(COMPOSE_PLUGIN == COMPOSE_PLUGIN.resolve(strict=True) and COMPOSE_PLUGIN.is_file()
+                and hashlib.sha256(COMPOSE_PLUGIN.read_bytes()).hexdigest() == COMPOSE_SHA)
 
 
 def install(context_path, digest):
@@ -114,7 +118,7 @@ def install(context_path, digest):
     try:
         reject_plugin_overrides()
         run('docker-prerequisites', ['/bin/bash', str(bundle / 'bootstrap-host.sh')], 1000)
-        plugin = Path('/usr/libexec/docker/cli-plugins/docker-compose')
+        plugin = COMPOSE_PLUGIN
         require(hashlib.sha256(plugin.read_bytes()).hexdigest() == COMPOSE_SHA)
         # Local/root plugins override the distro binary: reject hidden suppliers.
         reject_plugin_overrides()
