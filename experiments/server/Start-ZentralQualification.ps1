@@ -24,6 +24,7 @@ $mfaEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSSc
 $policyEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'operator_mfa.py')))
 $recoveryEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'prepare_operator_recovery.py')))
 $recoveryPolicyEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'operator_recovery.py')))
+$sealedSetupEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'sealed_setup.py')))
 $limitsBuildEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'prepare_request_limits.py')))
 $limitsEncoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'santa_request_limits.py')))
 $script = @"
@@ -51,6 +52,8 @@ with path.with_name('prepare_operator_recovery.py').open('xb') as output:
     output.write(base64.b64decode('$recoveryEncoded'))
 with path.with_name('operator_recovery.py').open('xb') as output:
     output.write(base64.b64decode('$recoveryPolicyEncoded'))
+with path.with_name('sealed_setup.py').open('xb') as output:
+    output.write(base64.b64decode('$sealedSetupEncoded'))
 with path.with_name('prepare_request_limits.py').open('xb') as output:
     output.write(base64.b64decode('$limitsBuildEncoded'))
 with path.with_name('santa_request_limits.py').open('xb') as output:
