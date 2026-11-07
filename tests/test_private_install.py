@@ -169,6 +169,44 @@ class Relay(unittest.TestCase):
 
 
 class Installer(unittest.TestCase):
+    def verification_bundle(self, root, entries):
+        raw = json.dumps(dict(scope='private-azd-source-v1', files=entries), sort_keys=True).encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        folder = root / digest; folder.mkdir()
+        (folder / 'bundle.json').write_bytes(raw)
+        context = dict(scope='private-azd-install-v1', bundle_sha256=digest)
+        context_raw = json.dumps(context).encode()
+        path = folder / 'context.json'; path.write_bytes(context_raw)
+        return folder, path, hashlib.sha256(context_raw).hexdigest()
+
+    def test_worker_verifies_all_real_bundle_files_and_rejects_changed_bytes(self):
+        from types import SimpleNamespace
+        entries = {}
+        for name in relay.FILES:
+            body = (ROOT / 'experiments/server' / name).read_bytes()
+            entries[name] = dict(sha256=hashlib.sha256(body).hexdigest(), base64=base64.b64encode(body).decode())
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            folder, path, digest = self.verification_bundle(root, entries)
+            for name, metadata in entries.items():
+                (folder / name).write_bytes(base64.b64decode(metadata['base64']))
+            # Host ownership/mode are Linux-only; all names, paths and bytes are real.
+            with patch.object(installer, 'ROOT', root), patch.object(Path, 'lstat', return_value=SimpleNamespace(st_uid=0, st_mode=0o100600)):
+                context, actual = installer.verified(path, digest)
+                self.assertEqual(actual, folder)
+                self.assertEqual(context['bundle_sha256'], folder.name)
+                (folder / 'zentral-source.lock.json').write_bytes(b'changed')
+                with self.assertRaises(ValueError): installer.verified(path, digest)
+
+    def test_worker_rejects_paths_and_unrecognized_lock_names_before_reading_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            with patch.object(installer, 'ROOT', root):
+                for name in ('../outside.py', 'nested/file.py', 'source.lock.py', 'zentral-source.lock.json.py'):
+                    with self.subTest(name=name):
+                        _, path, digest = self.verification_bundle(root, {name: dict(sha256='a' * 64)})
+                        with self.assertRaises(ValueError): installer.verified(path, digest)
+
     def plugin_canary(self, allowed):
         import io
         from unittest.mock import MagicMock

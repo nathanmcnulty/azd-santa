@@ -60,7 +60,8 @@ def verified(context_path, digest):
     require(hashlib.sha256(manifest).hexdigest() == context['bundle_sha256'])
     files = json.loads(manifest)['files']
     for name, metadata in files.items():
-        require(re.fullmatch(r'[a-zA-Z0-9_-]+\.(?:py|sh|json)', name))
+        require(name in {'zentral-source.lock.json', 'dependency-images.lock.json'}
+                or re.fullmatch(r'[a-zA-Z0-9_-]+\.(?:py|sh|json)', name))
         selected = bundle / name; info = selected.lstat()
         require(selected == selected.resolve(strict=True) and info.st_uid == 0 and not info.st_mode & 0o022)
         require(hashlib.sha256(selected.read_bytes()).hexdigest() == metadata['sha256'])

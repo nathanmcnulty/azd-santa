@@ -19,7 +19,7 @@
       "evidence": [
         { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "0b17692e4fb37c2e23347e4045c83a23478c3c5aac1df881964deb99ac865c8d" },
         { "path": "experiments/vm/Install-PrivateBackend.ps1", "sha256": "33c620439f5abadef688f4a6f0477e80e4676986beac0cb6d43b975c092320d5" },
-        { "path": "experiments/server/private_install.py", "sha256": "596f3c368de68cd45c446f3716e942c54fd45a43d7675fb3a082b81071dc3cc8" },
+        { "path": "experiments/server/private_install.py", "sha256": "91f773bc65f978f83239a523a49c9d3c9dec87be0622c5e815a9b3a0a25a06e6" },
         { "path": "experiments/server/private_install_transport.py", "sha256": "1b4d6ae32a2a79013c471548a2e21df555aac9094228495a1a0e802eb7a88064" }
       ]
     },
