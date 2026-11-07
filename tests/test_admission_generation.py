@@ -20,6 +20,7 @@ class Generation(unittest.TestCase):
         self.runtime,self.rows=self.fixture.inspection_fixture()
         self.runtime.manifest_path=self.root/'manifest.json';self.runtime.digest='a'*64
         self.runtime.evidence=self.root;self.runtime.python=Mock()
+        self.runtime.helpers=set();self.runtime.phase='prepared'
         self.fcntl=ModuleType('fcntl');self.fcntl.LOCK_EX=1;self.fcntl.LOCK_NB=2;self.fcntl.flock=Mock()
 
     def anchor(self,selected):
@@ -27,6 +28,70 @@ class Generation(unittest.TestCase):
             project=self.runtime.project,image_id=self.runtime.data['services']['web']['image'],generation='b'*32,container_ids=selected)
         (self.root/'container-generation.json').write_text(json.dumps(value))
         return value
+
+    def supervise_case(self, case):
+        original=self.runtime.inspect(running=False)
+        if case != 'missing':
+            value=self.anchor(original)
+            if case=='mismatched':
+                value['manifest_sha256']='f'*64
+                (self.root/'container-generation.json').write_text(json.dumps(value))
+            elif case=='replacement':self.rows[-1]['Id']='f'*64
+        self.runtime.ids=[]
+        original_call=self.runtime.call.side_effect
+        labels=[]
+        def call(label,args,**kwargs):
+            labels.append((label,args))
+            if label=='cleanup-selection':return SimpleNamespace(stdout='\n'.join(r['Id'] for r in self.rows))
+            if label=='stop':return SimpleNamespace(stdout='')
+            return original_call(label,args,**kwargs)
+        self.runtime.call=Mock(side_effect=call)
+        with patch.dict(sys.modules,{'fcntl':self.fcntl}),patch.object(service.signal,'signal'), \
+             patch.object(service,'checked_path',side_effect=lambda p,**kw:Path(p)):
+            with self.assertRaises((ValueError,FileNotFoundError)):self.runtime.supervise()
+        self.assertNotIn('stop',[label for label,_ in labels])
+        self.assertNotIn('cleanup-selection',[label for label,_ in labels])
+
+    def test_supervise_missing_anchor_never_stops_unbound_inspected_ids(self):self.supervise_case('missing')
+    def test_supervise_mismatched_anchor_never_stops_unbound_inspected_ids(self):self.supervise_case('mismatched')
+    def test_supervise_consistent_replacement_never_stops_new_selected_ids(self):self.supervise_case('replacement')
+
+    def authorized_supervise_failure(self, cancelled):
+        original=self.runtime.inspect(running=False);self.anchor(original);self.runtime.ids=[]
+        original_call=self.runtime.call.side_effect;calls=[]
+        self.runtime.backing_data=Mock()
+        def call(label,args,**kwargs):
+            calls.append((label,args))
+            if label=='close-admission':
+                if cancelled:raise service.Cancelled('cancelled after authorization')
+                return SimpleNamespace(stdout='')
+            if label=='compose-config':return SimpleNamespace(stdout='')
+            if label=='dependencies':raise RuntimeError('partial authorized start failed')
+            if label=='cleanup-selection':return SimpleNamespace(stdout='\n'.join([*original.values(),'f'*64]))
+            if label=='stop':return SimpleNamespace(stdout='')
+            return original_call(label,args,**kwargs)
+        self.runtime.call=Mock(side_effect=call)
+        with patch.dict(sys.modules,{'fcntl':self.fcntl}),patch.object(service.signal,'signal'), \
+             patch.object(service,'checked_path',side_effect=lambda p,**kw:Path(p)), \
+             patch.object(service.Path,'read_text',return_value='1048576'),patch.object(service,'load_manifest'):
+            if cancelled:self.runtime.supervise()
+            else:
+                with self.assertRaisesRegex(RuntimeError,'partial authorized'):self.runtime.supervise()
+        stopped=[args for label,args in calls if label=='stop']
+        self.assertEqual(len(stopped),1)
+        self.assertEqual(set(stopped[0][6:]),set(original.values()))
+        self.assertNotIn('f'*64,stopped[0])
+        if cancelled:self.assertTrue((self.root/'cancelled.json').exists())
+        else:self.assertIn('dependencies',[label for label,_ in calls])
+
+    def test_full_supervise_cancellation_retains_authorized_generation_cleanup(self):self.authorized_supervise_failure(True)
+    def test_full_supervise_partial_start_retains_authorized_generation_cleanup(self):self.authorized_supervise_failure(False)
+
+    def test_independent_helper_cleanup_runs_when_container_cleanup_is_unarmed(self):
+        self.runtime.ids=['f'*64]
+        self.runtime.stop_helpers=Mock();self.runtime.call=Mock(side_effect=AssertionError('Unbound stop'))
+        self.runtime.stop()
+        self.runtime.stop_helpers.assert_called_once();self.runtime.call.assert_not_called()
 
     def test_consistent_replacement_passes_live_inspection_but_cannot_reconcile_anchor(self):
         original=self.runtime.inspect(running=False)
