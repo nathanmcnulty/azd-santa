@@ -1,5 +1,6 @@
 """Offline crypto/filesystem/cold-state guards; no guest or container actions."""
 import copy
+from contextlib import contextmanager
 import importlib.util
 import io
 import json
@@ -58,7 +59,17 @@ class ColdBackup(unittest.TestCase):
             def portable_signature(value):
                 data = signature(value)
                 return data[:7] + data[8:] if os.name == 'nt' else data
-            with patch.object(backup.os, 'O_NOFOLLOW', getattr(os, 'O_NOFOLLOW', 0), create=True), patch.object(backup, 'signature', side_effect=portable_signature):
+            directory_entries = backup.directory_entries
+            @contextmanager
+            def portable_entries(path, before, expected):
+                # Windows has no fd-based scandir; this test proves crypto and
+                # real file bytes, not Linux mount identity. Pure metadata
+                # adversarial cases below cover mount policy separately.
+                if os.name == 'nt':
+                    with os.scandir(path) as entries: yield entries
+                else:
+                    with directory_entries(path, before, expected) as entries: yield entries
+            with patch.object(backup.os, 'O_NOFOLLOW', getattr(os, 'O_NOFOLLOW', 0), create=True), patch.object(backup, 'signature', side_effect=portable_signature), patch.object(backup, 'directory_entries', side_effect=portable_entries):
                 count = backup.archive(sink, roots, {'scope': 'offline-roundtrip', 'current_authority': 'not_established'}, 100)
             sink.finish(); ciphertext = output.getvalue()
             self.assertNotIn(secret, ciphertext)
@@ -187,9 +198,55 @@ class ColdBackup(unittest.TestCase):
             responses['unit-cold']=responses['unit-cold'].replace(replacement.split('=')[0]+'='+('inactive' if replacement.startswith('Active') else ''),replacement)
             with self.assertRaises(ValueError): backup.cold_state(runtime,selected,{})
         runtime,selected,rows,responses=self.runtime()
-        rows.append(dict(Id='f'*64,Mounts=[{'Source':'/docker/selected/_data'}]))
+        rows.append(dict(Id='f'*64,State=dict(Running=False,Paused=False,Restarting=False,Pid=0),Mounts=[{'Source':'/docker/selected/_data'}]))
         responses['all-containers']+='\n'+'f'*64; responses['all-mounts']=json.dumps(rows)
         with self.assertRaises(ValueError): backup.cold_state(runtime,selected,{'media_data':Path('/docker/selected/_data')})
+
+    def test_foreign_running_container_rejected_even_with_disjoint_or_aliased_mount_names(self):
+        for source in ('/unrelated/data', '/symlink-alias', '/bind-alias'):
+            runtime,selected,rows,responses=self.runtime()
+            rows.append(dict(Id='f'*64,State=dict(Running=True,Paused=False,Restarting=False,Pid=4321),Mounts=[{'Source':source}]))
+            responses['all-containers']+='\n'+'f'*64; responses['all-mounts']=json.dumps(rows)
+            with self.assertRaises(ValueError): backup.cold_state(runtime,selected,{'media_data':Path('/docker/selected/_data')})
+
+    def test_mountinfo_rejects_nested_mounts_bind_roots_foreign_filesystems_and_stacked_roots(self):
+        path='/var/lib/docker/volumes/selected/_data'
+        root=b'1 0 8:1 / / rw shared:1 - ext4 /dev/root rw\n'
+        valid=backup.mount_bindings({'data':path},backup.parse_mountinfo(root))
+        self.assertEqual(valid['data']['id'],1)
+        cases=(
+            root+b'2 1 8:1 /foreign '+path.encode()+b'/hidden rw - ext4 /dev/root rw\n',
+            root+b'2 1 8:1 / '+path.encode()+b' rw - ext4 /dev/root rw\n',
+            root+b'2 1 8:1 /foreign /var/lib/docker rw - ext4 /dev/root rw\n',
+            root.replace(b'ext4',b'overlay'),
+            root+b'2 1 8:1 / / rw - ext4 /dev/root rw\n',
+        )
+        for raw in cases:
+            with self.subTest(raw=raw),self.assertRaises(ValueError): backup.mount_bindings({'data':path},backup.parse_mountinfo(raw))
+        for raw in (b'bad',root+root,root.replace(b'/ /',b'/ \\077bad'),b'x'*(4*backup.CHUNK+1)):
+            with self.assertRaises(ValueError): backup.parse_mountinfo(raw)
+        escaped=backup.parse_mountinfo(root+b'2 1 8:2 / /space\\040mount rw - xfs /dev/sdb rw\n')
+        self.assertEqual(escaped[-1]['point'],'/space mount')
+
+    def test_descriptor_mount_id_detects_same_device_bind_alias(self):
+        expected=dict(mount={'id':19},device=123)
+        for actual in (19,20):
+            with patch.object(Path,'open',return_value=io.BytesIO(f'mnt_id:\t{actual}\n'.encode())),patch.object(backup.os,'fstat',return_value=SimpleNamespace(st_dev=123)):
+                if actual==19: backup.check_descriptor_mount(7,expected)
+                else:
+                    with self.assertRaises(ValueError): backup.check_descriptor_mount(7,expected)
+
+    def test_final_snapshot_rejects_new_volume_map_or_changed_mount_identity(self):
+        volumes={'data':Path('/docker/original/_data')}
+        mounts={'data':dict(mount={'id':19},device=123,inode=456)}
+        for changed_volumes,changed_mounts in (
+                ({'data':Path('/docker/replaced/_data')},mounts),
+                (volumes,{'data':dict(mount={'id':20},device=123,inode=456)}),
+                (volumes,{'data':dict(mount={'id':19},device=123,inode=457)})):
+            with patch.object(backup,'volume_paths',return_value=changed_volumes),patch.object(backup,'mount_snapshot',return_value=changed_mounts):
+                with self.assertRaises(ValueError): backup.verify_storage_snapshot(object(),volumes,volumes,mounts)
+        with patch.object(backup,'volume_paths',return_value=volumes),patch.object(backup,'mount_snapshot',return_value=mounts):
+            backup.verify_storage_snapshot(object(),volumes,volumes,mounts)
 
     def test_imds_wrong_instance_and_redirect_are_not_admitted(self):
         target=self.selection()['target']

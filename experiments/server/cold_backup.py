@@ -10,11 +10,12 @@ if __name__ == '__main__' and not sys.flags.isolated:
 
 import argparse
 import base64
+from contextlib import contextmanager
 import hashlib
 import io
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import selectors
 import signal
@@ -151,11 +152,76 @@ def cold_state(runtime, selected, volumes):
     protected = [*volumes.values(), Path(runtime.binding['compose']).parent / 'conf']
     for row in all_rows:
         if row['Id'] in selected.values(): continue
+        # Dedicated-host contract: no foreign running/paused/restarting
+        # container, regardless of lexical mount path or bind/symlink aliases.
+        need(row['State'].get('Running') is False and row['State'].get('Paused') is False
+             and row['State'].get('Restarting') is False and row['State'].get('Pid') == 0)
         for mount in row['Mounts']:
             source = Path(mount['Source'])
             need(source.is_absolute())
             need(not any(source == root or source.is_relative_to(root) or root.is_relative_to(source) for root in protected))
     return {row['Id']: row['State'] for row in rows}
+
+
+def parse_mountinfo(raw):
+    need(len(raw) <= 4 * CHUNK)
+    lines = raw.decode('utf-8', errors='strict').splitlines()
+    need(0 < len(lines) <= 10000)
+    result = []
+    def unescape(value):
+        need(not re.search(r'\\(?!040|011|012|134)', value))
+        return re.sub(r'\\(040|011|012|134)', lambda m: chr(int(m[1], 8)), value)
+    for line in lines:
+        fields = line.split(); need(fields.count('-') == 1)
+        separator = fields.index('-')
+        need(separator >= 6 and len(fields) == separator + 4)
+        need(all(re.fullmatch(r'[0-9]+', fields[i]) for i in (0, 1)) and re.fullmatch(r'[0-9]+:[0-9]+', fields[2]))
+        root, point = (unescape(fields[i]) for i in (3, 4))
+        need(all(PurePosixPath(p).is_absolute() and PurePosixPath(p).as_posix() == p and '..' not in PurePosixPath(p).parts for p in (root, point)))
+        result.append(dict(id=int(fields[0]), parent=int(fields[1]), device=fields[2], root=root, point=point,
+            options=fields[5], optional=fields[6:separator], filesystem=fields[separator+1],
+            source=unescape(fields[separator+2]), super_options=fields[separator+3]))
+    need(len({m['id'] for m in result}) == len(result))
+    return result
+
+
+def mount_bindings(paths, mounts):
+    """Pure metadata check: selected trees cannot contain ANY mountpoint."""
+    result = {}
+    for name, value in paths.items():
+        path = PurePosixPath(value)
+        need(path.is_absolute() and '..' not in path.parts)
+        covering = [m for m in mounts if path.is_relative_to(PurePosixPath(m['point']))]
+        need(covering)
+        depth = max(len(PurePosixPath(m['point']).parts) for m in covering)
+        covering = [m for m in covering if len(PurePosixPath(m['point']).parts) == depth]
+        need(len(covering) == 1)
+        mount = covering[0]
+        # A bind of a filesystem subtree has a non-root mountinfo root. No
+        # overlay/network/tmpfs/subvolume or exact/nested selected mount support.
+        need(mount['root'] == '/' and mount['filesystem'] in ('ext4', 'xfs') and mount['source'].startswith('/dev/'))
+        need(not any(PurePosixPath(m['point']).is_relative_to(path) for m in mounts))
+        result[name] = mount
+    return result
+
+
+def mount_snapshot(paths):
+    with Path('/proc/self/mountinfo').open('rb') as stream: raw = stream.read(4 * CHUNK + 1)
+    bindings = mount_bindings(paths, parse_mountinfo(raw))
+    result = {}
+    for name, path in paths.items():
+        info = path.stat(); mount = bindings[name]
+        need(f'{os.major(info.st_dev)}:{os.minor(info.st_dev)}' == mount['device'])
+        result[name] = dict(mount=mount, device=info.st_dev, inode=info.st_ino)
+    return result
+
+
+def check_descriptor_mount(fd, expected):
+    with Path('/proc/self/fdinfo/' + str(fd)).open('rb') as source: raw = source.read(8193)
+    need(len(raw) <= 8192)
+    ids = re.findall(rb'^mnt_id:\s+([0-9]+)$', raw, re.MULTILINE)
+    info = os.fstat(fd)
+    need(len(ids) == 1 and int(ids[0]) == expected['mount']['id'] and info.st_dev == expected['device'])
 
 
 def runtime_module_docker(runtime):
@@ -177,6 +243,13 @@ def volume_paths(runtime):
              and value['Mountpoint'] == str(path) and path == path.resolve(strict=True) and path.is_dir())
         result[name] = path
     return result
+
+
+def verify_storage_snapshot(runtime, roots, volumes, mounts):
+    # These exact initial identities, not a newly accepted volume map, must
+    # survive the entire stream before its authentication tag is committed.
+    need(volume_paths(runtime) == volumes)
+    need(mount_snapshot(roots) == mounts)
 
 
 def recipient_key(public_der):
@@ -228,7 +301,20 @@ def signature(info):
     return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid, info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_nlink)
 
 
-def archive(sink, roots, compatibility, maximum_files):
+@contextmanager
+def directory_entries(path, before, expected):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        need(signature(os.fstat(fd)) == signature(before))
+        if expected is not None: check_descriptor_mount(fd, expected)
+        # Descriptor-relative traversal cannot switch into a newly overmounted
+        # pathname between open and scandir.
+        with os.scandir(fd) as entries: yield entries
+        need(signature(os.fstat(fd)) == signature(before))
+    finally: os.close(fd)
+
+
+def archive(sink, roots, compatibility, maximum_files, mounts=None):
     """Stream ordinary files only; reject links/devices and concurrent changes."""
     count = 0
     def add_json(output, name, value):
@@ -237,7 +323,7 @@ def archive(sink, roots, compatibility, maximum_files):
         output.addfile(info, io.BytesIO(raw))
     with tarfile.open(fileobj=sink, mode='w|', format=tarfile.PAX_FORMAT) as output:
         add_json(output, 'backup/compatibility.json', compatibility)
-        def add(path, name):
+        def add(path, name, expected):
             nonlocal count
             count += 1; need(count <= maximum_files and len(name.encode()) <= 1024)
             before = path.lstat()
@@ -246,28 +332,29 @@ def archive(sink, roots, compatibility, maximum_files):
             info = tarfile.TarInfo(name); info.mode = stat.S_IMODE(before.st_mode)
             info.uid, info.gid, info.mtime = before.st_uid, before.st_gid, before.st_mtime
             if stat.S_ISDIR(before.st_mode):
-                info.type = tarfile.DIRTYPE; output.addfile(info)
-                with os.scandir(path) as entries:
-                    for entry in entries: add(Path(entry.path), name + '/' + entry.name)
+                with directory_entries(path, before, expected) as entries:
+                    info.type = tarfile.DIRTYPE; output.addfile(info)
+                    for entry in entries: add(path / entry.name, name + '/' + entry.name, expected)
             else:
                 fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
                 with os.fdopen(fd, 'rb') as source:
                     need(signature(os.fstat(source.fileno())) == signature(before))
+                    if expected is not None: check_descriptor_mount(source.fileno(), expected)
                     info.size = before.st_size; output.addfile(info, source)
                     need(signature(os.fstat(source.fileno())) == signature(before))
             need(signature(path.lstat()) == signature(before))
-        for name, path in roots.items(): add(path, name)
+        for name, path in roots.items(): add(path, name, mounts[name] if mounts is not None else None)
         add_json(output, 'backup/capture.json', dict(entries=count,
             restore_admission='not_implemented', current_authority='not_established'))
     return count
 
 
-def write_capture(destination, public_der, roots, compatibility, maximum, maximum_files, deadline, final_check):
+def write_capture(destination, public_der, roots, compatibility, maximum, maximum_files, deadline, final_check, mounts=None):
     """Completion is exclusive and follows cold readback and GCM finalization."""
     output = destination / 'backup.sealed'
     with os.fdopen(os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'wb') as stream:
         sink = EncryptedSink(stream, public_der, maximum, deadline)
-        entries = archive(sink, roots, compatibility, maximum_files)
+        entries = archive(sink, roots, compatibility, maximum_files, mounts)
         final_check()
         sink.finish(); stream.flush(); os.fsync(stream.fileno())
     fd = os.open(destination / 'complete.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -328,6 +415,7 @@ def capture(selection_path, expected, public_der, destination, *, maximum=8 * 10
             for index, file in enumerate(sorted(files)):
                 checked_file(file, private=file.suffix == '.env' or file == Path(selection_path), within_root=file != unit)
                 roots['control/' + str(index) + '/' + file.name] = file
+            mounts = mount_snapshot(roots)
             control_hashes = {name: digest(file.read_bytes()) for name, file in roots.items() if name.startswith('control/')}
             destination = Path(destination)
             need(destination.is_absolute() and not destination.exists() and not destination.is_symlink()
@@ -342,15 +430,17 @@ def capture(selection_path, expected, public_der, destination, *, maximum=8 * 10
                 postgres_major=db_env['PG_MAJOR'], rabbit_node='rabbit@rabbitmq', volumes={k:str(v) for k,v in volumes.items()},
                 control_files={name:str(file) for name,file in roots.items() if name.startswith('control/')},
                 control_files_sha256=control_hashes,
+                mounts=mounts,
                 selected_files_sha256=runtime.binding['files'], source_commit=service.COMMIT,
                 crypto_version=__import__('cryptography').__version__,
                 restore_admission='not_implemented', current_authority='not_established')
             def final_check():
-                need(cold_state(runtime, selection['containers'], volume_paths(runtime)) == before)
+                verify_storage_snapshot(runtime, roots, volumes, mounts)
+                need(cold_state(runtime, selection['containers'], volumes) == before)
                 need(host_identity(selection['target']) == identity)
                 service.load_manifest(path, manifest['sha256'])
                 need(control_hashes == {name: digest(file.read_bytes()) for name, file in roots.items() if name.startswith('control/')})
-            return write_capture(destination, public_der, roots, compatibility, maximum, maximum_files, deadline, final_check)
+            return write_capture(destination, public_der, roots, compatibility, maximum, maximum_files, deadline, final_check, mounts)
         finally:
             signal.alarm(0); signal.signal(signal.SIGALRM, prior)
 

@@ -46,12 +46,27 @@ unit must be loaded, inactive/dead with no pending job. All seven selected
 containers must have previously started and exited with status zero, no OOM,
 error, pause or restart. The tool never stops or starts them. Each local Docker
 volume's name/project/driver/path is checked, initialized store sentinels are
-required, and PostgreSQL must have no remaining `postmaster.pid`. Any other
-container mounting the selected data or configuration, even if stopped or
-read-only, is rejected. This is deliberately conservative.
+required, and PostgreSQL must have no remaining `postmaster.pid`. This is a
+dedicated-host contract: every foreign running, paused or restarting container
+is rejected regardless of its mount paths, so symlink/bind aliases cannot hide
+a concurrent container writer. Stopped foreign containers with known lexical
+mount overlap are also rejected; this is not a general alias graph or permission
+to start other containers during maintenance.
 Actual clean-stop exit codes for the exact dependency images remain a live
 compatibility gate; a nonzero code must not be relabeled clean without a
 separately reviewed engine-specific proof.
+
+Bounded `/proc/self/mountinfo` readback binds each selected source tree/file to
+its actual covering mount ID, device, filesystem root/source/options and source
+inode. Only whole local ext4/XFS filesystems with a `/dev/` source and mountinfo
+root `/` are supported. Mountpoints at or below any selected capture root are
+rejected, including same-filesystem bind mounts. Overlay/network/tmpfs/subvolume
+layouts and bind-mounted filesystem subtrees are unsupported and fail closed.
+Directory traversal uses opened directory descriptors. Each opened directory
+and regular file must retain the selected device and `/proc/self/fdinfo` mount
+ID, preventing a nested mount from being followed silently. The complete original
+volume path map and selected mount/inode identities are rechecked before writing
+the GCM tag. These are actual-host qualification gates, not mocked mount proof.
 
 The maintenance window must exclude concurrent privileged host/Docker writers.
 The lock fences the existing cooperating supervisor; it cannot prevent a root
@@ -122,6 +137,8 @@ integrating it. No mandatory extra venv or wheel-management path is introduced.
 Offline tests cover real encryption/decryption of all five synthetic store
 trees and secret files, authenticated tamper/truncation rejection, wrong keys,
 limits, unsupported files, selection drift, mocked IMDS/cold-state boundaries,
+foreign-running-container aliases, synthetic authoritative mount-table cases,
+same-device descriptor mount-ID changes and final volume/mount/inode changes,
 and retained incomplete output after failed final readback. They do not prove
 actual database consistency, crash durability, Docker/systemd/IMDS ownership,
 live backup, host resource consumption or restore.
