@@ -399,6 +399,9 @@ class OperatorRequests(TransactionTestCase):
 
 def recovery_url(user):
     from accounts.password_reset import handler
+    # Successful login updates last_login through a freshly loaded user. Reset
+    # tokens bind that value; create the baseline link from current DB state.
+    user.refresh_from_db()
     return handler.generate_password_reset_url(user)
 
 
