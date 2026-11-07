@@ -35,6 +35,27 @@ Describe 'Private setup transport local crypto boundaries' {
         }
         { & $module { Assert-SantaPrivatePathSyntax 'C:\private\setup.json' $true } } | Should -Not -Throw
     }
+    It 'rejects unsupported filesystems and unsafe handle metadata without writing any file' {
+        $module = Get-Module SealedSetup
+        & $module {
+            foreach ($format in @('FAT', 'FAT32', 'exFAT', 'CDFS', '')) {
+                { Assert-SantaWindowsPrivateVolume ([IO.DriveType]::Fixed) $format } | Should -Throw
+            }
+            { Assert-SantaWindowsPrivateVolume ([IO.DriveType]::Network) 'NTFS' } | Should -Throw
+            { Assert-SantaWindowsPrivateVolume ([IO.DriveType]::Fixed) 'NTFS' } | Should -Not -Throw
+            $rule = [pscustomobject]@{ IdentityReference = @{ Value = 'owner' }; IsInherited = $false
+                AccessControlType = [Security.AccessControl.AccessControlType]::Allow
+                FileSystemRights = [Security.AccessControl.FileSystemRights]::FullControl }
+            { Assert-SantaWindowsPrivateSecurity owner owner $true @($rule) } | Should -Not -Throw
+            { Assert-SantaWindowsPrivateSecurity other owner $true @($rule) } | Should -Throw
+            { Assert-SantaWindowsPrivateSecurity owner owner $false @($rule) } | Should -Throw
+            { Assert-SantaWindowsPrivateSecurity owner owner $true @($rule, $rule) } | Should -Throw
+            $rule.IsInherited = $true
+            { Assert-SantaWindowsPrivateSecurity owner owner $true @($rule) } | Should -Throw
+            { Assert-SantaUnixPrivateMode ([IO.UnixFileMode]384) } | Should -Not -Throw
+            { Assert-SantaUnixPrivateMode ([IO.UnixFileMode]420) } | Should -Throw
+        }
+    }
     It 'decrypts real Python crypto in .NET and writes an exclusive owner-private artifact' {
         $recipient = New-SantaSetupRecipient
         $envelope = New-TestEnvelope $recipient

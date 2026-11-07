@@ -39,6 +39,10 @@ browser navigation with explicit `-OpenBrowser`, or writes an explicitly selecte
 absent local artifact with owner-only Windows ACL / Unix 0600 permissions. It
 rejects Windows streams, UNC/device namespaces and nonlocal drive types before
 creation, and requires existing non-link parent directories. The selected local
+Windows filesystem must be NTFS or ReFS. Before writing plaintext, the newly
+created handle must report the expected owner and a protected owner-only full
+control DACL; Unix handles must report exactly 0600. A failed check retains an
+empty artifact and returns failure, never plaintext fallback. The selected local
 directory must be trusted against concurrent replacement; this is not a filesystem
 sandbox or protection from a malicious administrator. It returns only a nonsecret
 delivery receipt. A browser-open request is not proof

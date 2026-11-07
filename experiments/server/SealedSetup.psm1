@@ -64,11 +64,33 @@ function Assert-SantaPrivatePathSyntax {
     }
 }
 
+function Assert-SantaWindowsPrivateVolume {
+    param([IO.DriveType]$DriveType, [string]$FileSystem)
+    if ($DriveType -notin @([IO.DriveType]::Fixed, [IO.DriveType]::Removable, [IO.DriveType]::Ram) -or
+        $FileSystem -notin @('NTFS', 'ReFS')) { throw 'A local NTFS or ReFS filesystem is required for owner-private output.' }
+}
+
+function Assert-SantaWindowsPrivateSecurity {
+    param([string]$Owner, [string]$ExpectedOwner, [bool]$Protected, [object[]]$Rules)
+    if ($Owner -cne $ExpectedOwner -or -not $Protected -or $Rules.Count -ne 1) { throw 'Private output owner or DACL verification failed.' }
+    $rule = $Rules[0]
+    if ($rule.IdentityReference.Value -cne $ExpectedOwner -or $rule.IsInherited -or
+        $rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or
+        $rule.FileSystemRights -ne [Security.AccessControl.FileSystemRights]::FullControl) { throw 'Private output access verification failed.' }
+}
+
+function Assert-SantaUnixPrivateMode {
+    param([IO.UnixFileMode]$Mode)
+    if ([int]$Mode -ne 384) { throw 'Private output mode verification failed.' }
+}
+
 function Write-SantaPrivateBytes {
     param([string]$Path, [byte[]]$Bytes)
     Assert-SantaPrivatePathSyntax $Path
-    if ($IsWindows -and [IO.DriveInfo]::new([IO.Path]::GetPathRoot($Path)).DriveType -notin @(
-        [IO.DriveType]::Fixed, [IO.DriveType]::Removable, [IO.DriveType]::Ram)) { throw 'A local filesystem drive is required.' }
+    if ($IsWindows) {
+        $drive = [IO.DriveInfo]::new([IO.Path]::GetPathRoot($Path))
+        Assert-SantaWindowsPrivateVolume $drive.DriveType $drive.DriveFormat
+    }
     $parent = [IO.DirectoryInfo]::new([IO.Path]::GetDirectoryName($Path))
     while ($parent) {
         if (-not $parent.Exists -or ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Existing non-link parent directories are required.' }
@@ -83,7 +105,13 @@ function Write-SantaPrivateBytes {
             $acl.SetAccessRuleProtection($true, $false)
             $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid, [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.AccessControlType]::Allow))
             $stream = [IO.FileSystemAclExtensions]::Create([IO.FileInfo]::new($Path), [IO.FileMode]::CreateNew,
-                [Security.AccessControl.FileSystemRights]::Write, [IO.FileShare]::None, 4096, [IO.FileOptions]::None, $acl)
+                ([Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::ReadPermissions),
+                [IO.FileShare]::None, 4096, [IO.FileOptions]::None, $acl)
+            # Inspect the same newly created handle before any plaintext bytes.
+            $actual = [IO.FileSystemAclExtensions]::GetAccessControl($stream)
+            Assert-SantaWindowsPrivateSecurity -Owner $actual.GetOwner([Security.Principal.SecurityIdentifier]).Value `
+                -ExpectedOwner $sid.Value -Protected $actual.AreAccessRulesProtected `
+                -Rules @($actual.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
         } else {
             $options = [IO.FileStreamOptions]::new()
             $options.Mode = [IO.FileMode]::CreateNew
@@ -91,6 +119,7 @@ function Write-SantaPrivateBytes {
             $options.Share = [IO.FileShare]::None
             $options.UnixCreateMode = [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite
             $stream = [IO.FileStream]::new($Path, $options)
+            Assert-SantaUnixPrivateMode ([IO.File]::GetUnixFileMode($stream.SafeFileHandle))
         }
         $stream.Write($Bytes, 0, $Bytes.Length)
         $stream.Flush($true)
