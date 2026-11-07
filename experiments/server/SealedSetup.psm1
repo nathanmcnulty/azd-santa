@@ -84,8 +84,9 @@ function Assert-SantaUnixPrivateMode {
     if ([int]$Mode -ne 384) { throw 'Private output mode verification failed.' }
 }
 
-function Write-SantaPrivateBytes {
-    param([string]$Path, [byte[]]$Bytes)
+function Assert-SantaPrivateDestination {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
     Assert-SantaPrivatePathSyntax $Path
     if ($IsWindows) {
         $drive = [IO.DriveInfo]::new([IO.Path]::GetPathRoot($Path))
@@ -96,6 +97,12 @@ function Write-SantaPrivateBytes {
         if (-not $parent.Exists -or ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Existing non-link parent directories are required.' }
         $parent = $parent.Parent
     }
+    if ([IO.File]::Exists($Path) -or [IO.Directory]::Exists($Path)) { throw 'An absent private output path is required.' }
+}
+
+function Write-SantaPrivateBytes {
+    param([string]$Path, [byte[]]$Bytes)
+    Assert-SantaPrivateDestination $Path
     $stream = $null
     try {
         if ($IsWindows) {
@@ -207,4 +214,4 @@ function Receive-SantaSetupEnvelope {
     }
 }
 
-Export-ModuleMember -Function New-SantaSetupRecipient, Get-SantaSetupTargetDigest, Receive-SantaSetupEnvelope
+Export-ModuleMember -Function New-SantaSetupRecipient, Get-SantaSetupTargetDigest, Receive-SantaSetupEnvelope, Assert-SantaPrivateDestination
