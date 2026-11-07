@@ -89,6 +89,11 @@ class OperatorRequests(TransactionTestCase):
         return client.post(path, body, secure=True, HTTP_REFERER='https://localhost/',
                            HTTP_X_CSRFTOKEN=client.cookies['csrftoken'].value)
 
+    def assert_login_redirect(self, response):
+        self.assertEqual(response.status_code, 302)
+        location = urlsplit(response['Location'])
+        self.assertEqual((location.scheme, location.netloc, location.path), ('', '', reverse('login')))
+
     def password(self, client, user, password):
         client.get(reverse('login'), secure=True)
         return self.post(client, reverse('login'), dict(username=user.username, password=password))
@@ -200,7 +205,7 @@ class OperatorRequests(TransactionTestCase):
         self.assertFalse(default_token_generator.check_token(user, old_token))
         for client in (seed_client, authenticated, pending):
             response = client.get(reverse('accounts:profile'), secure=True)
-            self.assertEqual(response['Location'], reverse('login'))
+            self.assert_login_redirect(response)
         response = self.post(reset_client, old_reset_path, dict(new_password1='new-password-never-applied', new_password2='new-password-never-applied'))
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.context['validlink'])
@@ -385,7 +390,7 @@ class OperatorRequests(TransactionTestCase):
                 self.assertNotEqual(user.password, previous_hash)
                 self.assertFalse(user.check_password(password))
                 self.assertEqual(user.usertotp_set.count() + user.userwebauthn_set.count(), 0)
-                self.assertEqual(client.get(reverse('accounts:profile'), secure=True)['Location'], reverse('login'))
+                self.assert_login_redirect(client.get(reverse('accounts:profile'), secure=True))
                 _, new_password = self.reset(results['recover'])
                 user.refresh_from_db()
                 self.assertTrue(user.check_password(new_password))
