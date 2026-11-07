@@ -37,7 +37,11 @@ target digest and expected HTTPS origin. It rejects algorithm/schema/duplicate
 field/binding/tag/expiry/path/target-ID errors. It either requests normal local
 browser navigation with explicit `-OpenBrowser`, or writes an explicitly selected
 absent local artifact with owner-only Windows ACL / Unix 0600 permissions. It
-returns only a nonsecret delivery receipt. A browser-open request is not proof
+rejects Windows streams, UNC/device namespaces and nonlocal drive types before
+creation, and requires existing non-link parent directories. The selected local
+directory must be trusted against concurrent replacement; this is not a filesystem
+sandbox or protection from a malicious administrator. It returns only a nonsecret
+delivery receipt. A browser-open request is not proof
 that a browser opened or that setup/MFA completed. Private key disposal and byte
 buffer clearing are best-effort memory cleanup, not a forensic erasure guarantee.
 The future wrapper must also dispose the recipient in its own `finally` block,
