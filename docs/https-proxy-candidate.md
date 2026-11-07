@@ -61,10 +61,28 @@ starts no listener and orders no certificate. It appends a separate exclusive
 validation receipt; the original preparation snapshot keeps its not-run gates.
 
 The exact pinned Windows binary successfully provision-validated a generated
-synthetic configuration, with empty ACME storage afterward. This proves neither
-Linux behavior nor resource limits, real traffic, DNS, trusted TLS or renewal.
-Linux validation, actual controlled HTTP overload, staging issuance, a trusted
-certificate and restart/renewal need separate authorized qualification.
+synthetic configuration, with empty ACME storage afterward.
+
+On 2026-11-07, the pinned Linux amd64 archive also passed SHA verification and
+its extracted binary successfully ran `caddy validate` on the existing private
+Ubuntu qualification VM. The renderer SHA was
+`7fa2dcb6a621b330bd42cc44640abe48cb7edd70dbbf6a99b097787d77fcccb1`,
+lock SHA `d1919c8a19b9e282a1985d91383139eff5d9b45c382093ad5d22c138d4c0c5ea`,
+archive SHA `5b8cb7faf8726a2028ad96a66e54e6e81e8f361bc6175e5d22bbd997cc5177fb`,
+and extracted binary SHA
+`a563843e11cbce39c557bd429ebb787d56f49d51d9bbb3292cd9b36b37a60cdf`.
+The private Linux receipt records return code zero, synthetic facts, the held
+admission response, no server start and empty ACME storage. Its generated
+configuration SHA was
+`392c4f5110b3969836364f32f3687401813ecfc7e845df5aca3b521d35365915`.
+The temporary validation directory, archive, diagnostics and receipt were
+retained; no service, DNS, NSG or certificate configuration was installed.
+
+These separate Windows and Linux results prove configuration/provisioning only.
+Actual traffic/header enforcement, resource and concurrency limits, controlled
+HTTP overload, authoritative Azure endpoint binding, staging issuance, trusted
+TLS and restart/renewal still require separate qualification. The preparation
+snapshot's not-run gates are not retroactively changed by either validation.
 
 Azure FQDN ownership/reuse and CA registered-domain rate limits still require
 review; provider hostname convenience does not establish a certificate quota or
