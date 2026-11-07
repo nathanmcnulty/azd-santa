@@ -301,6 +301,7 @@ class Runtime:
         config_directory.mkdir(mode=0o700)
         self.environment['DOCKER_CONFIG'] = str(config_directory)
         self.ids = []
+        self.cleanup_ids = ()  # Inspection alone never authorizes container stops.
         self.images = {}
         self.rendered = None
         self.stopping = False
@@ -514,7 +515,8 @@ class Runtime:
     def start(self):
         self.ensure_running()
         selected = self.inspect(running=False)
-        self.container_generation(selected)
+        generation = self.container_generation(selected)
+        self.cleanup_ids = tuple(generation['container_ids'].values())
         # A deliberate hot start must close admission before inspecting stores.
         self.call('close-admission', DOCKER + ['stop', '--time', '30', *(selected[name] for name in APPS)], timeout=100)
         self.call('compose-config', self.command + ['config', '--quiet'])
@@ -606,9 +608,10 @@ class Runtime:
         try:
             self.stop_helpers()
         finally:
-            if self.ids:
+            authorized = getattr(self, 'cleanup_ids', ())
+            if authorized:
                 current = self.call('cleanup-selection', DOCKER + ['ps', '--all', '--quiet', '--no-trunc'], allow_stopping=True).stdout.split()
-                selected = [cid for cid in self.ids if cid in current]
+                selected = [cid for cid in authorized if cid in current]
                 if selected:
                     self.call('stop', DOCKER + ['stop', '--time', '30', *selected], timeout=100, allow_stopping=True)
 

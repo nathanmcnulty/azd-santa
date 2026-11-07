@@ -126,3 +126,9 @@ Readiness CHECK and EMPTY now also validate the fixed global counter's type,
 canonical positive value, upper bound and finite window TTL without writing it.
 Absent counters are valid; exhausted-but-valid counters remain ready and produce
 normal 429 admission denials. Corrupt counters produce 503 and prevent readiness.
+
+Supervisor cleanup has a separate immutable authorized-ID snapshot. Inspection
+does not arm cleanup: only successful persisted-generation equality does. Thus
+the supervisor finally path cannot stop missing-anchor or replacement selections.
+Failures/cancellation after authorization still clean the exact authorized IDs;
+independently ownership-checked startup-helper cleanup remains enabled.
