@@ -60,7 +60,7 @@ class OperatorRequests(TransactionTestCase):
         isolated.enable()
         self.addCleanup(isolated.disable)
 
-    def client(self):
+    def new_client(self):
         return Client(enforce_csrf_checks=True, HTTP_HOST='localhost', HTTP_USER_AGENT='Mozilla/5.0 synthetic-recovery')
 
     def user(self, *, factors=0, **flags):
@@ -101,7 +101,7 @@ class OperatorRequests(TransactionTestCase):
         return path
 
     def reset(self, artifact):
-        client = self.client()
+        client = self.new_client()
         path = self.load_reset(client, artifact)
         password = secrets.token_urlsafe(30)
         self.assertEqual(self.post(client, path, dict(new_password1=password, new_password2=password)).status_code, 302)
@@ -182,18 +182,18 @@ class OperatorRequests(TransactionTestCase):
 
     def test_existing_sessions_challenges_seed_and_reset_link_are_invalidated(self):
         user, password = self.user()
-        seed_client = self.client()
+        seed_client = self.new_client()
         self.password(seed_client, user, password)
         seed_client.get(reverse('accounts:add_totp'), secure=True)
         device = UserTOTP.objects.create(user=user, name='synthetic-old', secret=pyotp.random_base32())
-        authenticated = self.client()
+        authenticated = self.new_client()
         location = self.password(authenticated, user, password)['Location']
         authenticated.get(location, secure=True)
         self.assertEqual(self.post(authenticated, location, dict(verification_code=pyotp.TOTP(device.secret).now())).status_code, 302)
-        pending = self.client()
+        pending = self.new_client()
         self.password(pending, user, password)
         old_link = dict(setup_url=recovery_url(user))
-        reset_client = self.client(); old_reset_path = self.load_reset(reset_client, old_link)
+        reset_client = self.new_client(); old_reset_path = self.load_reset(reset_client, old_link)
         old_token = default_token_generator.make_token(user)
         self.command('recover', user)
         user.refresh_from_db()
@@ -209,18 +209,18 @@ class OperatorRequests(TransactionTestCase):
         user, _ = self.user()
         artifact = self.command('recover', user)
         with patch.object(default_token_generator, '_now', return_value=default_token_generator._now() + timedelta(seconds=601)):
-            response = self.client().get(urlsplit(artifact['setup_url']).path, secure=True)
+            response = self.new_client().get(urlsplit(artifact['setup_url']).path, secure=True)
             self.assertEqual(response.status_code, 200)
             self.assertFalse(response.context['validlink'])
         self.reset(artifact)
-        response = self.client().get(urlsplit(artifact['setup_url']).path, secure=True)
+        response = self.new_client().get(urlsplit(artifact['setup_url']).path, secure=True)
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.context['validlink'])
 
     def test_simultaneous_reset_posts_have_only_one_success(self):
         user, _ = self.user()
         artifact = self.command('recover', user)
-        clients = [self.client(), self.client()]
+        clients = [self.new_client(), self.new_client()]
         paths = [self.load_reset(client, artifact) for client in clients]
         barrier = threading.Barrier(2)
         def reset(index):
@@ -301,7 +301,7 @@ class OperatorRequests(TransactionTestCase):
                 UserWebAuthn.objects.create(user=user, name='synthetic-counterless', key_handle=credential,
                     public_key=cbor2.dumps({1: 2, 3: -7, -1: 1, -2: public.x.to_bytes(32, 'big'), -3: public.y.to_bytes(32, 'big')}),
                     rp_id=rp, transports=['internal'], sign_count=0)
-                client = self.client()
+                client = self.new_client()
                 response = self.password(client, user, password)
                 self.assertEqual(response['Location'], reverse('accounts:verify_webauthn'))
                 self.assertEqual(client.get(response['Location'], secure=True).status_code, 200)
