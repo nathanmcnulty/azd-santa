@@ -9,6 +9,36 @@
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
       "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "principal": "Explicit selected cached Azure CLI installation operator (existing rights only)",
+      "phase": "deployment",
+      "feature": "backend-installation-finalization",
+      "defaultEnabled": false,
+      "scope": "Exact selected tenant/subscription, deployment/environment and tagged private pilot RG/VM only",
+      "rationale": "Source-pinned read-only host observer verifies selected initialized runtime and machine-produces a nonsecret installation receipt and local operator binding. No setup mutation, cloud deployment, service restart, marker initialization, grant or authentication flow is performed by finalization; the actual installer/hook remains a separate gate.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/server/SetupTransport.psm1", "sha256": "fb0abe994b52845d7d2da5ae95c84476056c543c25ef75d8014296515e484f4c" },
+        { "path": "experiments/server/installation_readback.py", "sha256": "935db2716c89c78bb0c5ace4b330589c75ca00b28db8bcc0d76f128c2b27b602" },
+        { "path": "experiments/server/operator_setup_host.py", "sha256": "0b0fe20a28e99fb2455d2e311d60d397f274ef617072836f7116364254501dc8" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read",
+      "principal": "Explicit selected cached Azure CLI installation operator (existing rights only)",
+      "phase": "deployment",
+      "feature": "operator-binding-generation",
+      "defaultEnabled": false,
+      "scope": "Exact selected tenant/subscription, environment and tagged private pilot RG/VM only",
+      "rationale": "Generate a local operator binding from a trusted checksum-pinned selected installation receipt after reusing read-only account/group/immutable-VM preflight. This function does not invoke Run Command, authenticate, mutate azd state or grant permissions; receipt producer and live qualification remain separate gates.",
+      "evidenceState": "code",
+      "evidence": [{ "path": "experiments/server/SetupTransport.psm1", "sha256": "fb0abe994b52845d7d2da5ae95c84476056c543c25ef75d8014296515e484f4c" }]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
       "principal": "Explicit selected cached Azure CLI operator (existing rights only)",
       "phase": "deployment",
       "feature": "operator-setup-transport",
@@ -17,9 +47,9 @@
       "rationale": "Optional operator setup checks cached selected account/group/VM, then sends a hash-pinned stdlib host program to verify private runtime bindings and invoke the installed sealed operator command or ciphertext-only readback. It creates no grants and enables no azd hook; runtime checks are not live acceptance evidence.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/SetupTransport.psm1", "sha256": "6830624ff4cd03e1545d72df17cb1a41f6cd5a9f5e7ae3c6f955c6ce52c669b5" },
+        { "path": "experiments/server/SetupTransport.psm1", "sha256": "fb0abe994b52845d7d2da5ae95c84476056c543c25ef75d8014296515e484f4c" },
         { "path": "experiments/server/Invoke-SantaOperatorSetup.ps1", "sha256": "fbf2b05ec819ce651113cb37f6b215394e19744a06f5a203562978ba779e6d1a" },
-        { "path": "experiments/server/operator_setup_host.py", "sha256": "ba08c7b0c4e329053c2190e2730e42d285285740b2e6d8c67712fc016b04e7b0" }
+        { "path": "experiments/server/operator_setup_host.py", "sha256": "0b0fe20a28e99fb2455d2e311d60d397f274ef617072836f7116364254501dc8" }
       ]
     },
     {
@@ -262,6 +292,7 @@
   ],
   "gaps": [
     "Fresh core role separation passed selected private initialization, ten administrative SQL denials, original empty-inventory TEMP cleanup, normal sync/indexing/MFA/recovery and reboot qualification. Owner-only developer fixture jobs and normal runtime requests have separate receipts; see docs/database-role-separation.md. It adds no Azure/Graph permission or tenant grant. Nonempty retention, unknown initializer fault recovery, upgrades/default grants and existing-volume rotation remain unqualified.",
+    "The bounded finalizer passed selected private actual Run Command observation of restricted database authority, schema/Store/security state, search and event consumers, then machine-produced the installation receipt and operator binding. See docs/backend-installation-finalization.md. Actual azd installer/build/init lifecycle and authoritative azd backend output wiring remain unimplemented in this slice. Trusted HTTPS/browser, native endpoint and backup/restore acceptance remain open; no automatic hook or grants are supplied.",
     "The optional initialized-runtime systemd controller uses existing privileged Linux host authority, not new Azure/Graph permissions. Selected private Docker/systemd startup, clean restart, web-container failure, VM reboot and isolated empty-data rejection passed with independent state readback; see docs/runtime-service.md. Automatic azd installation, startup cancellation, Docker-daemon restart propagation, continuous application health, upgrades and backup/current-authority behavior remain unqualified. Metadata is not service-installation authorization.",
     "Per-service outputs separate db.env, rabbitmq.env and application runtime.env without adding cloud/API permissions. Shared-role and fresh restricted-role layouts have separate selected private environment/readiness receipts; earlier receipts do not qualify a different image. Existing-volume rotation and restoration remain unqualified. See docs/service-secret-separation.md and docs/database-role-separation.md.",
     "Private operator setup has selected actual ARM/IMDS, Docker/image/Compose/module/security-store and encrypted delivery receipts. The coordinated restricted-role stack separately passed six-gate producer-to-binding finalization and bootstrap/recovery; see docs/database-role-separation.md. This is not automated azd deployment, trusted HTTPS or browser/password/MFA completion. The host program never repairs legacy shared-secret containers automatically; no automatic hook is supplied.",
