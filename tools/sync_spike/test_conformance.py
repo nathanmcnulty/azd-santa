@@ -30,7 +30,7 @@ class Conformance(unittest.TestCase):
         self.thread.join(2)
 
     def request(self, stage, body=None, device='device-a', token=None, encoding='', raw=None,
-                content_type='application/json', method='POST', path=None):
+                content_type='application/json', method='POST', path=None, headers_only=False):
         value = {'machine_id': device} if body is None else body
         payload = canonical(value) if raw is None else raw
         if encoding == 'deflate':
@@ -40,9 +40,13 @@ class Conformance(unittest.TestCase):
         headers = {'Content-Type': content_type, 'Authorization': 'Bearer ' + (self.tokens[device] if token is None else token)}
         if encoding:
             headers['Content-Encoding'] = encoding
+        # Deliberate header-admission failures must not race a server close
+        # against an unread body on Windows. Still declare the actual length.
+        headers['Content-Length'] = str(len(payload))
         connection = http.client.HTTPConnection(*self.server.server_address, timeout=3)
         try:
-            connection.request(method, path or '/' + stage + '/' + device, payload, headers)
+            connection.request(method, path or '/' + stage + '/' + device,
+                               None if headers_only else payload, headers)
             response = connection.getresponse()
             return response.status, json.loads(response.read())
         finally:
@@ -182,7 +186,7 @@ class Conformance(unittest.TestCase):
 
     def test_authentication_and_identity_binding(self):
         for token in ('', 'invalid', self.tokens['device-b']):
-            self.assertEqual(self.request('preflight', token=token)[0], 401)
+            self.assertEqual(self.request('preflight', token=token, headers_only=True)[0], 401)
         self.assertEqual(self.request('preflight', {'machine_id': 'device-b'})[0], 403)
         self.assertFalse(self.model.sessions)
 
@@ -191,14 +195,14 @@ class Conformance(unittest.TestCase):
         old = self.tokens['device-a']
         cursor = self.request('ruledownload')[1]['cursor']
         replacement = self.model.rotate_fixture_device('device-a')
-        self.assertEqual(self.request('ruledownload', token=old)[0], 401)
+        self.assertEqual(self.request('ruledownload', token=old, headers_only=True)[0], 401)
         self.assertEqual(self.request('ruledownload', token=replacement)[0], 409)
         self.assertEqual(self.request('preflight', token=replacement)[0], 200)
         self.assertEqual(self.request('ruledownload', {'machine_id': 'device-a', 'cursor': cursor}, token=replacement)[0], 400)
         self.assertEqual(self.request('ruledownload', token=replacement)[0], 200)
-        self.assertEqual(self.request('ruledownload', device='device-b', token=replacement)[0], 401)
+        self.assertEqual(self.request('ruledownload', device='device-b', token=replacement, headers_only=True)[0], 401)
         self.model.revoke_fixture_device('device-a')
-        self.assertEqual(self.request('ruledownload', token=replacement)[0], 401)
+        self.assertEqual(self.request('ruledownload', token=replacement, headers_only=True)[0], 401)
         self.assertNotIn('device-a', self.model.sessions)
 
     def test_numeric_hash_and_short_body_fail_closed(self):
@@ -218,7 +222,11 @@ class Conformance(unittest.TestCase):
             self.assertEqual(self.request('preflight', raw=raw)[0], 400)
 
     def test_oversize_compression_bomb_and_corrupt_stream(self):
-        for encoding in ('', 'deflate', 'gzip'):
+        # The server rejects a declared oversize body before reading it. Sending
+        # unread payload before its close can reset the socket on Windows and
+        # hide the 413 response, so exercise that header gate without a body.
+        self.assertEqual(self.request('preflight', raw=b' ' * (MAX_BYTES + 1), headers_only=True)[0], 413)
+        for encoding in ('deflate', 'gzip'):
             self.assertEqual(self.request('preflight', raw=b' ' * (MAX_BYTES + 1), encoding=encoding)[0], 413)
         connection = http.client.HTTPConnection(*self.server.server_address, timeout=3)
         try:
@@ -229,10 +237,10 @@ class Conformance(unittest.TestCase):
             connection.close()
 
     def test_wrong_content_type_encoding_method_route(self):
-        self.assertEqual(self.request('preflight', content_type='application/x-protobuf')[0], 415)
+        self.assertEqual(self.request('preflight', content_type='application/x-protobuf', headers_only=True)[0], 415)
         self.assertEqual(self.request('preflight', encoding='br')[0], 415)
-        self.assertEqual(self.request('preflight', method='GET')[0], 405)
-        self.assertEqual(self.request('preflight', path='/preflight/device-a?secret=canary')[0], 404)
+        self.assertEqual(self.request('preflight', method='GET', headers_only=True)[0], 405)
+        self.assertEqual(self.request('preflight', path='/preflight/device-a?secret=canary', headers_only=True)[0], 404)
 
     def test_logs_are_bounded_request_ids_and_outcomes_only(self):
         self.preflight(raw=b'{"machine_id":"device-a","hostname":"PAYLOAD-CANARY"}')
