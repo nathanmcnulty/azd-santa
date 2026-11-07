@@ -540,6 +540,8 @@ def render_core_dockerfile(
         f"        'Original bounded Santa decoder SHA256: {request_limits_sha256}' \\\n"
         "        'Bounded Santa sync view output SHA256: 205315d6cf592fe53efaebb58fb6843c4f17f842d85b7c74816964385df1ec6a' \\\n"
         "        'Core authentication/settings/forms integrate mandatory local operator MFA; human API tokens are denied.' \\\n"
+        "        'Core entrypoint requires restricted database runtime authority; migration/provisioning is an explicit privileged job.' \\\n"
+        "        'Database role source/output/module hashes are recorded in /zentral/server/DATABASE_ROLE_NOTICE.json.' \\\n"
         "        'An original sync credential guard enforces revocation/expiry without charging enrollment quota.' \\\n"
         "        'Source transformations include reviewed registry/store narrowings, sync credential/request guards and operator MFA; review licensing before production use.' \\\n"
         "        > /usr/share/doc/zentral/CORE_BUILD_NOTICE.txt\n",
@@ -583,7 +585,11 @@ def _operator_layer(source_root):
     spec = importlib.util.spec_from_file_location('prepare_operator_recovery', helper)
     recovery = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(recovery)
-    return program + '\n' + recovery.docker_program(source_root), digest
+    helper = Path(__file__).with_name('prepare_database_roles.py')
+    spec = importlib.util.spec_from_file_location('prepare_database_roles', helper)
+    database = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(database)
+    return program + '\n' + recovery.docker_program(source_root) + '\n' + database.docker_program(source_root), digest
 
 
 def _request_limits_layer(source_root):

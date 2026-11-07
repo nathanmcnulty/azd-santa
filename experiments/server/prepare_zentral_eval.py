@@ -46,6 +46,7 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
         app_profile = 'santa' if variant == 'core-experiment' else 'upstream'
     if app_profile not in ('upstream', 'santa'):
         raise ValueError('Unknown evaluation app profile')
+    split_roles = variant == 'core-experiment'
     source = Path(source).resolve(strict=True)
     if not source.is_dir() or not IMAGE_ID.fullmatch(image):
         raise ValueError('A source directory and local sha256 image ID are required')
@@ -74,7 +75,8 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
         'ALLOWED_HOSTS': ['localhost', '127.0.0.1'],
         'SECRET_KEY': '{{ env:ZENTRAL_DJANGO_SECRET }}',
         'POSTGRES_HOST': 'db', 'POSTGRES_NAME': 'zentral',
-        'POSTGRES_USER': 'zentral', 'POSTGRES_PASSWORD': '{{ env:POSTGRES_PASSWORD }}',
+        'POSTGRES_USER': '{{ env:POSTGRES_USER }}' if split_roles else 'zentral',
+        'POSTGRES_PASSWORD': '{{ env:POSTGRES_PASSWORD }}',
         'CELERY_BROKER_URL': '{{ env:ZENTRAL_QUEUE_URL }}',
     })
     config['queues'] = {'backend': 'zentral.core.queues.backends.kombu',
@@ -85,20 +87,19 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
     config['apps']['zentral.core.stores']['provisioning']['stores']['elasticsearch']['elasticsearch_kwargs']['hosts'] = ['http://elastic:9200']
     rabbit_password = secrets.token_urlsafe(36)
     database = {
-        'POSTGRES_DB': 'zentral', 'POSTGRES_USER': 'zentral',
+        'POSTGRES_DB': 'zentral', 'POSTGRES_USER': 'zentral_owner' if split_roles else 'zentral',
         'POSTGRES_PASSWORD': secrets.token_urlsafe(48),
     }
     broker = {'RABBITMQ_DEFAULT_USER': 'zentral', 'RABBITMQ_DEFAULT_PASS': rabbit_password}
-    # The application still uses the existing database role. Separate bootstrap
-    # and runtime DB authority needs its own migration/ownership qualification;
-    # separating environment files alone does not reduce that role's authority.
     runtime = {
-        'POSTGRES_PASSWORD': database['POSTGRES_PASSWORD'],
+        'POSTGRES_PASSWORD': secrets.token_urlsafe(48) if split_roles else database['POSTGRES_PASSWORD'],
         'ZENTRAL_DJANGO_SECRET': secrets.token_urlsafe(64),
         'ZENTRAL_METRICS_TOKEN': secrets.token_urlsafe(48),
         'AZD_SANTA_SECURITY_STORE_ID': secrets.token_hex(32),
         'ZENTRAL_QUEUE_URL': f'amqp://zentral:{rabbit_password}@rabbitmq:5672//',
     }
+    if split_roles:
+        runtime['POSTGRES_USER'] = 'zentral_runtime'
     logging = {'driver': 'json-file', 'options': {'max-size': '10m', 'max-file': '3'}}
 
     def service(ref, memory):
@@ -147,6 +148,12 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
     (destination / 'conf/base.json').chmod(0o644)
     for filename, values in (('db.env', database), ('rabbitmq.env', broker), ('runtime.env', runtime)):
         write_new(destination / filename, ''.join(f'{key}={value}\n' for key, value in values.items()))
+    if split_roles:
+        migration = {**runtime, 'POSTGRES_USER': database['POSTGRES_USER'],
+                     'POSTGRES_PASSWORD': database['POSTGRES_PASSWORD']}
+        # Never referenced by a normal service. Only explicit privileged jobs
+        # may receive this file; runtime's password remains in its own file.
+        write_new(destination / 'migration.env', ''.join(f'{key}={value}\n' for key, value in migration.items()))
     write_new(destination / 'compose.json', json_text(compose))
     write_new(destination / 'LICENSE.upstream', (source / 'LICENSE').read_text(encoding='utf-8'))
     write_new(destination / 'provenance.json', json_text({
@@ -155,6 +162,8 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
         'local_image_id': image, 'dependency_images': lock,
         'declared_image_variant': variant,
         'app_profile': app_profile,
+        'database_roles': ('fresh-only separated initialization/runtime; live qualification pending'
+                           if split_roles else 'upstream-evaluation shared role; unmodified entrypoint'),
         'secret_environment_files': {
             'db': 'db.env', 'rabbitmq': 'rabbitmq.env',
             'web': 'runtime.env', 'workers': 'runtime.env', 'celery': 'runtime.env'},
@@ -164,7 +173,7 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
         'limitations': ['Image variant is a caller declaration, not production license clearance',
                         'Caller must verify full source archive and build binding',
                         'Memory caps are test constraints, not proven sizing',
-                        'Database bootstrap and application still share one role; least-privilege DB roles are unqualified',
+                        'Database role/runtime grants and explicit initialization require separate live qualification',
                         'No real device enrollment, public TLS or device authentication'],
     }))
     variant_notice = (

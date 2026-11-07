@@ -29,7 +29,7 @@ REDIS = ['redis-server', '--appendonly', 'yes', '--appendfsync', 'always', '--ao
 VOLUMES = {'postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data'}
 ENV_KEYS = {'db.env': {'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD'},
     'rabbitmq.env': {'RABBITMQ_DEFAULT_USER', 'RABBITMQ_DEFAULT_PASS'},
-    'runtime.env': {'POSTGRES_PASSWORD', 'ZENTRAL_DJANGO_SECRET', 'ZENTRAL_METRICS_TOKEN',
+    'runtime.env': {'POSTGRES_USER', 'POSTGRES_PASSWORD', 'ZENTRAL_DJANGO_SECRET', 'ZENTRAL_METRICS_TOKEN',
                     'AZD_SANTA_SECURITY_STORE_ID', 'ZENTRAL_QUEUE_URL'}}
 
 
@@ -188,6 +188,9 @@ def attest_runtime(request):
         need(all(len(pair) == 2 and pair[1] for pair in pairs))
         environments[filename] = unique(pairs)
         need(set(environments[filename]) == keys)
+    need(environments['db.env']['POSTGRES_USER'] == 'zentral_owner'
+         and environments['runtime.env']['POSTGRES_USER'] == 'zentral_runtime'
+         and environments['db.env']['POSTGRES_PASSWORD'] != environments['runtime.env']['POSTGRES_PASSWORD'])
     conf = compose.parent / 'conf'
     private_path(conf, directory=True)
     private_path(conf / 'base.json', mode=0o644)
