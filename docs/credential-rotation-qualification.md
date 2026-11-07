@@ -23,6 +23,9 @@ The harness checks fresh revoked/expired enrollment, replacement credentials and
 wrong serial/UUID without consuming quota; then checks continuing authority after
 an interrupted page. A repeated unacknowledged page must return the exact same
 five rules while retaining the same open session/postflight/counter state. The
+entire staged ledger must match page identifiers, policy/version, session and
+prior committed fields before and after retry. Selected rule-row IDs and the
+page cursor may regenerate, while normalized semantics must remain equal. The
 old credential is revoked and rotated with different bytes. All four stages
 reject revoked, expired, retired and cross-device credentials with an exact
 before/after DB comparison after **each** request. A positive-shaped denied
@@ -34,7 +37,10 @@ headers; URL credentials can enter ordinary access logs.
 
 Exactly one rule actually present in the interrupted page changes from Blocklist
 version1 to Allowlist version2. Replacement preflight must reconcile the lost
-clean session; a stale cursor cannot skip the current rule set. Both devices
+clean session **without requesting a clean** and with coherent nonzero reported
+counts (six binary rules, zero other types). The prior session must still be
+open/clean with no queued forced sync, so a forced clean or zero-count fallback
+cannot mask reconciliation. A stale cursor cannot skip the current rule set. Both devices
 receive two exact pages and finish with the exact committed server ledger,
 including the changed rule and no pending cursor/session/staged-removal state.
 The unchanged second credential remains functional until its deliberate expiry;

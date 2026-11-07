@@ -92,14 +92,43 @@ class Harness(unittest.TestCase):
         state = dict(machines=[dict(pk=10, enrollment_id=1, sync_session=None, last_postflight_at='time')], rules=ledger)
         replies = [(200, dict(client_mode='MONITOR', sync_type='CLEAN', batch_size=5)),
                    (200, dict(rules=expected[:5], cursor='newcursor')), (200, dict(rules=expected[5:])), (200, {}), (200, {})]
-        with patch.object(rotation, 'post', side_effect=replies) as post, patch.object(rotation, 'state', return_value=state):
+        partial = dict(machines=[dict(pk=10, enrollment_id=1, sync_session='open', sync_session_clean=True, forced_sync_type=None)])
+        with patch.object(rotation, 'post', side_effect=replies) as post, patch.object(rotation, 'state', side_effect=[partial, state]):
             observations = []
-            rotation.full_sync('compose', data, 0, observations, 'retry', True, stale_cursor='oldcursor')
+            rotation.full_sync('compose', data, 0, observations, 'retry', True, stale_cursor='oldcursor', reconcile=True)
+            request = post.call_args_list[0].args[2]
+            self.assertNotIn('request_clean_sync', request)
+            self.assertEqual(request['binary_rule_count'], 6)
+            self.assertTrue(all(request[kind + '_rule_count'] == 0 for kind in ('cdhash', 'certificate', 'compiler', 'signingid', 'transitive', 'teamid')))
             self.assertEqual(post.call_args_list[1].args[2], dict(cursor='oldcursor'))
             self.assertTrue(observations[0]['committed_ledger'])
+            self.assertTrue(observations[0]['lost_session_reconciliation'])
+            self.assertFalse(observations[0]['explicit_clean_requested'])
         stale = copy.deepcopy(state); stale['rules'][0]['policy'] = 2
         with patch.object(rotation, 'post', side_effect=replies), patch.object(rotation, 'state', return_value=stale):
             with self.assertRaises(ValueError): rotation.full_sync('compose', data, 0, [], 'stale', True)
+
+    def test_partial_retry_semantics_allow_new_pks_and_cursor_but_reject_ledger_defects(self):
+        data = fixture(); cursor = 'oldpage1'
+        page = dict(cursor=cursor, rules=[dict(identifier=value, rule_type='BINARY', policy='BLOCKLIST') for value in data['identifiers'][:5]])
+        machine = dict(pk=10, enrollment_id=1, hardware_uuid=data['devices'][0]['uuid'], sync_session='session1',
+                       sync_session_clean=True, forced_sync_type=None, last_preflight_at='preflight', last_postflight_at='old')
+        rows = [dict(pk=100+i, enrolled_machine_id=10, **{'target__identifier': value}, policy=2, version=1,
+                     cursor=cursor if i < 5 else None, sync_session='session1' if i < 5 else None,
+                     staged_removal=False, committed_policy=2 if i < 5 else None, committed_version=1 if i < 5 else None)
+                for i, value in enumerate(data['identifiers'])]
+        before = dict(machines=[machine], rules=rows, authority=[dict(count=1)], counters=[])
+        expected = rotation.partial_projection(before, data, 0, page)
+        after = copy.deepcopy(before); replay = copy.deepcopy(page); replay['cursor'] = 'newpage1'
+        for row in after['rules']:
+            row['pk'] += 20
+            if row['cursor']: row['cursor'] = replay['cursor']
+        self.assertEqual(rotation.partial_projection(after, data, 0, replay), expected)
+        for key, value in [('policy', 1), ('version', 2), ('sync_session', 'different'),
+                           ('committed_policy', None), ('committed_version', 2), ('cursor', 'wrongpage'),
+                           ('staged_removal', True), ('target__identifier', 'f' * 64)]:
+            bad = copy.deepcopy(after); bad['rules'][0][key] = value
+            with self.subTest(key=key), self.assertRaises(ValueError): rotation.partial_projection(bad, data, 0, replay)
 
     def test_fixed_loopback_legacy_header_shape_and_bounded_no_redirect_response(self):
         fake = SimpleNamespace(UUID_PATTERN=re.compile('00000000-0000-4000-8000-[a-f0-9]{12}'),
