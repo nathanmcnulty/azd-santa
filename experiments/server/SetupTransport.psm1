@@ -69,19 +69,35 @@ function Invoke-SantaSetupAzJson {
     catch { throw 'Azure response was not complete JSON; outcome requires inspection.' }
 }
 
-function Assert-SantaSetupAzureTarget {
-    param([object]$Request)
-    $b = $Request.Binding
+function Get-SantaPrivateVmDeploymentTarget {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][guid]$SubscriptionId,
+        [Parameter(Mandatory)][ValidatePattern('^[a-z0-9-]{2,32}$')][string]$EnvironmentName)
+    $b = @{ SubscriptionId = $SubscriptionId.ToString(); EnvironmentName = $EnvironmentName
+        ResourceGroup = "rg-azd-santa-vm-$EnvironmentName"; VmName = 'vm-santa-lab' }
+    $b.VmId = "/subscriptions/$($b.SubscriptionId)/resourceGroups/$($b.ResourceGroup)/providers/Microsoft.Compute/virtualMachines/$($b.VmName)"
     $account = Invoke-SantaSetupAzJson @('account', 'show', '--subscription', $b.SubscriptionId)
-    if ($account.id -ine $b.SubscriptionId -or $account.tenantId -ine $b.TenantId -or $account.state -cne 'Enabled') { throw 'Cached account does not match selected enabled subscription/tenant.' }
+    $guidPattern = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    if ($account.id -ine $b.SubscriptionId -or $account.tenantId -cnotmatch $guidPattern -or $account.state -cne 'Enabled') { throw 'Cached selected enabled subscription unavailable.' }
     $group = Invoke-SantaSetupAzJson @('group', 'show', '--subscription', $b.SubscriptionId, '--name', $b.ResourceGroup)
     if ($group.id -ine "/subscriptions/$($b.SubscriptionId)/resourceGroups/$($b.ResourceGroup)" -or
         $group.tags.'azd-solution' -cne 'azd-santa' -or $group.tags.purpose -cne 'synthetic-vm-lab' -or
         $group.tags.'azd-env-name' -cne $b.EnvironmentName) { throw 'Selected group is not the tagged private pilot.' }
     $vm = Invoke-SantaSetupAzJson @('vm', 'show', '--subscription', $b.SubscriptionId, '--resource-group', $b.ResourceGroup, '--name', $b.VmName)
-    if ($vm.id -ine $b.VmId -or $vm.vmId -ine $b.VmInstanceId -or $vm.provisioningState -cne 'Succeeded' -or
+    if ($vm.id -ine $b.VmId -or $vm.vmId -cnotmatch $guidPattern -or $vm.provisioningState -cne 'Succeeded' -or
         $vm.tags.'azd-solution' -cne 'azd-santa' -or $vm.tags.purpose -cne 'synthetic-vm-lab' -or
         $vm.tags.'azd-env-name' -cne $b.EnvironmentName) { throw 'Selected VM identity/tags/provisioning binding failed.' }
+    $b.TenantId = $account.tenantId; $b.VmInstanceId = $vm.vmId
+    $b
+}
+
+function Assert-SantaSetupAzureTarget {
+    param([object]$Request)
+    $b = $Request.Binding
+    $actual = Get-SantaPrivateVmDeploymentTarget -SubscriptionId $b.SubscriptionId -EnvironmentName $b.EnvironmentName
+    foreach ($name in @('TenantId', 'SubscriptionId', 'ResourceGroup', 'VmName', 'VmId', 'VmInstanceId')) {
+        if ($actual[$name] -ine $b[$name]) { throw 'Selected cached ARM target differs from expected deployment binding.' }
+    }
 }
 
 function Assert-SantaReceiptFields {
@@ -398,4 +414,4 @@ function Send-SantaSetupRunCommand {
     finally { if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) } }
 }
 
-Export-ModuleMember -Function New-SantaSetupTransportRequest, Send-SantaSetupRunCommand, New-SantaOperatorDeploymentBinding, Complete-SantaBackendInstallation
+Export-ModuleMember -Function New-SantaSetupTransportRequest, Send-SantaSetupRunCommand, New-SantaOperatorDeploymentBinding, Complete-SantaBackendInstallation, Get-SantaPrivateVmDeploymentTarget

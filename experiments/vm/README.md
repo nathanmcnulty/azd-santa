@@ -1,8 +1,11 @@
 # VM-first Santa backend lab
 
-Opt-in **synthetic host qualification**, not a deployed Santa sync service.
-Root `azure.yaml` remains Intune-only; this nested azd project runs no root hooks,
-publishes no profiles/rules, installs no Santa package and enrolls no devices.
+Optional **private backend installation and host qualification**. Root
+`azure.yaml` remains Intune-only; this nested project runs no root hooks,
+publishes no profiles/rules, installs no Mac package and enrolls no devices.
+The new azd hooks are source/offline tested; their complete ARM/hook/cold-install
+path has not yet been qualified live. Private TLS/native-client/customer MFA
+acceptance remains pending. The backend listener is loopback-only.
 The user selected VM-first testing followed by a Container Apps comparison.
 
 ## Host and boundaries
@@ -15,7 +18,7 @@ The user selected VM-first testing followed by a Container Apps comparison.
 - Trusted Launch, Secure Boot/vTPM, password authentication disabled,
   platform-managed patching/assessment, managed boot diagnostics.
 - Isolated VNet/subnet; priority-100 deny-all inbound, including VNet traffic.
-  No inbound SSH, HTTP or HTTPS allowance, Santa listener, tunnel or public sync
+  No inbound SSH, HTTP or HTTPS allowance, tunnel or public sync
   endpoint. Ubuntu's own SSH daemon may listen inside the guest but is blocked
   by the NSG.
 - Standard IPv4 public IP for **explicit outbound** agent/update access, not
@@ -42,27 +45,41 @@ Invoke-Pester ./tests -CI
 az bicep build --file experiments/vm/infra/main.bicep --stdout
 ```
 
-Use a fresh dedicated lab environment. Generate an SSH key in the ignored local
-`.azure` directory (or supply an existing public key). The private key is never
-uploaded; no SSH ingress is opened. Preserve it outside Git for recovery.
+Use a fresh dedicated environment with a lowercase 2–32-character name. The
+preprovision hook generates a throwaway RSA public key in memory for Azure Linux
+provisioning, stores only its stable public artifact and disposes the private key
+without exporting it. No SSH ingress or usable SSH private key is provided. A
+user-supplied `SANTA_VM_SSH_PUBLIC_KEY` is preserved as an optional override.
 
 ```powershell
-New-Item -ItemType Directory -Path .azure/vm-lab -Force
-# Choose an absent key path; ssh-keygen must not overwrite existing material.
-ssh-keygen -t rsa -b 3072 -f .azure/vm-lab/host -N '' -C santa-vm-lab
-$publicKey = (Get-Content .azure/vm-lab/host.pub -Raw).Trim()
 Set-Location experiments/vm
 $subscription = '<explicit enabled subscription ID>'
 az account show --subscription $subscription
 azd env new '<unique-environment>' --subscription $subscription --location westus2 --no-prompt
-azd env set SANTA_VM_SSH_PUBLIC_KEY $publicKey --no-prompt
-azd provision --no-prompt
+azd env set SANTA_PRIVATE_BACKEND_INSTALL true --no-prompt
+azd up --no-prompt
 ```
 
-Check each native command's exit code before continuing. The `.Trim()` avoids
-injecting a multiline public-key value into azd's JSON parameter interpolation.
-Before reusing an environment, inspect ownership and resources rather than
-overwriting another session's lab. Root and nested `.azure` state are ignored.
+Check native command exit codes. Omit the opt-in flag (or set it to `false`) for
+host-only qualification. The postprovision hook automatically performs pinned
+Docker/Compose prerequisites, source/core build, digest-pinned dependencies,
+fresh database staging, explicit fresh security-store admission, stopped app
+container creation and the existing seven-container runtime unit. The listener
+is not started until the runtime's admission checks pass. Machine finalization
+then verifies source/image/VM identities and initialized readiness, creates the
+receipt/binding and records `SANTA_OPERATOR_BINDING_PATH` in the selected azd
+environment. No image ID, remote script or JSON assembly is required from admins.
+
+A two-hour VM shutdown guard bounds lab cost. Builds use the qualified classic
+builder and current exact Ubuntu package pins. The one-shot installer job is
+owned by systemd with a 105-minute limit; raw diagnostics remain root-private.
+Source travels in hash-checked chunks no larger than 24 KiB encoded, not a large
+single Run Command packet. Before retrying, the hook observes the same durable
+job. Observation/submission timeouts never repeat initialization. Successful
+reruns perform readback/finalization; failed, unknown, differently sourced or
+preexisting deployments fail with retained data instead of resets. Deliberate
+upgrade/repair is a separate future workflow. Root and nested `.azure` state are
+ignored. See [private installer details](../../docs/private-vm-installation.md).
 
 Then, from `experiments/vm`, run the automated guest tests. These upload only
 the six explicitly listed original Python files and one synthetic JSON fixture

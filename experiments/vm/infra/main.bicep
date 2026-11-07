@@ -31,3 +31,6 @@ module host './host.bicep' = {
 
 output AZURE_RESOURCE_GROUP string = group.name
 output SANTA_VM_NAME string = host.outputs.vmName
+output SANTA_VM_RESOURCE_ID string = host.outputs.vmResourceId
+output SANTA_VM_INSTANCE_ID string = host.outputs.vmInstanceId
+output SANTA_VM_DEPLOYMENT_ID string = '${subscription().id}/providers/Microsoft.Resources/deployments/${deployment().name}'
