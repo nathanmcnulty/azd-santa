@@ -101,6 +101,11 @@ The job verifies immutable IMDS VM/subscription identity and pilot tags, then:
    runtime manifest and creates the first exact-container generation anchor
    before installing or enabling the unit. A binding failure cannot start the
    unit. Existing installations are never automatically adopted or rebound.
+   The candidate also uploads the worker compiler/helper and native/encrypted
+   backup helpers. The generated runtime manifest binds the exact installed
+   worker module and derived command; helper omissions fail offline bundle
+   validation. Its fresh layout includes the dedicated sixth snapshot volume.
+   Existing five-volume installations are retained rather than upgraded in place.
 5. Returns nonsecret source/image/Compose/VM facts only after unit readiness.
    The client calls `Complete-SantaBackendInstallation` for seven initialized-state
    readbacks and machine-produced installation receipt/operator binding. It records

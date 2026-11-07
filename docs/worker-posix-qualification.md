@@ -4,6 +4,16 @@ This developer probe executes disposable synthetic processes only. It does not
 connect to Kombu/RabbitMQ or change services, containers, images or deployments.
 Its results do not establish application, broker durability or backup acceptance.
 
+On 2026-11-07, the selected private Ubuntu host running Python3.12.3 passed all
+three actual signal/forkserver cases with probe SHA-256
+`35e555782379c7068c58c847e904da614aaef99413ce097c569844338025b445`.
+After TERM, idle clean exit took0.119s; held work completed its acknowledgement
+and requeued the late delivery in0.305s. The forced case exited1 after20.024s
+without a clean marker. The private receipt and per-case outputs are retained
+at `/var/lib/azd-santa-qualification/worker-posix-cb43c1e`. The helper bytes match
+the pin below; the command hash in this receipt identifies this synthetic probe.
+This does not qualify the derived application command or actual Kombu/broker.
+
 Stage the exact reviewed `qualify_worker_posix.py` and frozen
 `worker_lifecycle.py` in a trusted owner-controlled directory. Verify the probe
 SHA against its reviewed commit before execution. The probe itself requires the

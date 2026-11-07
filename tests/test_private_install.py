@@ -169,6 +169,16 @@ class Relay(unittest.TestCase):
 
 
 class Installer(unittest.TestCase):
+    def test_bundle_covers_runtime_helpers_and_matches_powershell_relay_inventory(self):
+        import re
+        spec = importlib.util.spec_from_file_location('installer_runtime_inventory', ROOT / 'experiments/server/runtime_service.py')
+        runtime = importlib.util.module_from_spec(spec); spec.loader.exec_module(runtime)
+        self.assertTrue(set(runtime.HELPERS) <= relay.FILES)
+        self.assertIn('prepare_worker_lifecycle.py', relay.FILES)
+        script = (ROOT / 'experiments/vm/PrivateVmInstall.psm1').read_text()
+        literal = re.search(r'\$files = @\((.*?)\)', script, re.S).group(1)
+        self.assertEqual(set(re.findall(r"'([^']+)'", literal)), relay.FILES)
+
     def test_activation_binds_fresh_generation_before_install_and_stops_on_binding_failure(self):
         from unittest.mock import MagicMock
         with tempfile.TemporaryDirectory() as folder:
