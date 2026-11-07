@@ -98,8 +98,8 @@
       "rationale": "Optional nested azd project provisions a synthetic-only test host, disk and isolated network. This inventories operations, not consent or authorization to grant Contributor. A minimal custom deployment role has not been established.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/vm/infra/main.bicep", "sha256": "2a3f694bf742adabbbb5d3ab37c4237e4cfbefc047c74e92b795d7c64afc9f0b" },
-        { "path": "experiments/vm/infra/host.bicep", "sha256": "63e1647beea991f66c17bf4070ce7f4185430258e28321f36e901cd4bc39ba1c" }
+        { "path": "experiments/vm/infra/main.bicep", "sha256": "8b4017538627d919748b6722dac4b0223e14aaaa810d742c0af3c4844702420b" },
+        { "path": "experiments/vm/infra/host.bicep", "sha256": "22737c092467972fa7d85b65467c7758d9913dcdcdefd257ac9c3b18ef6576f8" }
       ]
     },
     {
