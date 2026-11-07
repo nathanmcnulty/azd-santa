@@ -5,9 +5,9 @@
 
 - **Schema version:** 1.0.0
 - **Repository:** nathanmcnulty/azd-santa
-- **Source revision:** `b636b4c10cf2947348114839a3c4b226558c6de5`
-- **Captured:** 2026-10-16
-- **Items:** 7
+- **Source revision:** `4b837cd9447fcf231706b72005545bbe4092f25d`
+- **Captured:** 2026-10-19
+- **Items:** 8
 
 ## SANTA-001: Reconcile this backlog with current source and active work
 
@@ -417,3 +417,61 @@ Provider documentation and protocol fixtures do not prove pinned-client compatib
 **Review and authorization note:**
 
 Review SANTA-007 against the current repository state. Its status or authorization class is not eligible for an actionable generated handoff. Do not claim or execute it without explicit selection, satisfied dependencies, and every required authorization. Never interpret this generated view as approval.
+
+## SANTA-008: Spike self-hosted Azure public sync architecture and protocol security
+
+- **Kind:** discovery
+- **Priority:** P2
+- **Status:** in-progress
+- **Wave:** 3
+- **Authorization:** local-only
+- **Blocker:** _none_
+- **Claim:** _none_
+
+**Problem:**
+
+The operator selected self-hosted Azure, but server implementation, identity binding, cost and native compatibility remain unqualified.
+
+**Scope:**
+
+- docs/azure-sync-spike.md
+- tools/sync&lowbar;spike/
+- tests/Santa.SyncSpike.Tests.ps1
+- azd-permissions.json
+
+**Acceptance:**
+
+- Compare a pinned maintained server with a minimal custom design before selecting implementation; preserve default compute-free baseline.
+- Trace pinned public client/proto behavior and exercise synthetic local HTTP stages and adversarial cases without claiming native interoperability.
+- Separate per-device enrollment, operator administration and explicitly approved immutable rule publication; record remaining deployment/native gates.
+
+**Validation:**
+
+- python tools/sync&lowbar;spike/test&lowbar;conformance.py
+- ./scripts/Test-SantaTemplate.ps1
+- Invoke-Pester ./tests -CI
+
+**Dependencies:**
+
+- nathanmcnulty/azd-santa&colon;SANTA-003
+
+**Components:**
+
+- _none_
+
+**Sources:**
+
+- https&colon;//github.com/nathanmcnulty/azd-santa/issues/37
+- https&colon;//github.com/nathanmcnulty/azd-santa/pull/31
+- docs/azure-sync-spike.md
+- tools/sync&lowbar;spike/model.py
+
+**Evidence:**
+
+- 2026-10-19 reconciled main and all open drafts; reuse exact reviewed PR &num;31 4b837cd9447fcf231706b72005545bbe4092f25d and &num;32 receipt. &num;36 retains profile planning; &num;33 retains native and selected-provider qualification.
+- Original loopback-only public-v1 subset models bounded synthetic authentication, compressed JSON, replay handling, immutable paging and empty/rollback refusal. This is not a production server, native Santa test, permission grant or deployment.
+- Offline template validation passed on PowerShell 7.6.6/Pester 6.2.0 with 112/112 repository tests, including the registered 20-case local HTTP harness. Canonical permission schema and backlog rendering checks passed; generated baseline profiles remain unchanged. Native/Azure qualification, deployment and publication are not authorized or completed.
+
+**Review and authorization note:**
+
+Review SANTA-008 against the current repository state. Its status or authorization class is not eligible for an actionable generated handoff. Do not claim or execute it without explicit selection, satisfied dependencies, and every required authorization. Never interpret this generated view as approval.
