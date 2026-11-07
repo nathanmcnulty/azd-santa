@@ -80,6 +80,20 @@ Describe 'Offline setup transport boundaries' {
                 Should -Invoke Invoke-SantaSetupAzJson -Times 0
             } finally { $request.Recipient.Key.Dispose() }
         }
+        It 'rejects independently mutated encoded username, email and invalid reason before Azure calls' {
+            foreach ($field in @('username', 'email', 'reason')) {
+                $request = New-TestRequest
+                try {
+                    $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($request.PayloadBase64)) | ConvertFrom-Json -AsHashtable
+                    $payload[$field] = switch ($field) { username { 'different-user' } email { 'different@example.invalid' } reason { "invalid`nreason" } }
+                    $request.PayloadBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($payload | ConvertTo-Json -Depth 8 -Compress)))
+                    $path = Join-Path $TestDrive ($field + '.sh'); [IO.File]::WriteAllText($path, "exit 0`n")
+                    { Send-SantaSetupRunCommand $request $path $TestDrive create } | Should -Throw
+                    Should -Invoke Invoke-SantaSetupAzJson -Times 0
+                    Test-Path (Join-Path $TestDrive ($request.RequestId + '-create.submitted.json')) | Should -BeFalse
+                } finally { $request.Recipient.Key.Dispose() }
+            }
+        }
         It 'requires complete unique ciphertext and terminal markers after successful result codes' {
             $context = 'e' * 64
             (Read-TestResult (New-TestResult $context) $context | ConvertFrom-Json).scope | Should -Be 'azd-santa-sealed-setup'

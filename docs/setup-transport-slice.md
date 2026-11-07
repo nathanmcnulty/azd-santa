@@ -11,6 +11,9 @@ HTTPS origin. A fresh 256-bit nonce, recipient fingerprint, exact identity diges
 and operation mode enter a canonical context hash. Only public recipient material
 and bounded UTF-8 JSON arguments are base64 encoded into the remote script. The
 private RSA recipient remains in memory and must be disposed by the caller.
+Preflight revalidates the encoded identity/reason and recomputes the exact target
+digest from the username/email actually being sent; copied digest fields alone
+cannot authorize a modified payload.
 
 Submission uses existing cached Azure CLI credentials and explicit subscription
 on every request; it never logs in, changes active subscription or requests a
