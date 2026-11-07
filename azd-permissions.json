@@ -8,6 +8,36 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/publicIPAddresses/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/networkSecurityGroups/read",
+      "principal": "Explicit selected cached Azure CLI endpoint observer (existing rights only)",
+      "phase": "deployment",
+      "feature": "https-endpoint-readback",
+      "defaultEnabled": false,
+      "scope": "Exact selected tenant/subscription, immutable VM instance and tagged rg-azd-santa-vm-<environment> with linked existing NIC/PIP/subnet/NSG only",
+      "rationale": "Read-only cached selected ARM endpoint producer verifies linked resources and deny-all inbound, then supplies digest-bound nonsecret facts to held-closed offline HTTPS rendering. The existing PIP template adds a stable Azure DNS label only on future authorized provision. No authentication, grants, ingress, certificate order or service startup occurs.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "experiments/server/HttpsEndpoint.psm1",
+          "sha256": "f19748db7f3d7deea96182e21d93205c4bf56a8e16c477405bcfa4d1e4c28b12"
+        },
+        {
+          "path": "experiments/server/New-SantaHttpsCandidate.ps1",
+          "sha256": "e9d676487a9fa891cf2df6eef9fd0172fb84aa31a553fec6b385869afc76c119"
+        },
+        {
+          "path": "experiments/server/prepare_https_proxy.py",
+          "sha256": "4c60bc0428cd55a36b108dc937628ba505958b1913fd271bf17874e0746ca9ec"
+        },
+        {
+          "path": "experiments/vm/infra/host.bicep",
+          "sha256": "9653a305d1ca2474c91404bccc024dfd326436aebd56ef5a97180d05cc7e6987"
+        }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
       "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action; Microsoft.DevTestLab/schedules/read; Microsoft.DevTestLab/schedules/write",
       "principal": "Selected private VM azd operator (existing rights only)",
       "phase": "deployment",
@@ -99,7 +129,7 @@
       "evidenceState": "code",
       "evidence": [
         { "path": "experiments/vm/infra/main.bicep", "sha256": "8b4017538627d919748b6722dac4b0223e14aaaa810d742c0af3c4844702420b" },
-        { "path": "experiments/vm/infra/host.bicep", "sha256": "22737c092467972fa7d85b65467c7758d9913dcdcdefd257ac9c3b18ef6576f8" }
+        { "path": "experiments/vm/infra/host.bicep", "sha256": "9653a305d1ca2474c91404bccc024dfd326436aebd56ef5a97180d05cc7e6987" }
       ]
     },
     {
@@ -309,10 +339,11 @@
     }
   ],
   "gaps": [
+    "Issue64 endpoint source/mocks/Bicep compile do not qualify actual PIP DNS label update, ARM linkage readback, DNS resolution, effective network, certificate or native/browser acceptance. The producer uses only existing selected operator read rights; missing rights remain a blocker, never approval for a role grant. Commercial Azure single-NIC unscoped DNS layout only; all inbound denied and HTTPS503 hold retained.",
     "Santa shared admission candidate adds no Azure/Graph grant or new secret/service. It uses existing guarded Redis for bounded global/source/HMAC-credential counters and persistent fixed permits; only privileged fresh initialization or explicit exact-process-quiesced lifecycle reconciliation may initialize/reclaim state. Selected isolated actual Redis execution passed27 production-Lua/STORE_GUARD observations, including eight concurrent acquisitions and bounded identity allocation; see docs/admission-redis-qualification.md. Actual Django/HTTP integration, Redis restart durability/failure, held request timeout, proxy/native retries and memory/backlog qualification remain open. Operator budget cardinality and backup rollback authority remain separate gaps; public ingress remains held.",
     "Separate credential rotation harness (#52) experiments/server/test_credential_rotation_live.py sha256 776a1c3f8d96849091e3c3aa85f4f02bea19d1055fd05befb0ceb371f9c97433 passed 76 selected private application-container HTTP/ORM observations with isolated synthetic fixtures. It adds no cloud/Graph grants or azd hook. Native profile/MDM credential delivery, client-local rule application, supported administrator rotation API and backup/restore authority remain unqualified; these server observations do not close issue52.",
     "Optional nested private VM azd installation has selected actual ARM, pinned prerequisite/source-build, fresh initialization/runtime, warm same-source azd repeat and original-container reboot evidence. Post-reboot selected credential/rule state matched and seventeen synthetic HTTP checks passed. The initial cold invocation failed at finalization after guest success; its cause remains unexplained, so first-attempt cold end-to-end acceptance remains open. Failed/unknown or differently sourced installation state is retained rather than reinitialized. Trusted reachable HTTPS, native Mac enrollment and customer MFA remain pending; no new grant or public ingress is authorized by metadata.",
-    "Offline held-closed HTTPS candidate (#64/#58) adds no Azure/Graph permission, ingress, DNS or certificate order. experiments\\server\\prepare_https_proxy.py sha256 7fa2dcb6a621b330bd42cc44640abe48cb7edd70dbbf6a99b097787d77fcccb1; experiments\\server\\caddy.lock.json sha256 d1919c8a19b9e282a1985d91383139eff5d9b45c382093ad5d22c138d4c0c5ea. Authoritative ARM endpoint facts producer, Linux proxy/load/admission budgets and trusted TLS/renewal remain unqualified; Windows Caddy validate is provisioning-only and does not close those gates.",
+    "Offline held-closed HTTPS candidate (#64/#58) adds no Azure/Graph permission, ingress, DNS or certificate order. experiments\\server\\prepare_https_proxy.py sha256 4c60bc0428cd55a36b108dc937628ba505958b1913fd271bf17874e0746ca9ec; experiments\\server\\caddy.lock.json sha256 d1919c8a19b9e282a1985d91383139eff5d9b45c382093ad5d22c138d4c0c5ea. Selected cached ARM endpoint facts producer is implemented but not invoked/qualified; Linux proxy/load/admission budgets and trusted TLS/renewal remain unqualified; Windows Caddy validate is provisioning-only and does not close those gates.",
     "Recovery13 passed selected owner-only disposable fixture setup, thirteen request cases under runtime-only credentials, exact name/OID/no-active-backend teardown and independent verification of database absence. No Azure/Graph permission or normal runtime privilege was added; see docs/operator-recovery.md. Failed/unknown outcome retention has offline coverage and needs live fault qualification. Held-restart fixture adaptation, browser/TLS/native and restore gates remain open.",
     "Fresh core role separation passed selected private initialization, ten administrative SQL denials, original empty-inventory TEMP cleanup, normal sync/indexing/MFA/recovery and reboot qualification. Owner-only developer fixture jobs and normal runtime requests have separate receipts; see docs/database-role-separation.md. It adds no Azure/Graph permission or tenant grant. Nonempty retention, unknown initializer fault recovery, upgrades/default grants and existing-volume rotation remain unqualified.",
     "The bounded finalizer passed selected private actual Run Command observation of restricted database authority, schema/Store/security state, search and event consumers, then machine-produced the installation receipt and operator binding. See docs/backend-installation-finalization.md. The opt-in nested private VM hook now supplies machine-generated build/init and deployment facts to this producer; the complete cold ARM/hook path remains live-unqualified. Trusted HTTPS/browser, native endpoint and backup/restore acceptance remain open; no automatic grants are supplied.",
