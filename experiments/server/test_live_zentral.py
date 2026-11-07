@@ -48,11 +48,21 @@ def validate_compose(path):
             'Unsafe evaluation service options')
         require(all(volume in {
             'postgres_data:/var/lib/postgresql', 'rabbitmq_data:/var/lib/rabbitmq',
+            'redis_data:/data',
             'elasticsearch_data:/usr/share/elasticsearch/data', 'media_data:/var/zentral',
             './conf:/zentral-eval-conf:ro'} for volume in service.get('volumes', [])),
             'Unexpected evaluation volume or host mount')
         require(service.get('ports', []) == (['127.0.0.1:8000:8000'] if name == 'web' else []),
                 'Only loopback web ingress is supported')
+        require(name == 'redis' or 'redis_data:/data' not in service.get('volumes', []),
+                'Only Redis may mount security-store data')
+    redis = data['services']['redis']
+    if 'redis_data' in data.get('volumes', {}) or redis.get('volumes'):
+        from prepare_zentral_eval import REDIS_COMMAND
+        require(redis.get('volumes') == ['redis_data:/data'] and redis.get('command') == REDIS_COMMAND,
+                'Persistent security Redis requires exact reviewed mount and durability settings')
+        require(data.get('volumes', {}).get('redis_data') == {},
+                'Security-store data must be a new project-local named volume')
     require(re.fullmatch(r'sha256:[0-9a-f]{64}', data['services']['web'].get('image', '')),
             'Expected a locally built immutable web image ID')
     return path, hashlib.sha256(raw).hexdigest()

@@ -6,6 +6,7 @@ Installed by the image builder, never by a customer editing Django settings.
 Original work released under the Unlicense.
 """
 import json
+import os
 import re
 import secrets
 import time
@@ -31,11 +32,27 @@ DELETE = {'accounts:delete_totp', 'accounts:delete_webauthn_device'}
 ENROLL_SECONDS = 600
 CHALLENGE_SECONDS = 300
 PROOF_SECONDS = 8 * 3600
+STORE_MARKER = 'security-store-instance-v1'
+STORE_SETTINGS = {'appendonly': 'yes', 'appendfsync': 'always',
+                  'aof-load-truncated': 'no', 'maxmemory-policy': 'noeviction',
+                  'no-appendfsync-on-rewrite': 'no'}
+STORE_GUARD = '''
+local marker = redis.call('GET', KEYS[1])
+if not marker then return redis.error_reply('SECURITY_STORE_UNAVAILABLE') end
+local id, ready = string.match(marker, '^([0-9a-f]+):(%d+)$')
+if id ~= ARGV[1] or not ready or tonumber(ready) > tonumber(redis.call('TIME')[1]) then
+    return redis.error_reply('SECURITY_STORE_UNAVAILABLE')
+end
+'''
 
 
 def install_policy(namespace):
     """Run while settings are loading; do not import any Django models here."""
     from urllib.parse import urlsplit, urlunsplit
+    store_id = os.environ.get('AZD_SANTA_SECURITY_STORE_ID', '')
+    if not re.fullmatch(r'[0-9a-f]{64}', store_id):
+        raise ImproperlyConfigured('Configure the private security-store identity before startup')
+    namespace['AZD_SANTA_SECURITY_STORE_ID'] = store_id
     cache = namespace.get('CACHES', {}).get('default', {})
     location = cache.get('LOCATION')
     if not isinstance(location, str) or urlsplit(location).scheme not in ('redis', 'rediss'):
@@ -121,15 +138,104 @@ def check_seed(session, user, submitted):
     return isinstance(submitted, str) and constant_time_compare(enrollment_seed(session, user), submitted)
 
 
+def _security_client():
+    cache = caches['azd_santa_security']
+    client = cache.client.get_client(write=True)
+    config = client.config_get(*STORE_SETTINGS)
+    config = {(k.decode() if isinstance(k, bytes) else k):
+              (v.decode() if isinstance(v, bytes) else v) for k, v in config.items()}
+    state = client.info('persistence')
+    if any(config.get(key) != value for key, value in STORE_SETTINGS.items()) or state.get('aof_last_write_status') != 'ok':
+        raise ImproperlyConfigured('Security-store persistence is not ready')
+    return cache, client
+
+
+def _expected_store_id():
+    from django.conf import settings
+    return settings.AZD_SANTA_SECURITY_STORE_ID
+
+
+def _store_operation(script, key=None, *arguments):
+    cache, client = _security_client()
+    keys = [cache.make_key(STORE_MARKER)]
+    if key is not None:
+        keys.append(cache.make_key(key))
+    # Marker check and mutation share one Redis operation: replacement between
+    # a separate GET and SET must never admit a claim into an empty store.
+    return client.eval(STORE_GUARD + script, len(keys), *keys,
+                       _expected_store_id(), *arguments)
+
+
+def check_security_store():
+    _store_operation('return 1')
+
+
 def _cache_add(key, value, seconds):
-    return caches['azd_santa_security'].add(key, value, timeout=seconds)
+    if value is not True:
+        raise ValueError('Security claims must be boolean')
+    return bool(_store_operation(
+        "if redis.call('SET', KEYS[2], '1', 'NX', 'EX', ARGV[2]) then return 1 else return 0 end", key, seconds))
 
 
 def _budget(key, maximum, seconds=CHALLENGE_SECONDS):
-    cache = caches['azd_santa_security']
-    if cache.add(key, 1, timeout=seconds):
-        return True
-    return cache.incr(key) <= maximum
+    count = _store_operation('''
+local count = redis.call('GET', KEYS[2])
+if not count then redis.call('SET', KEYS[2], '1', 'EX', ARGV[2]); return 1 end
+if not string.match(count, '^%d+$') or tonumber(count) < 1 then
+    return redis.error_reply('SECURITY_STORE_UNAVAILABLE')
+end
+if tonumber(count) >= tonumber(ARGV[3]) then return tonumber(ARGV[3]) + 1 end
+return redis.call('INCR', KEYS[2])
+''', key, seconds, maximum)
+    return count <= maximum
+
+
+def _fresh_authority_empty():
+    from zentral.contrib.inventory.models import EnrollmentSecret
+    return not get_user_model().objects.exists() and not EnrollmentSecret.objects.exists()
+
+
+def initialize_security_store(mode, *, confirm_quiesced=False):
+    """Privileged explicit setup; never called by middleware or normal startup."""
+    if mode == 'fresh':
+        if not _fresh_authority_empty():
+            raise ImproperlyConfigured('Fresh initialization requires a new database without accounts or enrollment credentials')
+    elif mode != 'migrate' or not confirm_quiesced:
+        raise ImproperlyConfigured('Migration requires explicit quiescence confirmation')
+    cache, client = _security_client()
+    delay = CHALLENGE_SECONDS + 60 if mode == 'migrate' else 0
+    result = client.eval('''
+if redis.call('EXISTS', KEYS[1]) ~= 0 then return 0 end
+local ready = tonumber(redis.call('TIME')[1]) + tonumber(ARGV[2])
+redis.call('SET', KEYS[1], ARGV[1] .. ':' .. tostring(ready))
+return 1
+''', 1, cache.make_key(STORE_MARKER), _expected_store_id(), delay)
+    if result != 1:
+        raise ImproperlyConfigured('Security-store marker already exists; inspect configuration and state instead of reinitializing')
+
+
+def security_store_command_class():
+    from django.core.management.base import BaseCommand, CommandError
+
+    class Command(BaseCommand):
+        help = 'Explicit private security-store initialization/check; never runs automatically.'
+
+        def add_arguments(self, parser):
+            parser.add_argument('mode', choices=('fresh', 'migrate', 'check'))
+            parser.add_argument('--confirm-quiesced', action='store_true',
+                                help='Confirm old application processes are stopped; migration enforces an additional six-minute admission hold')
+
+        def handle(self, *args, **options):
+            try:
+                if options['mode'] == 'check':
+                    check_security_store()
+                else:
+                    initialize_security_store(options['mode'], confirm_quiesced=options['confirm_quiesced'])
+            except Exception:
+                raise CommandError('Security store is not admitted; inspect private persistence/configuration state. No marker was silently repaired.') from None
+            self.stdout.write('Security-store operation completed; migration hold may still block authentication.')
+
+    return Command
 
 
 def challenge_nonce():
@@ -228,6 +334,11 @@ class RequireOperatorMFA:
             name = match.view_name
         except Resolver404:
             name = None
+        if name != 'logout' and (request.user.is_authenticated or (name == 'login' and request.method == 'POST') or name in VERIFY):
+            try:
+                check_security_store()
+            except Exception:
+                return HttpResponse('Sign-in is temporarily unavailable. Try again later.', status=503)
         if name and name.startswith('realms_public:'):
             return HttpResponse('Use the local operator sign-in for this deployment.', status=403)
         if not request.user.is_authenticated:

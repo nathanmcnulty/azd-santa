@@ -37,9 +37,12 @@ identifier and five MFA submissions per user in five minutes. A dedicated
 security cache alias has strict errors and two-second socket/connect timeouts;
 new sign-in fails closed when it is unavailable. Signed random verification
 challenges and accepted TOTP timesteps are claimed once in that shared cache,
-including for counterless security keys. This does **not** yet prove replay/attempt
-state survives Redis recreation or restoration: the current lab Redis has no
-durable volume. Resolve and test that boundary with #53/#54 before ingress.
+including for counterless security keys. The first lab used Redis without a
+durable volume. The later [durable store](security-store-durability.md) requires
+explicit privileged admission and passed actual restart/recreation checks;
+[held cryptographic requests](mfa-restart-qualification.md) also passed Redis
+SIGKILL/start. This does not prove host-power-loss or old-backup restoration:
+#54's current-authority restoration gate remains open before ingress.
 
 Six pinned Apache/core files integrate the policy. Their exact original/result
 hashes are checked before image construction and again inside the build;
@@ -168,3 +171,10 @@ matching recovery/factor-management ordering. The separate real recovery suite
 confirmed both login/recovery ordering cases through PostgreSQL's actual wait
 graph. This does not add Redis durability, customer transport or native-browser
 acceptance to the original MFA result.
+
+The latest fresh core image now uses the admitted persistent store and defaults
+to the [qualified Santa-only app profile](santa-profile-qualification.md). Its
+fifteen-case MFA suite includes missing/wrong/held/malformed store negatives for
+new and existing operator requests. Exact image, policy, harness and receipt
+bindings are in the durability pages. Customer transport, real browser/TLS,
+host-crash and matched-backup authority remain separate gates.

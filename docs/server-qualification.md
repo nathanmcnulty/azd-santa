@@ -308,3 +308,11 @@ events. Those pages record exact image/source/Compose/receipt bindings and
 retained failed attempts. Private recovery and decoding acceptance do not close
 the `azd` setup transport, durable replay/restore, ingress/admission, automatic
 startup, fresh Santa-only profile, native Mac or Container Apps gates.
+
+The next fresh core image separately passed [persistent Redis storage](security-store-durability.md),
+[genuine held MFA requests across Redis restart](mfa-restart-qualification.md),
+and a [same-image nine-app Santa profile](santa-profile-qualification.md).
+Fresh core preparation now selects that smaller app set. This is private
+runtime acceptance, not customer `azd` deployment: automatic upgrade/reboot,
+backup/current-authority reconciliation, per-service secret separation (#61),
+trusted TLS/admission, native Mac and Container Apps remain open.

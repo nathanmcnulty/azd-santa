@@ -68,7 +68,9 @@ class ZentralEvaluation(unittest.TestCase):
             self.assertEqual(service['logging']['options']['max-file'], '3')
             self.assertNotIn('docker.sock', json.dumps(service))
             self.assertNotIn('runserver', json.dumps(service))
-        self.assertEqual(set(compose['volumes']), {'postgres_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data'})
+        self.assertEqual(set(compose['volumes']), {'postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data'})
+        self.assertEqual(services['redis']['volumes'], ['redis_data:/data'])
+        self.assertEqual(services['redis']['command'], generator.REDIS_COMMAND)
 
     def test_configuration_and_private_secrets(self):
         self.prepare()
@@ -80,6 +82,8 @@ class ZentralEvaluation(unittest.TestCase):
         self.assertEqual(config['notifier']['url'], 'redis://redis:6379/15')
         self.assertNotIn('tls_privkey', config['api'])
         env = dict(line.split('=', 1) for line in (self.destination / 'runtime.env').read_text().splitlines())
+        self.assertRegex(env['AZD_SANTA_SECURITY_STORE_ID'], r'^[0-9a-f]{64}$')
+        self.assertNotIn(env['AZD_SANTA_SECURITY_STORE_ID'], (self.destination / 'provenance.json').read_text())
         for key in ('POSTGRES_PASSWORD', 'RABBITMQ_DEFAULT_PASS', 'ZENTRAL_DJANGO_SECRET'):
             self.assertGreaterEqual(len(env[key]), 48)
             self.assertNotIn(env[key], (self.destination / 'provenance.json').read_text())
@@ -128,7 +132,7 @@ class ZentralEvaluation(unittest.TestCase):
         self.prepare()
         self.assertNotEqual(first, self.read('compose.json')['name'])
 
-    def test_fresh_santa_profile_preserves_dependencies_and_telemetry(self):
+    def test_fresh_core_defaults_to_santa_preserving_dependencies_and_telemetry(self):
         path = self.source / 'conf/start/zentral/base.json'
         config = json.loads(path.read_text())
         for name in (*generator.OPTIONAL_APPS, 'realms', 'zentral.core.compliance_checks',
@@ -142,7 +146,7 @@ class ZentralEvaluation(unittest.TestCase):
         self.destination = self.root / 'santa-fresh'
         with patch.dict(generator.SOURCE_HASHES, self.hashes, clear=True):
             generator.prepare(self.source, self.image, self.lock, self.destination,
-                              'core-experiment', app_profile='santa')
+                              'core-experiment')
         expected = {name: value for name, value in baseline['apps'].items()
                     if name not in generator.OPTIONAL_APPS}
         self.assertEqual(self.read('conf/base.json')['apps'], expected)
@@ -158,8 +162,10 @@ class ZentralEvaluation(unittest.TestCase):
 
     def test_core_variant_is_declared_not_license_clearance(self):
         with patch.dict(generator.SOURCE_HASHES, self.hashes, clear=True):
-            generator.prepare(self.source, self.image, self.lock, self.destination, 'core-experiment')
+            generator.prepare(self.source, self.image, self.lock, self.destination,
+                              'core-experiment', app_profile='upstream')
         self.assertEqual(self.read('provenance.json')['declared_image_variant'], 'core-experiment')
+        self.assertEqual(self.read('provenance.json')['app_profile'], 'upstream')
         self.assertIn('verify actual image contents', (self.destination / 'EVALUATION-ONLY.txt').read_text())
         self.assertNotIn('image includes ee/', (self.destination / 'EVALUATION-ONLY.txt').read_text())
 
