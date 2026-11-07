@@ -6,7 +6,7 @@ Lua cases pass on Redis. The coordinator creates and controls a disposable Redis
 container using the exact installed dependency image; this tool never creates,
 restarts, stops or removes containers and never discovers application Redis.
 
-## Selected actual result
+## Historical unfenced actual result
 
 On 2026-11-07, harness SHA-256
 `33a2fd00f8e2c7bee5fb7989325605499e3d181c198ed216c7571d73f55a233b`
@@ -21,7 +21,38 @@ before execution. Private evidence is retained at
 `/var/lib/azd-santa-qualification/admission-lua-6063052/evidence-9482511`.
 Application Redis and the original seven application containers were not targets
 of this qualification. This is actual Lua/Redis acceptance for these cases;
-the integration and failure boundaries below remain open.
+the integration and failure boundaries below remain open. This receipt binds
+the older admission source SHA-256
+`937ef10433eeb3bf901aaf5b87aaddf37b73b9c4c135a927cb6f9f5e1a0c5235`;
+it is not acceptance of the newer fenced protocol.
+
+## Fenced follow-up: source prepared, actual Redis execution pending
+
+The current harness binds admission SHA-256
+`ebe2abef0cb9786f677a08dacf96b27acd944fcdd4e1465afa5c74701249629b`
+from frozen product commit `f4324804c5aad6d58e70bc186850d78f3f1f6982`.
+The operator guard remains SHA-256
+`0d5eb3b850b58c4f6092206734114fdbf931e965cb6b448feb60a4068aee4b8d`.
+Its new receipt scope is `disposable-redis-admission-fenced-lua-v2`, requiring a
+new evidence directory and new actual run. The original historical27 receipt
+must not be updated or represented as fenced acceptance.
+
+All prior27 observation families remain, adapted to fenced reconciliation.
+Ten additional observations cover readonly generation/occupancy, expected to
+target CAS, same-target replay with a new live permit, stale transitions,
+discarded-reply observation/idempotent retry, exact budget preservation, invalid
+or equal fences, advancing an empty state, explicit missing initialization and
+rejecting corrupt global budgets while admission state is missing.
+Every rejected corrupt-state/counter/read/CAS attempt compares atomic snapshots
+of all case-local keys, sorted field/value bytes and absolute `PEXPIRETIME`
+timestamps. Successful CAS and retry must preserve counter values and exact
+expiration timestamps. A simulated lost reply means the actual first Lua
+response is deliberately not interpreted; no fake success is substituted.
+
+This is source/offline harness preparation only. It does not establish actual
+Lua execution, host PID/container/PostgreSQL quiescence, supervisor locking,
+host timeout handling or safe production recovery. The coordinator must first
+verify exact source bytes and the independently selected disposable target.
 
 ## Coordinator invocation
 
@@ -56,8 +87,9 @@ Cases cover missing/corrupt/held authority markers, admission hash shape/config,
 global budget type/value/TTL, valid exhausted budgets, source/credential/global
 rate caps, global-first bounded identity allocation, eight concurrent acquire
 attempts sharing one nonexpiring slot, exact-token release and nonreclamation
-after rate-window expiry. Explicit reconciliation changes the generation and
-invalidates the old release token. This last case proves the Lua primitive only;
+after rate-window expiry. Explicit fenced reconciliation changes the generation
+and invalidates the old release token. A repeated same-target transition must
+leave any new live permit untouched. These cases exercise the Lua primitive only;
 it does not prove the host controller's process-quiescence prerequisite.
 
 This tool does not exercise Django's persistence/configuration client checks,
