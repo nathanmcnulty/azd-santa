@@ -25,7 +25,7 @@ def fixture():
         SealedSha256='e' * 64, RemoteProgramSha256='f' * 64)
     request = dict(context={'binding': binding}, context_sha256='1' * 64)
     services = {name: str(index + 1) * 64 for index, name in enumerate(('web', 'workers', 'celery', 'db', 'redis', 'rabbitmq', 'elastic'))}
-    projection = dict(queue='store_events_Elasticsearch', migrations=True, store=True, search=True)
+    projection = dict(queue='store_events_Elasticsearch', database_authority=True, migrations=True, store=True, search=True)
     queues = [dict(name=name, consumers=1) for name in ('store_events_Elasticsearch', 'enrich_events', 'process_events')]
     calls = []
     def docker(args, **kwargs):
@@ -68,7 +68,7 @@ class Producer(unittest.TestCase):
         host.attest_runtime.assert_called_once_with(request)
 
     def test_uninitialized_migrations_store_search_or_security_cannot_emit_ready_receipt(self):
-        for failure in ('migrations', 'store', 'search', 'security'):
+        for failure in ('database_authority', 'migrations', 'store', 'search', 'security'):
             host, _, projection, _, _ = fixture()
             if failure == 'security':
                 host.attest_runtime.side_effect = ValueError('not admitted')

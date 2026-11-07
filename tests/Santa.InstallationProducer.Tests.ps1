@@ -33,7 +33,7 @@ Describe 'Machine-produced installation readiness and binding' {
                     [Text.Encoding]::UTF8.GetByteCount($text) | Should -BeLessOrEqual 45056
                     $text -match "(?m)^export AZD_SANTA_SETUP_REQUEST_B64='(?<payload>[A-Za-z0-9+/=]+)'$" | Should -BeTrue
                     $requestData = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Matches.payload)) | ConvertFrom-Json -AsHashtable
-                    $ready = @{ migrations = $true; store = $true; security_store = $true; event_consumers = $true; search = $true }
+                    $ready = @{ database_authority = $true; migrations = $true; store = $true; security_store = $true; event_consumers = $true; search = $true }
                     $result = @{
                         scope = 'azd-santa-installation-readback'; context_sha256 = $requestData.context_sha256
                         attestor_sha256 = (Get-FileHash (Join-Path $script:producerSourceDirectory 'operator_setup_host.py')).Hash.ToLowerInvariant()

@@ -36,6 +36,8 @@ security store. It returns the exact seven already-inspected container IDs.
 Readiness keeps those IDs throughout; it never re-resolves, starts or restarts a
 service. The selected web process must demonstrate:
 
+- The restricted runtime database identity and effective privileges, using the
+  installed read-only `check_runtime` check; no owner credential is used.
 - No pending migration plan, using read-only migration inspection.
 - Exactly one provisioned Elasticsearch admin Store targeting the private
   `http://elastic:9200` backend.
@@ -52,7 +54,7 @@ Source caps are 24 KiB for the host attestor, 8 KiB for the producer, 24 KiB for
 their compressed composite, 8 KiB for the public request and 44 KiB for the full
 shell payload. A successful terminal Run Command must contain exactly one bounded
 3200-byte receipt and a later exact context completion marker. The client checks
-source fingerprints, all five readiness gates and every selected output before
+source fingerprints, all six readiness gates and every selected output before
 persisting anything. Only nonsecret metadata enters Azure output; no credential,
 private key or setup link is involved. Raw failure output is never echoed.
 

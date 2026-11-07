@@ -9,12 +9,14 @@ import re
 import signal
 
 MARKER = 'SANTA_INSTALLATION_JSON:'
-READY = {'migrations', 'store', 'security_store', 'event_consumers', 'search'}
+READY = {'database_authority', 'migrations', 'store', 'security_store', 'event_consumers', 'search'}
 PROBE = '''
 import json,urllib.request
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from zentral.core.stores.models import Store
+from azd_santa_database_roles import check_runtime
+check_runtime()
 executor=MigrationExecutor(connection)
 assert not executor.migration_plan(executor.loader.graph.leaf_nodes())
 assert Store.objects.count()==1
@@ -30,7 +32,7 @@ with opener.open('http://elastic:9200/_cluster/health?wait_for_status=yellow&tim
 assert len(data)<=65536
 health=json.loads(data)
 assert health['timed_out'] is False and health['status'] in ('yellow','green') and type(health['number_of_nodes']) is int and health['number_of_nodes']==1
-print('SANTA_INSTALL_READY:'+json.dumps({'queue':queue,'migrations':True,'store':True,'search':True}))
+print('SANTA_INSTALL_READY:'+json.dumps({'queue':queue,'database_authority':True,'migrations':True,'store':True,'search':True}))
 '''
 
 
@@ -55,8 +57,8 @@ def produce_installation(host, deployment_id, attestor_sha256, producer_sha256):
     records = [line[len('SANTA_INSTALL_READY:'):] for line in raw.decode().splitlines() if line.startswith('SANTA_INSTALL_READY:')]
     host.need(len(records) == 1)
     projection = host.loads(records[0])
-    host.need(set(projection) == {'queue', 'migrations', 'store', 'search'}
-              and all(projection[k] is True for k in ('migrations', 'store', 'search'))
+    host.need(set(projection) == {'queue', 'database_authority', 'migrations', 'store', 'search'}
+              and all(projection[k] is True for k in ('database_authority', 'migrations', 'store', 'search'))
               and re.fullmatch('[A-Za-z0-9_.-]{1,128}', projection['queue']))
     queues = host.loads(host.docker(['exec', services['rabbitmq'], 'rabbitmqctl', 'list_queues', 'name', 'consumers', '--formatter', 'json'], timeout=20))
     host.need(type(queues) is list and len(queues) <= 1024)

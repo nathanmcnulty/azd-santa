@@ -291,7 +291,7 @@ function Complete-SantaBackendInstallation {
             $root.GetProperty('context_sha256').GetString() -cne $request.Context -or
             $root.GetProperty('attestor_sha256').GetString() -cne $source.AttestorSha256 -or
             $root.GetProperty('producer_sha256').GetString() -cne $source.ProducerSha256) { throw 'Installation readback source/selection mismatch.' }
-        $ready = $root.GetProperty('readiness'); $gates = @('migrations', 'store', 'security_store', 'event_consumers', 'search')
+        $ready = $root.GetProperty('readiness'); $gates = @('database_authority', 'migrations', 'store', 'security_store', 'event_consumers', 'search')
         Assert-SantaReceiptFields $ready $gates
         foreach ($gate in $gates) { if (-not $ready.GetProperty($gate).GetBoolean()) { throw 'Runtime initialization is not complete.' } }
         $receipt = $root.GetProperty('installation')
