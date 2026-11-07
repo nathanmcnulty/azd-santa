@@ -65,7 +65,7 @@ class Maintenance(unittest.TestCase):
         self.writer(checkpoint/'snapshot-intent.json',{'retained':True})
         if self.failure=='unknown-snapshot':raise TimeoutError('unknown')
         selected=native.plan(request_sha,operation,'A'*22,'9.2.1',['events'],1)
-        response={'snapshots':[dict(snapshot=selected['snapshot'],uuid='B'*22,version='9.2.1',state='SUCCESS',include_global_state=True,
+        response={'snapshots':[dict(snapshot=selected['snapshot'],uuid='B'*22,version_id=9039001,version='9.2.0-9.2.1',state='SUCCESS',include_global_state=True,
             failures=[],indices=['events'],shards={'total':1,'successful':1,'failed':0},
             metadata={'azd_santa_binding_sha256':request_sha,'azd_santa_plan_sha256':native.sha(selected)})]}
         self.writer(checkpoint/'native-complete.json',native.completed_snapshot(response,selected))

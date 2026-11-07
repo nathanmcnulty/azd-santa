@@ -14,6 +14,12 @@ import time
 REPOSITORY_ROOT = '/mnt/azd-santa-snapshots'
 HEX = r'[a-f0-9]{64}'
 INDICES_PATH = '/_cat/indices?format=json&expand_wildcards=all&h=index,status,pri'
+# ES 9.2.1 commit 4ad0ef0e98a2e72fafbd79a19fa5cae2f026117d:
+# SnapshotInfo serializes IndexVersion, not the GET / node release. See
+# IndexVersions.csv, IndexVersions.BACKPORT_UPGRADE_TO_LUCENE_10_3_1 and
+# ReleaseVersions.generateVersionsLookup (current 9.2.1 + prior 9.2.0).
+SNAPSHOT_INDEX_VERSION = 9039001
+SNAPSHOT_RELEASE_RANGE = '9.2.0-9.2.1'
 
 
 def need(value):
@@ -112,7 +118,8 @@ def completed_snapshot(value, selected):
     need(type(value) is dict and type(value.get('snapshots')) is list and len(value['snapshots']) == 1)
     snapshot = value['snapshots'][0]
     need(snapshot['snapshot'] == selected['snapshot'] and re.fullmatch(r'[A-Za-z0-9_-]{22}', snapshot['uuid'])
-         and snapshot['version'] == selected['version'] and snapshot['state'] == 'SUCCESS'
+         and type(snapshot['version_id']) is int and snapshot['version_id'] == SNAPSHOT_INDEX_VERSION
+         and snapshot['version'] == SNAPSHOT_RELEASE_RANGE and snapshot['state'] == 'SUCCESS'
          and snapshot.get('include_global_state') is True and snapshot.get('failures') == []
          and type(snapshot['indices']) is list and len(snapshot['indices']) == len(selected['indices'])
          and set(snapshot['indices']) == set(selected['indices']))
@@ -169,7 +176,11 @@ def submit(directory, selected, api):
     repository_matches(api('GET', repository_path, None), selected)
     inventory_matches(api('GET', INDICES_PATH, None), selected)
     snapshot_path = repository_path + '/' + selected['snapshot'] + '?wait_for_completion=false'
-    body = dict(indices=','.join(selected['indices']), include_global_state=True, partial=False,
+    # Exact 9.2.1 SnapshotsService rejects concrete system-index names in
+    # indices. Wildcard resolution selects regular/hidden indices and streams;
+    # include_global_state with absent feature_states includes ALL features.
+    # Full observed concrete index/shard equality is still required afterward.
+    body = dict(indices='*', expand_wildcards='all', include_global_state=True, partial=False,
                 ignore_unavailable=False, metadata={'azd_santa_binding_sha256': selected['binding_sha256'],
                                                   'azd_santa_plan_sha256': sha(selected)})
     write_new(directory / 'snapshot-intent.json', dict(path=snapshot_path, body=body))
@@ -228,7 +239,7 @@ def run_reserved(directory, binding_sha256, operation_id, *, seconds=600, maximu
         need(len(raw) <= 1024*1024)
         return json.loads(raw)
     info = api('GET', '/', None)
-    stats=api('GET','/_stats/store?filter_path=_all.primaries.store.size_in_bytes',None)
+    stats=api('GET','/_stats/store?expand_wildcards=all&filter_path=_all.primaries.store.size_in_bytes',None)
     size=stats['_all']['primaries']['store']['size_in_bytes']
     need(type(size) is int and size>=0 and size+64*1024**2<=maximum_bytes)
     rows = api('GET', INDICES_PATH, None)

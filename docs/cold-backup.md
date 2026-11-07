@@ -220,6 +220,23 @@ followed by normal `systemctl stop`:
 6. Stop the dependencies, prove the machine-bound stop outcome, then capture
    the completed repository and four ordinary data volumes with all writers gone.
 
+The native API contract is pinned to Elasticsearch source
+`4ad0ef0e98a2e72fafbd79a19fa5cae2f026117d` (9.2.1), independently of a live
+result. GET `/` must still report exactly 9.2.1. Snapshot GET responses instead
+serialize an index-format identity: `version_id: 9039001` and
+`version: "9.2.0-9.2.1"`. The exact range follows
+[SnapshotInfo's serializer](https://github.com/elastic/elasticsearch/blob/4ad0ef0e98a2e72fafbd79a19fa5cae2f026117d/server/src/main/java/org/elasticsearch/snapshots/SnapshotInfo.java#L545),
+[the prior index-version mapping](https://github.com/elastic/elasticsearch/blob/4ad0ef0e98a2e72fafbd79a19fa5cae2f026117d/server/src/main/resources/org/elasticsearch/index/IndexVersions.csv#L186)
+and [ReleaseVersions' current-release/range construction](https://github.com/elastic/elasticsearch/blob/4ad0ef0e98a2e72fafbd79a19fa5cae2f026117d/server/src/main/java/org/elasticsearch/ReleaseVersions.java#L50).
+The snapshot request uses `indices: "*"`, `expand_wildcards: "all"` and
+`include_global_state: true`, with no feature-state exclusions. This preserves
+regular/hidden indices, streams and all feature/system state while avoiding
+[the pinned server's rejection of explicit system-index names](https://github.com/elastic/elasticsearch/blob/4ad0ef0e98a2e72fafbd79a19fa5cae2f026117d/server/src/main/java/org/elasticsearch/snapshots/SnapshotsService.java#L2994).
+The plan still records every observed concrete index and primary shard; missing,
+extra or partial results fail rather than silently narrowing the backup.
+Source-derived synthetic full-response fixtures include a GeoIP system index
+and feature state. They are compatibility tests, not actual snapshot evidence.
+
 Each repository/snapshot PUT has an exclusive fsynced intent before submission.
 An ambiguous outcome may only GET the same reserved repository/snapshot; a 404
 does not authorize another PUT/name. Unknown/failure retains state. Read-only

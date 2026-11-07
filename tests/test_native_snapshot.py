@@ -19,9 +19,9 @@ class NativeSnapshot(unittest.TestCase):
         self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
         self.root=Path(self.directory.name).resolve()
         self.plan=native.plan('a'*64,'b'*32,'C'*22,'9.2.1',['santa-events'],1)
-        self.result={'snapshots':[dict(snapshot=self.plan['snapshot'],uuid='D'*22,version='9.2.1',state='SUCCESS',
-            include_global_state=True,failures=[],indices=['santa-events'],shards={'total':1,'successful':1,'failed':0},
-            metadata={'azd_santa_binding_sha256':'a'*64,'azd_santa_plan_sha256':native.sha(self.plan)})]}
+        # Source-derived complete API shape, not a live snapshot receipt.
+        self.result=json.loads((ROOT/'tests/fixtures/server/native-snapshot-es921-success.json').read_bytes())
+        self.assertEqual(self.result['snapshots'][0]['metadata']['azd_santa_plan_sha256'],native.sha(self.plan))
         if os.name=='nt':
             # Real exclusive file writes on Windows. Directory fsync/ownership
             # are Linux gates, not inferred from this portable protocol test.
@@ -56,7 +56,31 @@ class NativeSnapshot(unittest.TestCase):
         puts=[call for call in calls if call[0]=='PUT'];self.assertEqual(len(puts),2)
         self.assertTrue(puts[1][2]['include_global_state']);self.assertFalse(puts[1][2]['partial'])
         self.assertFalse(puts[1][2]['ignore_unavailable'])
-        self.assertEqual(puts[1][2]['indices'],'santa-events')
+        self.assertEqual(puts[1][2]['indices'],'*')
+        self.assertEqual(puts[1][2]['expand_wildcards'],'all')
+        self.assertNotIn('feature_states',puts[1][2])
+
+    def test_system_indices_use_all_features_not_forbidden_explicit_names_and_remain_required_in_result(self):
+        fixture=json.loads((ROOT/'tests/fixtures/server/native-snapshot-es921-system-indices.json').read_bytes())
+        self.plan=native.plan('a'*64,'b'*32,'C'*22,'9.2.1',[r['index'] for r in fixture['inventory']],2)
+        self.result=fixture['snapshot_response']
+        self.assertEqual(self.result['snapshots'][0]['metadata']['azd_santa_plan_sha256'],native.sha(self.plan))
+        transport,state,calls=self.transport()
+        def api(method,path,body):
+            if path==native.INDICES_PATH:return fixture['inventory']
+            if method=='PUT' and 'indices' in body:
+                # Source-derived request admission: explicit system names fail.
+                self.assertEqual(body['indices'],'*');self.assertEqual(body['expand_wildcards'],'all')
+                self.assertTrue(body['include_global_state']);self.assertNotIn('feature_states',body)
+            return transport(method,path,body)
+        result=native.submit(self.root,self.plan,api)
+        self.assertEqual(result['plan']['indices'],['.geoip_databases','santa-events'])
+        self.assertEqual(result['plan']['primary_shards'],2)
+        for change in (lambda s:s.update(indices=['santa-events']),
+                       lambda s:s['shards'].update(total=1,successful=1),
+                       lambda s:s.update(indices=['.geoip_databases','santa-events','unexpected'])):
+            altered=copy.deepcopy(self.result);change(altered['snapshots'][0])
+            with self.assertRaises(ValueError):native.completed_snapshot(altered,self.plan)
 
     def test_ambiguous_snapshot_only_observes_same_identity_never_replays_or_changes_names(self):
         api,state,calls=self.transport(timeout=True)
@@ -80,13 +104,24 @@ class NativeSnapshot(unittest.TestCase):
 
     def test_failed_partial_wrong_uuid_version_metadata_index_or_shard_results_cannot_complete(self):
         changes=(lambda s:s.update(state='PARTIAL'),lambda s:s.update(state='FAILED'),lambda s:s.update(uuid='bad'),
-            lambda s:s.update(version='different'),lambda s:s.update(include_global_state=False),
+            lambda s:s.update(version='different'),lambda s:s.update(version='9.2.1'),
+            lambda s:s.update(version_id=9039000),lambda s:s.update(version_id=True),lambda s:s.update(include_global_state=False),
             lambda s:s.update(failures=[{'reason':'unavailable'}]),lambda s:s.update(indices=[]),
             lambda s:s['metadata'].update(azd_santa_binding_sha256='f'*64),
             lambda s:s['shards'].update(failed=1),lambda s:s['shards'].update(total=2),lambda s:s['shards'].update(successful=True))
         for change in changes:
             value=copy.deepcopy(self.result);change(value['snapshots'][0])
             with self.assertRaises(ValueError):native.completed_snapshot(value,self.plan)
+
+    def test_node_release_must_remain_exact_despite_snapshot_index_release_range(self):
+        with self.assertRaises(ValueError):native.plan('a'*64,'b'*32,'C'*22,'9.2.0',['santa-events'],1)
+        api,state,calls=self.transport()
+        native.submit(self.root,self.plan,api)
+        def changed(method,path,body):
+            return {'cluster_uuid':'C'*22,'version':{'number':'9.2.0'}} if path=='/' else api(method,path,body)
+        calls.clear()
+        with self.assertRaises(ValueError):native.observe(self.root,self.plan,changed)
+        self.assertFalse(any(call[0]=='PUT' for call in calls))
 
     def test_in_progress_is_read_only_and_inventory_changes_fail_completion(self):
         api,state,calls=self.transport();native.submit(self.root,self.plan,api)
