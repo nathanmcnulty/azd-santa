@@ -22,6 +22,8 @@ import urllib.request
 import zlib
 
 VIEW_SHA256 = '205315d6cf592fe53efaebb58fb6843c4f17f842d85b7c74816964385df1ec6a'
+REVIEWED_VIEW_SHA256 = frozenset((VIEW_SHA256,
+    '55efd66eb2f7a281d7182a6aaa392f54fb449e5035213a22ce28253b9635ef32'))
 STAGES = ('preflight', 'ruledownload', 'eventupload', 'postflight')
 live = None
 
@@ -106,14 +108,10 @@ def post(stage, device, body, header=None, legacy=None):
     if header is not None: headers['Zentral-Authorization'] = header
     request = urllib.request.Request(live.BASE_URL + path,
         zlib.compress(json.dumps(body).encode()), headers, method='POST')
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), live.NoRedirect())
-    try: response = opener.open(request, timeout=15)
-    except urllib.error.HTTPError as error: response = error
-    with response:
-        raw = response.read(65537); need(len(raw) <= 65536)
-        value = json.loads(raw) if response.status == 200 else None
-        need(value is None or isinstance(value, dict))
-        return response.status, value
+    status, raw = live.http_send(request)
+    value = json.loads(raw) if status == 200 else None
+    need(status != 200 or isinstance(value, dict))
+    return status, value
 
 
 def orm(compose, fixture, code):
@@ -244,10 +242,12 @@ def full_sync(compose, fixture, index, observations, case, changed=False, legacy
                              lost_session_reconciliation=reconcile, explicit_clean_requested=not reconcile))
 
 
-def run(compose_path, destination, expected_image, expected_helper, expected_generator):
+def run(compose_path, destination, expected_image, expected_helper, expected_generator, expected_view):
     global live
+    need(expected_view in REVIEWED_VIEW_SHA256)
     need(sys.platform == 'linux' and os.geteuid() == 0)
     live, helpers = load_helpers(expected_helper, expected_generator)
+    transport = live.reset_http_transport()
     compose, digest = live.validate_compose(compose_path)
     config = json.loads(compose.read_bytes())
     need(re.fullmatch('sha256:[a-f0-9]{64}', expected_image) and all(
@@ -261,12 +261,13 @@ def run(compose_path, destination, expected_image, expected_helper, expected_gen
     destination.mkdir(mode=0o700)
     write(destination / 'attempt.json', dict(scope='private-credential-rotation-attempt', compose_sha256=digest,
         image_id=expected_image, harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), helpers=helpers,
+        expected_view_sha256=expected_view,
         state='outcome-unconfirmed; never automatically replay this directory'))
     observations = []
     try:
         container = attest_web(compose, config['name'], expected_image)
         runtime = live.orm(compose, "import hashlib\nfrom pathlib import Path\nfrom zentral.contrib.santa import public_views\nprint('SANTA_SYNTHETIC_JSON:'+json.dumps({'view_sha256':hashlib.sha256(Path(public_views.__file__).read_bytes()).hexdigest()}))")
-        need(runtime == {'view_sha256': VIEW_SHA256})
+        need(runtime == {'view_sha256': expected_view})
         fixture = live.initialize_fixture(compose, destination / 'fixture-initial.json', digest)
         epoch = 0
         def authority(index, action):
@@ -337,24 +338,27 @@ print('SANTA_SYNTHETIC_JSON:'+json.dumps({'changed':True}))
         deny_all(compose, fixture, other, 'Bearer ' + other['secret'], observations, 'existing-expired')
         full_sync(compose, fixture, 0, observations, 'replacement-unaffected-by-expiry', True)
         need(all(s['count'] == 1 for s in state(compose, fixture)['authority']))
+        need(len(observations) == 76)
         need(attest_web(compose, config['name'], expected_image) == container)
         write(destination / 'receipt.json', dict(scope='private-server-credential-rotation', passed=True,
-            compose_sha256=digest, image_id=expected_image, web_container_id=container, view_sha256=VIEW_SHA256, helpers=helpers,
+            compose_sha256=digest, image_id=expected_image, web_container_id=container, view_sha256=expected_view, helpers=helpers,
+            http_transport=transport.receipt(),
             harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), observations=observations,
             limitation='Actual server/DB loopback only; native MDM/profile rotation, client-local rule application and backup/restore authority unproven'))
         return destination / 'receipt.json'
     except BaseException:
         write(destination / 'failed.json', dict(scope='private-credential-rotation-failed', passed=False,
+            expected_view_sha256=expected_view, http_transport=transport.receipt(),
             observations=observations, action='Inspect retained private fixture/ORM evidence; do not replay this directory'))
         raise
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('compose', 'destination', 'expected-image', 'expected-helper-sha256', 'expected-generator-sha256'): parser.add_argument('--' + name, required=True)
+    for name in ('compose', 'destination', 'expected-image', 'expected-helper-sha256', 'expected-generator-sha256', 'expected-view-sha256'): parser.add_argument('--' + name, required=True)
     args = parser.parse_args()
     try:
-        result = run(args.compose, args.destination, args.expected_image, args.expected_helper_sha256, args.expected_generator_sha256)
+        result = run(args.compose, args.destination, args.expected_image, args.expected_helper_sha256, args.expected_generator_sha256, args.expected_view_sha256)
         print('SANTA_CREDENTIAL_ROTATION_OK')
     except BaseException:
         raise SystemExit('Credential rotation qualification failed; inspect retained private evidence. No automatic replay.') from None

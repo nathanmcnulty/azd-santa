@@ -2,8 +2,10 @@
 
 `experiments/server/test_credential_rotation_live.py` extends the evidence for
 [#52](https://github.com/nathanmcnulty/azd-santa/issues/52). It does not implement
-an administrator rotation API or change Intune/native profiles. The installed
-`test_live_zentral.py` and earlier `test_credential_lifecycle.py` remain unchanged.
+an administrator rotation API or change Intune/native profiles. The earlier
+`test_credential_lifecycle.py` remains unchanged. The live helper is now explicitly
+versioned for the six-volume admission candidate; historical receipts below
+continue to identify their original helper/image and are not reinterpreted.
 Harness preparation used offline mocks and syntax checks. The subsequent
 selected private server run passed the actual HTTP/DB checks below; neither
 stage establishes native acceptance.
@@ -30,6 +32,15 @@ The event counter does not prove search indexing or native event delivery.
 This image predates the admission-control candidate; it does not qualify that
 candidate. Failed earlier harness attempts remain retained separately.
 
+That historical helper SHA was
+`d0be67e5d8d8f134adb73dbe78cbab816aac110133f0ac7895dc1805f57a496f`.
+The subsequent mount-only six-volume adaptation had SHA
+`9ffc5d414a17bb85c15a96e7b5b3bc5b9fe296457aa34ac2f153b70ff7397987`.
+The current `synthetic-loopback-admission-six-volume-v2` helper has SHA
+`49f6bf61f11563cc0bc69701b3529c6ce39569a1301a20fe965e9b2cfb8fec8e`.
+Its retry/pacing behavior and new source bindings are offline-tested only;
+the selected private server result above does not qualify these new bytes.
+
 The subsequent controlled VM reboot returned all seven original container IDs
 with the same image and Compose bytes. Boot ID changed from
 `ebf57b43-745d-4b0d-9394-f9637e7a8bfb` to
@@ -49,7 +60,10 @@ The explicit run creates **one new unique configuration, business unit, two
 enrollments and six rules**. Both devices are fake reserved UUIDs/serials; secrets
 remain independently bound to UDID, serial and quota1. Configuration and requests
 remain Monitor. Runtime view bytes must match the pinned continuing-authority
-guard plus bounded decoder before any fixture is created. Compose must retain
+guard plus bounded decoder, with or without the separately reviewed admission
+overlay, before any fixture is created. The expected view hash is required and
+must be one of the two known revisions below; unknown revisions fail before
+helpers or fixture actions. Compose must retain
 the seven-service loopback-only contract and all three apps must match the
 selected immutable image. Both local helper files must match explicit hashes
 before either helper executes; no global test package installation is needed.
@@ -98,7 +112,7 @@ application counter once. Event-store indexing remains a separate gate.
 Execute later only on the explicitly selected initialized private Linux host,
 as root, with cached deployment/source/readiness evidence already accepted. Do
 not upload or run this through an azd production hook. Copy the reviewed new
-harness beside the unchanged selected helper files under a root-owned private
+harness beside the exact selected, reviewed helper files under a root-owned private
 qualification source directory; verify their exact bytes and the selected image
 before invocation. Use an absent owner-private evidence directory. A bounded
 coordinator-owned job (for example 30 minutes) must own timeout/termination and
@@ -109,17 +123,44 @@ python3 -I /var/lib/azd-santa-qualification/<reviewed-source>/test_credential_ro
   --compose /var/lib/azd-santa-qualification/<selected-runtime>/compose.json \
   --destination /var/lib/azd-santa-qualification/<absent-private-evidence> \
   --expected-image sha256:<selected-reviewed-image-id> \
-  --expected-helper-sha256 d0be67e5d8d8f134adb73dbe78cbab816aac110133f0ac7895dc1805f57a496f \
-  --expected-generator-sha256 112977b1598649c088e646d40df919ec810fd0ff8541e1d294f8894698ea8304
+  --expected-helper-sha256 49f6bf61f11563cc0bc69701b3529c6ce39569a1301a20fe965e9b2cfb8fec8e \
+  --expected-generator-sha256 facf4584ce9e7dfe6fb67685b9618d33f89b816fae48234334360f055c318e01 \
+  --expected-view-sha256 55efd66eb2f7a281d7182a6aaa392f54fb449e5035213a22ce28253b9635ef32
 ```
 
 The example placeholders are coordinator deployment bindings, not customer JSON
-or remote-script tasks. The expected view SHA is
-`205315d6cf592fe53efaebb58fb6843c4f17f842d85b7c74816964385df1ec6a`.
+or remote-script tasks. The legacy decoder/continuing-authority view SHA is
+`205315d6cf592fe53efaebb58fb6843c4f17f842d85b7c74816964385df1ec6a`;
+the admission-aware view is
+`55efd66eb2f7a281d7182a6aaa392f54fb449e5035213a22ce28253b9635ef32`.
+Select the known reviewed image's actual view; do not discover/adopt unknown bytes.
 The command prints only `SANTA_CREDENTIAL_ROTATION_OK` after complete success.
 Require exit0 and the unique private `receipt.json` with `passed:true`, matching
 source/helper/view/image/Compose hashes and all observations. `attempt.json`,
 private immutable fixture epochs and partial ledger snapshots are retained.
+The full 76-observation rotation inventory remains required; the request-limit
+harness retains all 89 semantic cases. Both clients reuse `http_send` inside
+the selected live helper. Only explicit 429 is paced/retried, using exactly one
+decimal `Retry-After` value from 1 through 60 seconds. Missing/duplicate/date,
+malformed or oversized headers fail. No transport error or other HTTP status is
+retried, and 429 never counts as an expected 401/403/400/413/415 or success.
+The same request bytes/headers are resent after the admission rejection.
+
+Nonsecret `http_transport` metadata records 429 waits separately from semantic
+case results, including request/attempt ordinal, requested delay and completion.
+Rotation failure receipts retain that metadata too. The transport allows at most
+four attempts per request, 512 total HTTP attempts and 600 seconds of requested
+waits. Monotonic budget checks use 240 seconds per request and 1200 seconds per
+HTTP session, with each network call bounded by a 15-second socket timeout.
+These checks do not cancel server work or replace the coordinator's absolute
+30-minute job/termination bound. A network timeout remains an unknown outcome,
+with no automatic retry, fixture replay or admission-state reset.
+
+Because the helper bytes change, any existing source-bound runtime manifest,
+installer bundle or supervisor inventory must be deliberately rebuilt/rebound
+by its owner before installing this revision. Do not overwrite an existing
+controller's bound helper to make a qualification run pass. Historical evidence
+continues to use its original source; this candidate is not a native retry proof.
 Existing helper ORM output is also captured privately beside Compose; it can
 contain fixture secrets and must never be pasted into public issues or chat.
 
