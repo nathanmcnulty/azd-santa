@@ -28,7 +28,9 @@ prior committed fields before and after retry. Selected rule-row IDs and the
 page cursor may regenerate, while normalized semantics must remain equal. The
 old credential is revoked and rotated with different bytes. All four stages
 reject revoked, expired, retired and cross-device credentials with an exact
-before/after DB comparison after **each** request. A positive-shaped denied
+before/after comparison of selected authority, machine/rule-ledger and
+application event-counter fields after **each** request. This is not an audit of
+every database side effect. A positive-shaped denied
 event guards against hidden counter mutation. Legacy URL credentials are tested
 only because the pinned upstream supports them: a header takes precedence,
 malformed/wrong-scheme headers cannot fall back, and both valid header-over-old-URL
