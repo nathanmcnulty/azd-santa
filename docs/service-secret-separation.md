@@ -45,8 +45,8 @@ initialization and application connections. Separate files reduce unrelated
 secret exposure; they do not reduce that database role's authority.
 
 At pinned Zentral source `88e67b3ce49033aab028029937a6e14f7c489073`,
-`docker-entrypoint.py:129-132` runs migrations and provisioning before the normal
-web/worker/Celery commands. `server/server/settings.py:182-203` supplies one
+`docker-entrypoint.py:139-141` runs migrations and provisioning before the normal
+web/worker/Celery commands. `server/server/settings.py:193-225` supplies one
 configured database credential to those operations and normal runtime queries.
 A separate bootstrap/migration owner and restricted runtime role require an
 explicit initialization and ownership/grant design, an entrypoint transition,
