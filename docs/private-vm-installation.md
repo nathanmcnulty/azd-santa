@@ -90,6 +90,16 @@ failure; a deliberate repair/upgrade workflow remains future work. The normal
 flow does not ask administrators to execute local scripts on the remote VM or
 edit configuration/receipt JSON.
 
+Finalizer failures identify a fixed phase: input, source-program, request,
+azure-selection, transport, readback, readiness, receipt, local-persistence or
+binding. Preserve existing files and inspect that same installation. A failed
+readiness check does not authorize rebuilding or reinitializing; a failure while
+writing a binding may leave an installation receipt that must be retained.
+Messages omit underlying exceptions and command output. These phase labels
+classify where verification failed; they do not diagnose a cause or qualify a
+retry as successful. Guest preflight diagnostics remain tracked separately in
+[#71](https://github.com/nathanmcnulty/azd-santa/issues/71).
+
 This remains a private lab: the configured HTTPS origin is bound to
 `https://localhost:8000`, while the actual listener is loopback HTTP. It does not
 establish reachable trusted admin TLS, native Santa enrollment or customer

@@ -35,7 +35,7 @@
       "rationale": "Source-pinned read-only host observer verifies selected initialized runtime and machine-produces a nonsecret installation receipt and local operator binding. No setup mutation, cloud deployment, service restart, marker initialization, grant or authentication flow is performed by finalization; the actual installer/hook remains a separate gate.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/SetupTransport.psm1", "sha256": "607944f2e471eaf9873dc324a48f9b851129945294a39ea8c44fba2f790f3328" },
+        { "path": "experiments/server/SetupTransport.psm1", "sha256": "bd9f372343adda888cbfe676ca74b7c236d6c3edc5e25325368fd92f672377fb" },
         { "path": "experiments/server/installation_readback.py", "sha256": "935db2716c89c78bb0c5ace4b330589c75ca00b28db8bcc0d76f128c2b27b602" },
         { "path": "experiments/server/operator_setup_host.py", "sha256": "0b0fe20a28e99fb2455d2e311d60d397f274ef617072836f7116364254501dc8" }
       ]
@@ -51,7 +51,7 @@
       "scope": "Exact selected tenant/subscription, environment and tagged private pilot RG/VM only",
       "rationale": "Generate a local operator binding from a trusted checksum-pinned selected installation receipt after reusing read-only account/group/immutable-VM preflight. This function does not invoke Run Command, authenticate, mutate azd state or grant permissions; receipt producer and live qualification remain separate gates.",
       "evidenceState": "code",
-      "evidence": [{ "path": "experiments/server/SetupTransport.psm1", "sha256": "607944f2e471eaf9873dc324a48f9b851129945294a39ea8c44fba2f790f3328" }]
+      "evidence": [{ "path": "experiments/server/SetupTransport.psm1", "sha256": "bd9f372343adda888cbfe676ca74b7c236d6c3edc5e25325368fd92f672377fb" }]
     },
     {
       "resource": "Azure Resource Manager",
@@ -65,7 +65,7 @@
       "rationale": "Optional operator setup checks cached selected account/group/VM, then sends a hash-pinned stdlib host program to verify private runtime bindings and invoke the installed sealed operator command or ciphertext-only readback. It creates no grants and enables no azd hook; runtime checks are not live acceptance evidence.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/SetupTransport.psm1", "sha256": "607944f2e471eaf9873dc324a48f9b851129945294a39ea8c44fba2f790f3328" },
+        { "path": "experiments/server/SetupTransport.psm1", "sha256": "bd9f372343adda888cbfe676ca74b7c236d6c3edc5e25325368fd92f672377fb" },
         { "path": "experiments/server/Invoke-SantaOperatorSetup.ps1", "sha256": "fbf2b05ec819ce651113cb37f6b215394e19744a06f5a203562978ba779e6d1a" },
         { "path": "experiments/server/operator_setup_host.py", "sha256": "0b0fe20a28e99fb2455d2e311d60d397f274ef617072836f7116364254501dc8" }
       ]
