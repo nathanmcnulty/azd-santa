@@ -3,8 +3,14 @@
 The generated systemd unit is opt-in qualification tooling, not an azd hook.
 All subprocess diagnostics stay in an exclusive private evidence directory.
 """
+import sys
+
+if __name__ == '__main__' and not sys.flags.isolated:
+    raise SystemExit('Use python3 -I for privileged runtime management.')
+
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -13,14 +19,12 @@ import signal
 import socket
 import stat
 import subprocess
-import sys
 import time
 import uuid
 import urllib.request
 
-from test_live_zentral import COMMIT, validate_compose
-
 ROOT = Path('/var/lib/azd-santa-qualification')
+COMMIT = '88e67b3ce49033aab028029937a6e14f7c489073'
 UNIT = Path('/etc/systemd/system/azd-santa-runtime.service')
 DOCKER = ['docker', '--host', 'unix:///var/run/docker.sock']
 APPS = ('web', 'workers', 'celery')
@@ -29,6 +33,7 @@ POLICIES = {'policy': 'azd_santa_operator.py',
             'recovery': 'azd_santa_operator_recovery.py',
             'sealed': 'azd_santa_sealed_setup.py'}
 HELPERS = ('test_live_zentral.py', 'prepare_zentral_eval.py')
+_HELPER = None
 VOLUMES = {'db': ['postgres_data:/var/lib/postgresql'],
            'redis': ['redis_data:/data'], 'rabbitmq': ['rabbitmq_data:/var/lib/rabbitmq'],
            'elastic': ['elasticsearch_data:/usr/share/elasticsearch/data'],
@@ -74,6 +79,22 @@ def trusted_sources():
     for name in HELPERS:
         checked_path(controller.with_name(name))
     return controller
+
+
+def compose_helper():
+    # Executable helpers must not run before their ownership/ancestry checks.
+    global _HELPER
+    controller = trusted_sources()
+    if _HELPER is None:
+        for name in ('prepare_zentral_eval', 'test_live_zentral'):
+            spec = importlib.util.spec_from_file_location(name, controller.with_name(name + '.py'))
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            spec.loader.exec_module(module)
+        if module.COMMIT != COMMIT:
+            raise ValueError('Runtime helper source revision changed')
+        _HELPER = module
+    return _HELPER
 
 
 def state_path(root, relative, *, directory=False, nonempty=False):
@@ -127,7 +148,7 @@ def check_redis_data(root):
 
 
 def bundle(compose):
-    path, digest = validate_compose(checked_path(compose, private=True))
+    path, digest = compose_helper().validate_compose(checked_path(compose, private=True))
     data = json.loads(path.read_text())
     if (data['volumes'] != {name: {} for name in ('postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data')} or
             any(sorted(data['services'][name].get('volumes', [])) != sorted(expected) for name, expected in VOLUMES.items())):
@@ -219,7 +240,7 @@ StartLimitBurst=3
 [Service]
 Type=notify
 NotifyAccess=main
-ExecStart=/usr/bin/python3 {script} run --manifest {manifest} --sha256 {digest}
+ExecStart=/usr/bin/python3 -I {script} run --manifest {manifest} --sha256 {digest}
 Restart=on-failure
 RestartSec=30
 TimeoutStartSec=420
@@ -459,8 +480,7 @@ class Runtime:
         self.start_ids('listener', ('web',))
         self.inspect(running=True)
         # A running PID is not an HTTP readiness receipt.
-        from test_live_zentral import NoRedirect
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), compose_helper().NoRedirect())
         def http_ready():
             try:
                 with opener.open('http://127.0.0.1:8000/accounts/login/', timeout=3) as response:

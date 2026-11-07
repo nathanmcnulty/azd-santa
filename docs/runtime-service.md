@@ -16,6 +16,9 @@ Controller and imported validation helpers must themselves be regular,
 root-owned, non-writable-by-others files below the trusted qualification root;
 the same restrictions apply to their ancestry before unit installation. The
 unit renderer refuses executable/manifest paths outside that root.
+Privileged CLI and generated unit execution require Python's `-I` isolated mode.
+Executable validation helpers are imported by exact path only after the trust
+checks; an unsafe sibling helper must not execute before rejection.
 
 The `unit` command renders the selected hash-bound unit. `install` exclusively
 writes that unit, reloads systemd and optionally enables/starts it with

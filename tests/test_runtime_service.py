@@ -296,6 +296,23 @@ class Lifecycle(unittest.TestCase):
             run.assert_not_called()
         self.assertEqual(list(private.iterdir()), [])
 
+    def test_helper_import_is_guarded_and_unsafe_sibling_code_never_executes(self):
+        with patch.object(service, 'trusted_sources', side_effect=ValueError('Untrusted helper')), \
+                patch.object(service.importlib.util, 'spec_from_file_location') as spec:
+            with self.assertRaises(ValueError):
+                service.compose_helper()
+            spec.assert_not_called()
+        controller = self.root / 'runtime_service.py'
+        controller.write_bytes(Path(service.__file__).read_bytes())
+        canary = self.root / 'canary.txt'
+        (self.root / 'test_live_zentral.py').write_text(f"from pathlib import Path\nPath({str(canary)!r}).write_text('unexpected execution')\n")
+        for flags in ([], ['-I']):
+            result = subprocess.run([sys.executable, *flags, str(controller), 'unit',
+                                     '--manifest', str(self.root / 'manifest.json'), '--sha256', 'a' * 64],
+                                    capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(canary.exists())
+
     def test_empty_or_wrong_version_postgres_is_rejected_without_starting_it(self):
         root = self.root / 'postgres'
         root.mkdir()
