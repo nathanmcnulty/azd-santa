@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -49,6 +50,9 @@ class ZentralEvaluation(unittest.TestCase):
     def read(self, name):
         return json.loads((self.destination / name).read_text())
 
+    def environment(self, name):
+        return dict(line.split('=', 1) for line in (self.destination / name).read_text().splitlines())
+
     def test_seven_services_are_loopback_bounded_and_persistent(self):
         self.prepare()
         compose = self.read('compose.json')
@@ -81,20 +85,65 @@ class ZentralEvaluation(unittest.TestCase):
         self.assertEqual(config['queues']['backend'], 'zentral.core.queues.backends.kombu')
         self.assertEqual(config['notifier']['url'], 'redis://redis:6379/15')
         self.assertNotIn('tls_privkey', config['api'])
-        env = dict(line.split('=', 1) for line in (self.destination / 'runtime.env').read_text().splitlines())
+        env = self.environment('runtime.env')
         self.assertRegex(env['AZD_SANTA_SECURITY_STORE_ID'], r'^[0-9a-f]{64}$')
         self.assertNotIn(env['AZD_SANTA_SECURITY_STORE_ID'], (self.destination / 'provenance.json').read_text())
-        for key in ('POSTGRES_PASSWORD', 'RABBITMQ_DEFAULT_PASS', 'ZENTRAL_DJANGO_SECRET'):
+        for key in ('POSTGRES_PASSWORD', 'ZENTRAL_DJANGO_SECRET', 'ZENTRAL_METRICS_TOKEN'):
             self.assertGreaterEqual(len(env[key]), 48)
             self.assertNotIn(env[key], (self.destination / 'provenance.json').read_text())
             self.assertNotIn(env[key], (self.destination / 'compose.json').read_text())
             self.assertNotIn(env[key], (self.destination / 'conf/base.json').read_text())
         if os.name != 'nt':
-            self.assertEqual((self.destination / 'runtime.env').stat().st_mode & 0o777, 0o600)
+            self.assertEqual(self.destination.stat().st_mode & 0o777, 0o700)
+            for filename in ('runtime.env', 'db.env', 'rabbitmq.env', 'compose.json'):
+                self.assertEqual((self.destination / filename).stat().st_mode & 0o777, 0o600)
         self.assertEqual(self.read('provenance.json')['upstream_commit'], generator.COMMIT)
         self.assertIn('evaluation license', (self.destination / 'EVALUATION-ONLY.txt').read_text())
         self.assertEqual((self.destination / 'LICENSE.upstream').read_bytes(),
                          (self.source / 'LICENSE').read_bytes())
+
+    def test_generated_service_environments_have_only_required_secrets(self):
+        self.prepare()
+        compose = self.read('compose.json')
+        allowed = {
+            'db.env': {'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD'},
+            'rabbitmq.env': {'RABBITMQ_DEFAULT_USER', 'RABBITMQ_DEFAULT_PASS'},
+            'runtime.env': {'POSTGRES_PASSWORD', 'ZENTRAL_DJANGO_SECRET', 'ZENTRAL_METRICS_TOKEN',
+                            'AZD_SANTA_SECURITY_STORE_ID', 'ZENTRAL_QUEUE_URL'},
+        }
+        files = {name: self.environment(name) for name in allowed}
+        for name, keys in allowed.items():
+            self.assertEqual(set(files[name]), keys)
+        service_files = {'db': 'db.env', 'rabbitmq': 'rabbitmq.env',
+                         'web': 'runtime.env', 'workers': 'runtime.env', 'celery': 'runtime.env'}
+        # Resolve the actual generated Compose references, not a test-only map.
+        for name, service in compose['services'].items():
+            if name in ('db', 'rabbitmq'):
+                self.assertNotIn('environment', service)
+            if name in service_files:
+                self.assertEqual(service['env_file'], ['./' + service_files[name]])
+                effective = self.environment(service['env_file'][0][2:])
+                self.assertEqual(set(effective), allowed[service_files[name]])
+            else:
+                self.assertNotIn('env_file', service)
+        app = files['runtime.env']
+        self.assertEqual(app['POSTGRES_PASSWORD'], files['db.env']['POSTGRES_PASSWORD'])
+        self.assertEqual(app['ZENTRAL_QUEUE_URL'],
+                         'amqp://zentral:' + files['rabbitmq.env']['RABBITMQ_DEFAULT_PASS'] + '@rabbitmq:5672//')
+        config = json.dumps(self.read('conf/base.json'))
+        self.assertEqual(set(re.findall(r'\{\{ env:([A-Z_]+) \}\}', config)), set(app) - {'AZD_SANTA_SECURITY_STORE_ID'})
+        for name in ('db.env', 'rabbitmq.env'):
+            text = (self.destination / name).read_text()
+            for key in ('ZENTRAL_DJANGO_SECRET', 'ZENTRAL_METRICS_TOKEN', 'AZD_SANTA_SECURITY_STORE_ID'):
+                self.assertNotIn(key, text)
+                self.assertNotIn(app[key], text)
+        # References/provenance remain public metadata, never secret copies.
+        for values in files.values():
+            for key, value in values.items():
+                if key not in ('POSTGRES_DB', 'POSTGRES_USER', 'RABBITMQ_DEFAULT_USER'):
+                    for name in ('compose.json', 'conf/base.json', 'provenance.json'):
+                        self.assertNotIn(value, (self.destination / name).read_text())
+        self.assertEqual(self.read('provenance.json')['secret_environment_files'], service_files)
 
     def test_refuses_existing_destination_without_touching_it(self):
         self.prepare()
@@ -128,9 +177,14 @@ class ZentralEvaluation(unittest.TestCase):
     def test_new_evaluation_does_not_reuse_compose_project(self):
         self.prepare()
         first = self.read('compose.json')['name']
+        first_secrets = {name: self.environment(name) for name in ('db.env', 'rabbitmq.env', 'runtime.env')}
         self.destination = self.root / 'second'
         self.prepare()
         self.assertNotEqual(first, self.read('compose.json')['name'])
+        for name, values in first_secrets.items():
+            for key, value in values.items():
+                if key not in ('POSTGRES_DB', 'POSTGRES_USER', 'RABBITMQ_DEFAULT_USER'):
+                    self.assertNotEqual(value, self.environment(name)[key])
 
     def test_fresh_core_defaults_to_santa_preserving_dependencies_and_telemetry(self):
         path = self.source / 'conf/start/zentral/base.json'
@@ -178,7 +232,8 @@ class ZentralEvaluation(unittest.TestCase):
             os.umask(previous)
         self.assertEqual((self.destination / 'conf').stat().st_mode & 0o777, 0o755)
         self.assertEqual((self.destination / 'conf/base.json').stat().st_mode & 0o777, 0o644)
-        self.assertEqual((self.destination / 'runtime.env').stat().st_mode & 0o777, 0o600)
+        for filename in ('runtime.env', 'db.env', 'rabbitmq.env'):
+            self.assertEqual((self.destination / filename).stat().st_mode & 0o777, 0o600)
 
 
 if __name__ == '__main__':
