@@ -48,7 +48,9 @@ class ColdBackup(unittest.TestCase):
             for name in ('postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_snapshot_repository', 'media_data'):
                 path = root / name; path.mkdir(); (path / 'sample').write_bytes((name + '-sentinel').encode())
                 roots['volumes/' + name] = path
-            secret = b'POSTGRES_PASSWORD=private-canary-password\n'
+            # Encryption is byte-oriented. Use a noncredential control sentinel
+            # to prove private-file coverage without creating password fixtures.
+            secret = b'BACKUP_TEST_SENTINEL=synthetic-private-control-content\n'
             env = root / 'migration.env'; env.write_bytes(secret); roots['control/0/migration.env'] = env
             output = io.BytesIO()
             sink = backup.EncryptedSink(output, self.public, 10*backup.CHUNK, time.monotonic()+30)

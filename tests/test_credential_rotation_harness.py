@@ -234,8 +234,16 @@ class Harness(unittest.TestCase):
                 fake=MagicMock();fake.validate_compose.return_value=(compose,'b'*64)
                 fake.reset_http_transport.return_value.receipt.return_value={}
                 fake.orm.return_value={'view_sha256':'unknown-installed-view'}
+                original_stat=Path.stat
+                def root_stat(path,*args,**kwargs):
+                    info=original_stat(path,*args,**kwargs)
+                    # This boundary test simulates a root-owned guest directory.
+                    # Linux CI creates its real private temp directory as the
+                    # runner user; production's root ownership check stays on.
+                    return SimpleNamespace(st_uid=0,st_mode=info.st_mode) if path==root else info
                 with patch.object(rotation,'load_helpers',return_value=(fake,{})),patch.object(rotation.sys,'platform','linux'), \
-                     patch.object(rotation.os,'geteuid',return_value=0,create=True),patch.object(rotation,'attest_web',return_value='c'*64):
+                     patch.object(rotation.os,'geteuid',return_value=0,create=True),patch.object(rotation,'attest_web',return_value='c'*64), \
+                     patch.object(Path,'stat',autospec=True,side_effect=root_stat):
                     with self.assertRaises(ValueError):rotation.run(compose,root/'absent','sha256:'+'a'*64,'d'*64,'e'*64,selected)
                     fake.initialize_fixture.assert_not_called()
                     fake.orm.return_value={'view_sha256':selected}
