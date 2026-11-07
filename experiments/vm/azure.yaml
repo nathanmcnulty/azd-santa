@@ -1,0 +1,9 @@
+name: azd-santa-vm-lab
+metadata:
+  template: azd-santa-vm-lab@0.1.0
+# Deliberately separate from root Intune hooks. This provisions a test host only.
+infra:
+  provider: bicep
+  path: infra
+requiredVersions:
+  azd: ">= 1.23.0"

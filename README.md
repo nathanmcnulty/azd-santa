@@ -27,6 +27,10 @@ Santa’s native sync protocol is the correct central path for event upload, set
 
 For Git-backed operation, normalized Santa events produce deterministic candidate rule manifests. GitHub or Azure DevOps pull requests carry the proposed rule changes. Human approval gates publication to the selected sync server. Telemetry or AI output must never become an allow rule directly.
 
+VM-first Azure testing is available as an isolated opt-in
+[host qualification lab](experiments/vm/README.md). It provisions no public sync
+service and does not change the default Intune deployment or enroll a Mac.
+
 ## Recommended architecture
 
 ```text
