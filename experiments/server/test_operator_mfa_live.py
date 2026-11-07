@@ -242,6 +242,57 @@ class OperatorRequests(unittest.TestCase):
         self.assertEqual(self.get(first, 'accounts:profile').status_code, 200)
         self.assertNotIn(policy.PROOF, second.session)
 
+    def test_unadmitted_security_store_blocks_existing_and_pending_operator_access(self):
+        policy.check_security_store()
+        source_cache, source_client = policy._security_client()
+        admitted = source_client.get(source_cache.make_key(policy.STORE_MARKER))
+        self.assertIsNotNone(admitted)
+        configuration = copy.deepcopy(settings.CACHES)
+        prefix = 'azd-mfa-store-negative-' + uuid.uuid4().hex
+        configuration['azd_santa_security']['KEY_PREFIX'] = prefix
+        with override_settings(CACHES=configuration):
+            cache, client = policy._security_client()
+            marker = cache.make_key(policy.STORE_MARKER)
+            self.assertTrue(client.set(marker, admitted, nx=True))
+            try:
+                user, password, devices = self.user(factors=1)
+                existing = self.client()
+                self.mfa(existing, user, password, devices[0])
+                self.assertEqual(self.get(existing, 'accounts:profile').status_code, 200)
+                expected = policy._expected_store_id()
+                wrong = 'f' * 64 if expected != 'f' * 64 else 'e' * 64
+                for state in ('missing', 'wrong', 'held', 'malformed'):
+                    pending = self.client()
+                    self.password(pending, user, password)
+                    self.assertEqual(self.get(pending, 'accounts:verify_totp').status_code, 200)
+                    if state == 'missing':
+                        client.delete(marker)
+                    elif state == 'wrong':
+                        client.set(marker, wrong + ':0')
+                    elif state == 'held':
+                        client.set(marker, expected + ':' + str(int(client.time()[0]) + 360))
+                    else:
+                        client.set(marker, 'malformed')
+                    try:
+                        self.assertEqual(self.get(existing, 'accounts:profile').status_code, 503)
+                        self.assertEqual(self.get(pending, 'accounts:verify_totp').status_code, 503)
+                        self.assertEqual(self.post(pending, 'accounts:verify_totp',
+                            {'verification_code': pyotp.TOTP(devices[0].secret).now()}).status_code, 503)
+                        self.assertNotIn(policy.PROOF, pending.session)
+                        anonymous = self.client()
+                        self.assertEqual(self.get(anonymous, 'login').status_code, 200)
+                        self.assertEqual(self.post(anonymous, 'login',
+                            {'username': user.username, 'password': password}).status_code, 503)
+                        self.assertNotIn(policy.PROOF, anonymous.session)
+                    finally:
+                        client.set(marker, admitted)
+                    self.assertEqual(self.get(existing, 'accounts:profile').status_code, 200)
+            finally:
+                # This exact random test prefix is ours; never flush the shared
+                # cache or delete product/other-test security authority.
+                for key in client.scan_iter(match=cache.make_key('*')):
+                    client.delete(key)
+
     def test_factor_addition_does_not_renew_eight_hour_proof(self):
         user, password, devices = self.user(factors=1)
         client = self.client()
