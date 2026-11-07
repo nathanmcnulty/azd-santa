@@ -125,8 +125,12 @@ class RecoveryFixture(unittest.TestCase):
         cls = next(n for n in current.body if isinstance(n, ast.ClassDef))
         self.assertEqual(cls.bases[0].id, 'SimpleTestCase')
         self.assertEqual(host.test_count(self.harness.read_text()), 13)
-        methods = [ast.dump(n, include_attributes=False) for n in cls.body if isinstance(n, ast.FunctionDef) and n.name.startswith('test_')]
-        self.assertEqual(hashlib.sha256('\n'.join(methods).encode()).hexdigest(), '30bc1c3b0539cfda6c7262e579b2814e34c7dc62b6e32e60ddcdce49a86690c3')
+        # Pin actual method source from parent f79130f, independent of AST
+        # representation changes between Python versions. splitlines normalizes LF.
+        lines = self.harness.read_text().splitlines()
+        methods = ['\n'.join(lines[n.lineno - 1:n.end_lineno]) for n in cls.body
+                   if isinstance(n, ast.FunctionDef) and n.name.startswith('test_')]
+        self.assertEqual(hashlib.sha256('\n\n'.join(methods).encode()).hexdigest(), 'c224f48462725554a9d2bd8f5771d66812285d483346ace4992319541c291b0a')
         source = self.harness.read_text()
         self.assertNotIn('setup_databases(', source); self.assertNotIn('teardown_databases(', source)
         self.assertNotIn('reset_sequences', source); self.assertNotIn('TransactionTestCase', source)
