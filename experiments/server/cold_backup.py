@@ -69,10 +69,13 @@ def load_selection(path, expected):
     raw = checked_file(path, private=True).read_bytes()
     need(re.fullmatch(HEX, expected) and digest(raw) == expected)
     value = json.loads(raw, object_pairs_hook=unique)
-    need(set(value) == {'scope', 'target', 'runtime_manifest', 'controller_sha256', 'backup_program_sha256', 'recipient_sha256', 'containers'})
-    need(value['scope'] == 'azd-santa-cold-backup-selection-v1' and value['controller_sha256'] == CONTROLLER_SHA
+    need(set(value) == {'scope', 'target', 'runtime_manifest', 'controller_sha256', 'backup_program_sha256', 'recipient_sha256', 'containers', 'generation_sha256', 'maintenance_sha256', 'native_snapshot'})
+    need(value['scope'] == 'azd-santa-native-cold-backup-selection-v1' and value['controller_sha256'] == CONTROLLER_SHA
          and value['backup_program_sha256'] == digest(Path(__file__).read_bytes()))
     need(re.fullmatch(HEX, value['recipient_sha256']))
+    need(re.fullmatch(HEX, value['generation_sha256']) and re.fullmatch(HEX, value['maintenance_sha256'])
+         and set(value['native_snapshot']) == {'path', 'sha256', 'program_sha256'}
+         and all(re.fullmatch(HEX, value['native_snapshot'][k]) for k in ('sha256', 'program_sha256')))
     need(set(value['target']) == {'VmId', 'VmInstanceId'})
     guid = r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
     need(re.fullmatch(guid, value['target']['VmInstanceId']))
@@ -378,6 +381,14 @@ def capture(selection_path, expected, public_der, destination, *, maximum=8 * 10
     need(digest(public_der) == selection['recipient_sha256'])
     recipient_key(public_der)  # Verified prerequisite before output or Docker reads.
     service = load_controller()
+    native_path = checked_file(Path(__file__).absolute().with_name('native_snapshot.py'))
+    need(digest(native_path.read_bytes()) == selection['native_snapshot']['program_sha256'])
+    native = types.ModuleType('backup_native'); native.__file__ = str(native_path)
+    exec(compile(native_path.read_bytes(), str(native_path), 'exec'), native.__dict__)
+    native_receipt_path = checked_file(selection['native_snapshot']['path'], private=True)
+    native_raw = native_receipt_path.read_bytes()
+    need(digest(native_raw) == selection['native_snapshot']['sha256'])
+    native_receipt = json.loads(native_raw, object_pairs_hook=unique)
     manifest = selection['runtime_manifest']
     path = service.checked_path(manifest['path'], private=True)
     lock_path = path.parent / 'supervisor.lock'
@@ -392,6 +403,18 @@ def capture(selection_path, expected, public_der, destination, *, maximum=8 * 10
         prior = signal.signal(signal.SIGALRM, expired); signal.alarm(seconds)
         try:
             runtime = service.Runtime(path, manifest['sha256'])
+            # Coherent native-backup integration must supply the sixth volume
+            # and the SINGLE admission/controller generation anchor. Legacy
+            # five-volume controllers cannot produce a backup-success receipt.
+            generation_path = checked_file(path.parent / 'container-generation.json', private=True)
+            generation_raw = generation_path.read_bytes()
+            need(digest(generation_raw) == selection['generation_sha256'])
+            generation = json.loads(generation_raw, object_pairs_hook=unique)
+            need(set(generation) == {'scope', 'manifest_sha256', 'project', 'image_id', 'generation', 'container_ids'}
+                 and generation['scope'] == 'private-runtime-container-generation-v1'
+                 and generation['manifest_sha256'] == manifest['sha256'] and generation['project'] == runtime.project
+                 and generation['container_ids'] == selection['containers'] and re.fullmatch(r'[a-f0-9]{32}', generation['generation'])
+                 and generation['image_id'] == runtime.data['services']['web']['image'])
             runtime.call = lambda label, args, timeout=30, **_: command(args, runtime.environment, timeout=min(timeout, max(0.01, deadline-time.monotonic())))
             unit = checked_file(service.UNIT, within_root=False)
             need(unit.read_bytes() == service.unit_text(Path(service.__file__), path, manifest['sha256']).encode())
@@ -405,11 +428,11 @@ def capture(selection_path, expected, public_der, destination, *, maximum=8 * 10
             db_env = dict(item.split('=', 1) for item in db['Config']['Env'])
             pgdata = volumes['postgres_data'] / str(Path(db_env['PGDATA']).relative_to('/var/lib/postgresql'))
             need(not (pgdata / 'postmaster.pid').exists() and not (pgdata / 'postmaster.pid').is_symlink())
-            roots = {'volumes/' + name: value for name, value in volumes.items()}
+            roots = native.archive_roots(volumes, native_receipt, selection['maintenance_sha256'])
             files = {Path(p) for p in runtime.binding['files']}
             conf = Path(runtime.binding['compose']).parent / 'conf'
             need(set(conf.iterdir()) == {conf / 'base.json'})
-            files.update({path, Path(selection_path), Path(__file__).absolute(), Path(service.__file__),
+            files.update({path, Path(selection_path), Path(__file__).absolute(), Path(service.__file__), native_path, native_receipt_path, generation_path,
                           *(Path(service.__file__).with_name(name) for name in service.HELPERS),
                           Path(runtime.binding['compose']).parent / 'migration.env', unit})
             for index, file in enumerate(sorted(files)):
@@ -431,6 +454,7 @@ def capture(selection_path, expected, public_der, destination, *, maximum=8 * 10
                 control_files={name:str(file) for name,file in roots.items() if name.startswith('control/')},
                 control_files_sha256=control_hashes,
                 mounts=mounts,
+                elasticsearch_backup='native-filesystem-snapshot-repository', native_snapshot=native_receipt,
                 selected_files_sha256=runtime.binding['files'], source_commit=service.COMMIT,
                 crypto_version=__import__('cryptography').__version__,
                 restore_admission='not_implemented', current_authority='not_established')
@@ -439,6 +463,7 @@ def capture(selection_path, expected, public_der, destination, *, maximum=8 * 10
                 need(cold_state(runtime, selection['containers'], volumes) == before)
                 need(host_identity(selection['target']) == identity)
                 service.load_manifest(path, manifest['sha256'])
+                need(digest(generation_path.read_bytes()) == selection['generation_sha256'])
                 need(control_hashes == {name: digest(file.read_bytes()) for name, file in roots.items() if name.startswith('control/')})
             return write_capture(destination, public_der, roots, compatibility, maximum, maximum_files, deadline, final_check, mounts)
         finally:

@@ -1,8 +1,17 @@
-# Cold encrypted capture component
+# Native-snapshot encrypted capture component
 
 Issue #54 remains open. `experiments/server/cold_backup.py` implements the first
 offline-tested capture mechanism for the selected initialized private VM stack.
 It has not captured a live stack, restored one, or established current authority.
+The earlier frozen `656f851`/`698ec2a` raw Elasticsearch directory capture is
+experimental byte preservation, **not** a supported Elasticsearch backup. Elastic
+explicitly says filesystem copies are unsupported even with nodes stopped;
+[native snapshots are required](https://www.elastic.co/docs/deploy-manage/tools/snapshot-and-restore#other-backup-methods).
+The revised capture contract requires a completed native repository, excludes
+raw Elasticsearch data and rejects the legacy selection scope. The current
+five-volume controller cannot satisfy this contract. Coherent sixth-volume,
+generation-anchor and controller-maintenance integration is still pending; no
+real application-data capture should use the earlier raw-directory candidate.
 It adds no service, Azure resource, grant, hook, automatic scheduling or cleanup.
 
 This is a developer qualification component, not the final administrator flow.
@@ -23,12 +32,20 @@ independently and verify its public fingerprint. Losing it loses the backup.
 Do not construct the selection JSON by hand or treat its scope/hash as an
 attestation of its origin.
 
-The strict `azd-santa-cold-backup-selection-v1` contract contains:
+The strict `azd-santa-native-cold-backup-selection-v1` contract contains:
 
 - `target`: selected `VmId` and immutable `VmInstanceId`.
 - `runtime_manifest`: the exact existing manifest path and SHA-256.
 - `controller_sha256` and `backup_program_sha256`: exact reviewed source hashes.
 - `recipient_sha256`: the SHA-256 of the canonical public DER.
+- `generation_sha256`: the existing controller/admission
+  `container-generation.json` checksum. There is no second generation store.
+- `maintenance_sha256`: the controller-owned explicit request checksum, binding
+  the selected VM/boot/generation, source, recipient and destination. It is the
+  native snapshot's metadata binding; a previous snapshot from the same
+  generation is not interchangeable with this request.
+- `native_snapshot`: the private completed native receipt path/SHA-256 and exact
+  `native_snapshot.py` program checksum.
 - `containers`: exactly seven original full Docker IDs keyed by `db`, `redis`,
   `rabbitmq`, `elastic`, `web`, `workers` and `celery`.
 
@@ -77,9 +94,13 @@ rechecked. This is not a general-purpose snapshot/fencing service.
 
 ## Contents and encryption
 
-One streaming PAX tar captures all five initialized volumes: PostgreSQL's entire
-selected volume (including WAL), Redis's entire AOF directory/volume, RabbitMQ's
-cookie and node database, Elasticsearch data, and shared media. Required bound
+One streaming PAX tar captures PostgreSQL's entire selected volume (including
+WAL), Redis's entire AOF directory/volume, RabbitMQ's cookie and node database,
+shared media, and the entire completed native snapshot repository for this
+operation from the dedicated sixth `elasticsearch_snapshots` volume. Raw
+`elasticsearch_data` remains identity-checked but is never a restorable archive
+root. Native receipt UUID/global metadata/index-generation files are required;
+those sentinels alone do not prove a completed snapshot. Required bound
 Compose/configuration/environment files, job-only `migration.env`, selection,
 runtime manifest/unit/controller/helpers and this backup source are included.
 Only the selected single `conf/base.json` layout is accepted. Required env files
@@ -123,13 +144,66 @@ its trusted receipt to independently retained storage remains an integration gat
 
 ## Qualification and remaining gates
 
+`native_snapshot.py` supplies pure, offline-tested protocol/drain primitives.
+Caller-owned transports must bound JSON bodies and time, use the selected exact
+ES/Rabbit containers/network and suppress raw secret diagnostics. The helper is
+not an endpoint selector, generation attestor, standalone daemon or grant.
+Its sequence must be integrated into the existing supervisor under its existing
+lock and original generation, triggered by an explicit reserved backup request
+followed by normal `systemctl stop`:
+
+1. Close new admission and stop the exact original web/Celery publishers.
+2. Observe the complete known queue inventory with ready and unacknowledged
+   counts both zero in two bounded samples, rechecking publisher termination.
+   The known inventory includes preprocessing/Celery queues, not merely the
+   three event-consumer readiness queues. Unknown, missing or corrupt queues fail.
+3. Stop the exact original worker processes; do not infer drain from exit 143.
+4. Register one reserved native filesystem repository/name under fixed
+   `/mnt/azd-santa-snapshots/<operation-id>`, then submit one native snapshot.
+5. Observe native SUCCESS, exact snapshot UUID/plan metadata, full open-index
+   inventory, global state, all primary shards successful and zero failures.
+6. Stop the dependencies, prove the machine-bound stop outcome, then capture
+   the completed repository and four ordinary data volumes with all writers gone.
+
+Each repository/snapshot PUT has an exclusive fsynced intent before submission.
+An ambiguous outcome may only GET the same reserved repository/snapshot; a 404
+does not authorize another PUT/name. Unknown/failure retains state. Read-only
+observation can continue; `submit` cannot be replayed over an existing plan.
+Pending/unknown maintenance must block automatic startup/replay. Successful
+completion may be followed by an explicit completion-gated resume wrapper;
+normal stop without a request retains its existing behavior. These controller
+and wrapper paths are not yet implemented in this pure-helper slice.
+
+The coherent fresh-only generator must give Elasticsearch one private sixth
+local volume and fixed `path.repo`, initialize only its verified empty volume
+for the exact image's UID/GID before ES starts, and propagate exact mounts to
+staging/controller/host attestation. This adds no paid service. The existing
+stopped VM lacks `path.repo`; it must not be reset or silently retrofitted.
+Actual qualification needs a later fresh integrated namespace.
+
+Current capture still requires exit zero. Elasticsearch/worker 143 acceptance
+must be a narrow in-process capability produced by that same controller-owned
+drain/native-snapshot/stop sequence, never a bypass flag or blanket allowed exit
+code. A stopping unit may use that capability rather than falsely asserting
+that it is already inactive; source/identity/coldness checks must still run.
+This maintenance capability and integration are pending the reviewed admission
+original-CID anchor change. Full current-authority restore remains open.
+
 The existing Ubuntu host was separately observed by the coordinator to have
 Python 3.12.3 and distro `python3-cryptography 41.0.7-4ubuntu0.4`; no installation
 was needed for that observation. The required streaming Cipher/AES-GCM and RSA
 OAEP APIs exist in that API generation. The tool probes canonical RSA input and
 the actual AES-GCM backend before Docker reads/output. Local offline tests use
-an existing isolated cryptography 50 interpreter; actual execution of these
-frozen tests with the host's distro supplier remains a separate gate. Neither a
+an existing isolated cryptography 50 interpreter; execution of the revised
+native-contract tests with the host's distro supplier remains a separate gate.
+The coordinator did execute the earlier frozen `698ec2a` synthetic suite on that
+Ubuntu host: 15 passed, zero skips/failures/errors. Its module SHA was
+`b09c429552892817c19a2967e2ecedc9257ba006d6c320d6edd437eed6ec9dfa` and test SHA was
+`17afe6161a80960e6266088e200327bc0565af28c0b68a924b763374934e7766`.
+Those tests exercised real temporary-file crypto/FD paths; Docker/IMDS/cold-state
+cases remained mocked, and the receipt explicitly recorded
+`actual_application_backup=false`. That does not qualify the revised source or
+any actual application backup. Neither a
 version string nor API compatibility establishes security/support currentness;
 review the selected OS package supplier, security updates and packaging before
 integrating it. No mandatory extra venv or wheel-management path is introduced.

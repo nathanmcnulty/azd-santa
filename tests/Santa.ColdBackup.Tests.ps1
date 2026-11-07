@@ -4,5 +4,7 @@ Describe 'Cold encrypted backup qualification component' {
         $python = if ($env:SANTA_CRYPTO_PYTHON) { $env:SANTA_CRYPTO_PYTHON } else { 'python' }
         $result = & $python -m unittest discover -s $PSScriptRoot -p test_cold_backup.py 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
+        $native = & $python -m unittest discover -s $PSScriptRoot -p test_native_snapshot.py 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($native -join "`n")
     }
 }

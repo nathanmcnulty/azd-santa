@@ -45,7 +45,7 @@ class ColdBackup(unittest.TestCase):
     def test_real_stream_roundtrip_covers_all_five_stores_and_secret_files_without_plaintext_output(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder).resolve(); roots = {}
-            for name in ('postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data'):
+            for name in ('postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_snapshot_repository', 'media_data'):
                 path = root / name; path.mkdir(); (path / 'sample').write_bytes((name + '-sentinel').encode())
                 roots['volumes/' + name] = path
             secret = b'POSTGRES_PASSWORD=private-canary-password\n'
@@ -77,7 +77,7 @@ class ColdBackup(unittest.TestCase):
             self.assertEqual(sink.total, len(ciphertext)); self.assertEqual(count, 11)
             with tarfile.open(fileobj=io.BytesIO(self.decrypt(ciphertext))) as archive:
                 self.assertEqual(archive.extractfile('control/0/migration.env').read(), secret)
-                for name in ('postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data'):
+                for name in ('postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_snapshot_repository', 'media_data'):
                     self.assertEqual(archive.extractfile('volumes/'+name+'/sample').read(), (name+'-sentinel').encode())
                 self.assertEqual(json.load(archive.extractfile('backup/capture.json'))['current_authority'], 'not_established')
 
@@ -153,12 +153,13 @@ class ColdBackup(unittest.TestCase):
                 with self.assertRaises(ValueError): backup.archive(sink,{'data':path},{},10)
 
     def selection(self):
-        return dict(scope='azd-santa-cold-backup-selection-v1',
+        return dict(scope='azd-santa-native-cold-backup-selection-v1',
             target={'VmId':'/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/rg-azd-santa-vm-synthetic/providers/Microsoft.Compute/virtualMachines/vm-santa-lab',
                     'VmInstanceId':'22222222-2222-4222-8222-222222222222'},
             runtime_manifest={'path':'/var/lib/azd-santa-qualification/runtime/runtime-service/manifest.json','sha256':'a'*64},
             controller_sha256=backup.CONTROLLER_SHA, backup_program_sha256=backup.digest(Path(backup.__file__).read_bytes()),
             recipient_sha256=backup.digest(self.public),
+            generation_sha256='d'*64,maintenance_sha256='c'*64,native_snapshot={'path':'/var/lib/azd-santa-qualification/native.json','sha256':'e'*64,'program_sha256':'f'*64},
             containers={name:format(i+1,'064x') for i,name in enumerate(('db','redis','rabbitmq','elastic','web','workers','celery'))})
 
     def test_selection_rejects_hash_identity_source_container_and_duplicate_json_drift(self):
@@ -167,7 +168,8 @@ class ColdBackup(unittest.TestCase):
             with patch.object(backup,'checked_file',side_effect=lambda p,**_:Path(p)):
                 path.write_bytes(backup.encoded(value)); self.assertEqual(backup.load_selection(path,backup.digest(path.read_bytes())),value)
                 for change in (lambda v:v['target'].update(VmId='wrong'), lambda v:v.update(backup_program_sha256='b'*64),
-                               lambda v:v['containers'].update(db=v['containers']['web']), lambda v:v.update(controller_sha256='b'*64)):
+                               lambda v:v['containers'].update(db=v['containers']['web']), lambda v:v.update(controller_sha256='b'*64),
+                               lambda v:v.update(scope='azd-santa-cold-backup-selection-v1')):
                     changed=copy.deepcopy(value); change(changed); path.write_bytes(backup.encoded(changed))
                     with self.assertRaises(ValueError): backup.load_selection(path,backup.digest(path.read_bytes()))
                 path.write_bytes(backup.encoded(value))
