@@ -1,8 +1,9 @@
 # Sealed local operator setup transport candidate
 
 This is a bounded implementation toward automated azd setup, **not completed azd
-wire-up**. No Azure call, authentication prompt, VM change or browser opening was
-performed to validate it. It adds no Azure service or tenant grant. The existing
+wire-up**. Local cryptographic tests and private VM/Django acceptance are recorded
+below; the complete Azure setup handoff and browser delivery remain unverified.
+It adds no Azure service or tenant grant. The existing
 private plaintext qualification artifact remains supported when no recipient is
 supplied; there is no automatic fallback from sealed mode to that artifact.
 
@@ -83,5 +84,47 @@ and end-to-end Azure transport are separate unverified gates. Tests exercise rea
 local Python/.NET crypto, tamper rejection, Unicode digest interoperability,
 private file creation and collision handling; they do not simulate those gates.
 The private Django harness additionally tests pre-mutation key rejection and
-transaction rollback on encryption failure, but its presence is not a runtime
-receipt until executed against the rebuilt selected image.
+transaction rollback on encryption failure. Its actual runtime acceptance follows.
+
+## Actual private Django acceptance, 2026-11-06
+
+A fresh isolated Santa-profile stack passed all **13 recovery request cases**,
+including invalid-recipient rejection without account/output changes, real
+recipient encryption/decryption, encryption-failure rollback, and truthful
+post-commit artifact-write failure without a success marker or plaintext fallback.
+The same image passed all 15 MFA cases, Redis interruption checks, full synthetic
+Monitor device HTTP sync, 89 bounded HTTP checks and indexing of two Santa events.
+Audit posting was mocked in the isolated recovery database; delivery is unproven.
+
+Immutable application image:
+`sha256:4533b2fdb0922ab50a8fa78d423b0613c1b5b2a843cb33244d1c8887a8804fec`.
+Compose SHA-256:
+`80744b6942c7c9dd39d10a9b63ef5ea3923f3f0aa0d042796e46100cf676429f`.
+Installed recovery SHA-256:
+`613328332b05f3a738727cf49b684a08217d0a56a2b6b3f35b73f3f3b98bc109`.
+Installed sealer SHA-256:
+`b2834ed3e1983990c68ede1356e4c56105130bdac427e2e08a0df848e104d25c`.
+Recovery harness SHA-256:
+`aa19837a2ed9650dfa210f6e4c1dc991eea19e0ce10cfc06cb5250977d0e6b2e`.
+
+Private receipt root: `/var/lib/azd-santa-qualification/runtime-santa-sealed/`.
+Request receipts are `recovery-requests/receipt.json` and
+`mfa-requests/receipt.json`, both with terminal process exit zero and no skipped
+cases. Full-sync receipt:
+`synthetic-fixture.receipt-c71a6a11602b4466bf537853144ed55f.json`;
+request-limit receipt:
+`synthetic-fixture.request-limits-b94762678c474ee5b26b13cdb52602a9.json`.
+
+The first image build failed because the combined installer exceeded Docker's
+65,535-byte physical-line limit. The generator now compresses that installer for
+transport and restores identical bytes before its existing module hash checks
+and execution. The successful new build used a separate Dockerfile and unit;
+the failed build, prior stacks and their data were retained.
+
+The integrated template and all **158 Pester tests** passed on PowerShell 7.6.9
+and Pester 6.2.0. Local Python/.NET crypto vectors used the existing isolated
+Azure CLI Python with cryptography 48.0.1; hosted Windows/Linux checks also passed.
+These results do not prove the complete Azure ciphertext handoff, authentic
+remote deployment binding, browser/TLS setup, audit indexing, backup authority,
+host power-loss recovery or native Mac sync. See the separate
+[transport slice](setup-transport-slice.md) for its remaining integration gates.
