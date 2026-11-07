@@ -28,7 +28,10 @@ budget. Pending requests wait inside an observing middleware wrapper; no verifie
 password authentication, outcome or clock is mocked.
 
 Only after the ready phase does the host SIGKILL/start the selected Redis, retaining
-the same actual container/image and project-local volume. The app confirms the
+the same actual container/image and project-local volume. Both mutations and
+the readiness probe use the full previously inspected container ID; a removed
+container fails the gate without touching a replacement resolved by service name.
+The app confirms the
 Redis process changed and the marker/settings are admitted before releasing its
 pending requests. It discards idle pre-crash client connections so transport
 errors cannot masquerade as replay protection. WebAuthn must reach the real
