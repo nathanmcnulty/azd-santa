@@ -57,6 +57,28 @@ an absent private receipt path. These are orchestration internals, not manual
 customer setup steps. The one-command azd flow must perform them before service
 admission; that orchestration and upgrade path are still unimplemented.
 
+`stage_runtime.py` now performs this explicit initialization for a fresh private
+developer stack. Its CLI requires `--source`, `--lock`, `--destination` and an
+immutable `--image sha256:...`; it no longer guesses an image from a mutable tag.
+It checks the actual role-module/entrypoint bytes and execute mode, rejects an
+existing project/network/volume namespace, and gates database, broker, Redis and
+search readiness before one named owner job. Compose must support
+`run --env-from-file`; that capability is checked before dependency startup.
+Only the initializer receives `migration.env`, runs as container root, mounts
+`runtime.env` read-only and writes to a private root-only receipt directory.
+The driver retains an image/Compose/module/environment-hash binding before
+launch; a timeout stops only the ownership-checked concrete helper ID and never
+repeats initialization. A nonzero exit or missing completion receipt cannot
+produce the final stage receipt. Subsequent authority/configuration/import checks
+use only runtime credentials. This path starts no web listener or workers,
+initializes no MFA cache marker and does not qualify SQL denials or application
+behavior; those remain separate gates. Failed destinations/data must be retained.
+
+The existing `Start-ZentralQualification.ps1` source uploader must include both
+new database helper files before using the new core builder. Its exclusive
+legacy paths are not a retry/upgrade mechanism. Fresh staging is not the
+image-only `upgrade_core_runtime.py` path; existing volumes must not be adopted.
+
 Initialization reserves and fsyncs an unknown-outcome checkpoint before database
 mutation, takes a session advisory lock and requires a fresh database, absent
 runtime role and expected database owner. It runs migrations/provisioning under
