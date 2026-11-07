@@ -397,6 +397,15 @@ def recovery_url(user):
     return handler.generate_password_reset_url(user)
 
 
+def case_identity(case):
+    # unittest includes subtest parameters in _SubTest.id(). Export only the
+    # reviewed parent method name; parameter values belong in private logs.
+    identity = getattr(case, 'test_case', case).id()
+    if not re.fullmatch(r'__main__\.OperatorRequests\.test_[a-z0-9_]+', identity):
+        raise RuntimeError('Unrecognized recovery request test identity')
+    return identity
+
+
 def run():
     PRIVATE.mkdir(mode=0o700)
     capture = io.StringIO()
@@ -432,7 +441,7 @@ def run():
     write('private-tests.log', capture.getvalue())
     receipt = dict(scope='private-real-django-operator-recovery', namespace=PREFIX,
         tests=result.testsRun, passed=result.wasSuccessful(), skipped=len(result.skipped),
-        failures=[case.id() for case, _ in result.failures], errors=[case.id() for case, _ in result.errors],
+        failures=[case_identity(case) for case, _ in result.failures], errors=[case_identity(case) for case, _ in result.errors],
         harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         policy_sha256=hashlib.sha256(Path(policy.__file__).read_bytes()).hexdigest(),
         recovery_sha256=hashlib.sha256(Path(recovery.__file__).read_bytes()).hexdigest(),
