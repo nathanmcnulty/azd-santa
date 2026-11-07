@@ -67,6 +67,26 @@ class Causality(unittest.TestCase):
 
 
 class DriverGuards(unittest.TestCase):
+    def test_redis_restart_mutates_only_original_id_and_stale_id_never_retargets(self):
+        docker = ['docker', '--host', 'unix:///var/run/docker.sock']
+        original, replacement = 'a' * 64, 'b' * 64
+        calls = []
+        driver.restart_bound_redis(lambda label, args: calls.append(args), docker, original)
+        self.assertEqual(calls, [docker + ['kill', '--signal', 'KILL', original],
+                                 docker + ['start', original]])
+        calls.clear()
+        def vanished(label, args):
+            calls.append(args)
+            raise ValueError('Selected Redis ID no longer exists')
+        with self.assertRaisesRegex(ValueError, 'no longer exists'):
+            driver.restart_bound_redis(vanished, docker, original)
+        self.assertEqual(calls, [docker + ['kill', '--signal', 'KILL', original]])
+        self.assertFalse(any(replacement in command or 'compose' in command for command in calls))
+        calls.clear()
+        with self.assertRaisesRegex(ValueError, 'full Redis container ID'):
+            driver.restart_bound_redis(lambda label, args: calls.append(args), docker, 'redis')
+        self.assertEqual(calls, [])
+
     def test_generated_ipc_programs_compile_without_executing_them(self):
         tree = ast.parse((ROOT / 'experiments/server/run_mfa_restart.py').read_text())
         run = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'run')

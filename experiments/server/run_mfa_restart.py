@@ -78,6 +78,14 @@ def owned_test(info, project, image, name, namespace):
             'Refusing an unrecognized one-off test container')
 
 
+def restart_bound_redis(execute, docker, identifier):
+    require(re.fullmatch(r'[a-f0-9]{64}', identifier), 'Expected the inspected full Redis container ID')
+    # Never resolve a Compose service again for mutation after held-request
+    # preparation. If this ID vanished, fail instead of touching its replacement.
+    execute('redis-kill', docker + ['kill', '--signal', 'KILL', identifier])
+    execute('redis-start', docker + ['start', identifier])
+
+
 def run(compose_path, harness_path, destination, expected_image, expected_policy, expected_harness,
         *, allow_redis_restart=False):
     require(allow_redis_restart is True, 'Explicit Redis interruption authorization required')
@@ -193,11 +201,10 @@ def run(compose_path, harness_path, destination, expected_image, expected_policy
             time.sleep(0.25)
         require(hashlib.sha256(compose.read_bytes()).hexdigest() == digest, 'Compose changed before Redis mutation')
         started = time.monotonic()
-        execute('redis-kill', command + ['kill', '--signal', 'KILL', 'redis'])
-        execute('redis-start', command + ['up', '--detach', '--no-deps', 'redis'])
+        restart_bound_redis(execute, docker, redis_id)
         deadline = time.monotonic() + 12
         while True:
-            pong = execute('redis-ping', command + ['exec', '-T', 'redis', 'redis-cli', 'PING'], check=False)
+            pong = execute('redis-ping', docker + ['exec', redis_id, 'redis-cli', 'PING'], check=False)
             if pong.returncode == 0 and pong.stdout.strip() == 'PONG':
                 break
             require(time.monotonic() < deadline, 'Redis did not become ready in real-code headroom')
