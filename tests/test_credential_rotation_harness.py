@@ -8,6 +8,7 @@ import re
 import tempfile
 from types import SimpleNamespace
 import unittest
+import uuid
 from unittest.mock import MagicMock, patch
 import zlib
 
@@ -23,6 +24,33 @@ def fixture():
 
 
 class Harness(unittest.TestCase):
+    def test_state_executes_uuid_identity_guard_with_real_uuid_model_values(self):
+        # Execute the actual embedded ORM assertion (without importing Django),
+        # reproducing UUIDField's Python representation and exact other guards.
+        import ast
+        source = Path(rotation.__file__).read_text()
+        tree = ast.parse(source)
+        state_function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'state')
+        code = next(node.value for node in ast.walk(state_function) if isinstance(node, ast.Constant)
+                    and isinstance(node.value, str) and 'em.hardware_uuid' in node.value)
+        orm_tree = ast.parse(code)
+        loop = next(node for node in orm_tree.body if isinstance(node, ast.For) and node.target.id == 'em')
+        check = next(node for node in loop.body if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+                     and isinstance(node.value.func, ast.Name) and node.value.func.id == 'need')
+        compiled = compile(ast.fix_missing_locations(ast.Module(body=[check], type_ignores=[])), '<actual-state-guard>', 'exec')
+        device = fixture()['devices'][0]
+        model = SimpleNamespace(hardware_uuid=uuid.UUID(device['uuid']), serial_number=device['serial'], client_mode=1)
+        def verify():
+            exec(compiled, dict(need=rotation.need, str=str, em=model, d=device,
+                                Configuration=SimpleNamespace(MONITOR_MODE=1)))
+        verify()
+        model.hardware_uuid = uuid.UUID(fixture()['devices'][1]['uuid'])
+        with self.assertRaises(ValueError): verify()
+        model.hardware_uuid = uuid.UUID(device['uuid']); model.serial_number += '-other'
+        with self.assertRaises(ValueError): verify()
+        model.serial_number = device['serial']; model.client_mode = 2
+        with self.assertRaises(ValueError): verify()
+
     def test_verified_local_helpers_load_without_network_or_docker(self):
         root = ROOT / 'experiments/server'
         helper = hashlib.sha256((root / 'test_live_zentral.py').read_bytes()).hexdigest()
