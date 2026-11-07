@@ -2,7 +2,9 @@
 
 Linux/root qualification component. The selected binding must come from a
 trusted machine producer; this input contract does not attest its own origin.
-Never stops, starts, initializes, restores or deletes a container or volume.
+Standalone capture never mutates containers. Explicit controller-owned
+maintenance closes/drains/stops; completion-gated resume starts originals only.
+No restore, initialization, container/volume deletion or automatic replay.
 """
 import sys
 if __name__ == '__main__' and not sys.flags.isolated:
@@ -26,12 +28,15 @@ import tarfile
 import time
 import types
 import urllib.request
+import uuid
 
 ROOT = Path('/var/lib/azd-santa-qualification')
-CONTROLLER_SHA = 'e662b57c4a55a38a27785daa99cc09a6dd8c9e9d6792cef0b60ec0a9ab0d4f0e'
+CONTROLLER_SHA = 'b20752d8a493fc8118631e924a6732c3a2ea18a03fdaab4d43f5bff8ee47e8f5'
 MAGIC = b'AZDSANTABACKUP1\n'
 CHUNK = 1024 * 1024
 HEX = r'[a-f0-9]{64}'
+_MAINTENANCE_KEY = object()
+STATE_FIELDS = ('Status', 'Running', 'Paused', 'Restarting', 'OOMKilled', 'Pid', 'ExitCode', 'Error', 'StartedAt', 'FinishedAt')
 
 
 def need(value):
@@ -92,6 +97,9 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def host_identity(target):
+    guid=r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
+    need(set(target)=={'VmId','VmInstanceId'} and re.fullmatch(guid,target['VmInstanceId'])
+         and re.fullmatch('/subscriptions/'+guid+r'/resourceGroups/rg-azd-santa-vm-[a-z0-9-]{2,32}/providers/Microsoft.Compute/virtualMachines/vm-santa-lab',target['VmId']))
     request = urllib.request.Request('http://169.254.169.254/metadata/instance/compute?api-version=2021-02-01', headers={'Metadata': 'true'})
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
     with opener.open(request, timeout=3) as response: raw = response.read(65537)
@@ -103,7 +111,7 @@ def host_identity(target):
     return {**target, 'boot_id': boot}
 
 
-def command(args, environment, timeout=30):
+def command(args, environment, timeout=30, allowed_failure=False):
     """Bound both command output and time; never print Docker/secret diagnostics."""
     process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment)
     buffers = {process.stdout: bytearray(), process.stderr: bytearray()}
@@ -119,8 +127,9 @@ def command(args, environment, timeout=30):
                     else:
                         buffers[key.fileobj].extend(raw)
                         need(sum(map(len, buffers.values())) <= 4 * CHUNK)
-        need(process.wait(timeout=max(0.01, end - time.monotonic())) == 0)
-        return types.SimpleNamespace(stdout=bytes(buffers[process.stdout]).decode(), returncode=0)
+        code = process.wait(timeout=max(0.01, end - time.monotonic()))
+        need(code == 0 or allowed_failure)
+        return types.SimpleNamespace(stdout=bytes(buffers[process.stdout]).decode(), returncode=code)
     finally:
         if process.poll() is None:
             process.kill(); process.wait(timeout=5)
@@ -136,18 +145,31 @@ def load_controller():
     return module
 
 
-def cold_state(runtime, selected, volumes):
+def cold_state(runtime, selected, volumes, capability=None):
     need(runtime.inspect(running=False, record=False) == selected)
     rows = json.loads(runtime.call('cold-inspect', runtime_module_docker(runtime) + ['inspect', *selected.values()]).stdout)
     need(len(rows) == 7 and {row['Id'] for row in rows} == set(selected.values()))
     for row in rows:
         state = row['State']
+        name = next(name for name, cid in selected.items() if cid == row['Id'])
+        valid_exit = state['ExitCode'] == 0
+        if capability is not None:
+            capability.verify(runtime, selected)
+            need({k: state[k] for k in STATE_FIELDS} == capability.states[row['Id']])
+            valid_exit = valid_exit or (name == 'elastic' and state['ExitCode'] == 143)
         need(state['Status'] == 'exited' and not state['Running'] and not state.get('Restarting')
-             and not state.get('Paused') and not state.get('OOMKilled') and state['ExitCode'] == 0
+             and not state.get('Paused') and not state.get('OOMKilled') and valid_exit
              and not state.get('Error') and state['StartedAt'][:4] != '0001' and state['FinishedAt'][:4] != '0001')
     unit = dict(line.split('=', 1) for line in runtime.call('unit-cold', ['systemctl', 'show', 'azd-santa-runtime.service',
         '--property=LoadState,ActiveState,SubState,Job']).stdout.splitlines() if '=' in line)
-    need(unit == {'LoadState': 'loaded', 'ActiveState': 'inactive', 'SubState': 'dead', 'Job': ''})
+    if capability is None:
+        need(unit == {'LoadState': 'loaded', 'ActiveState': 'inactive', 'SubState': 'dead', 'Job': ''})
+    else:
+        capability.verify(runtime, selected)
+        need(unit['LoadState'] == 'loaded' and unit['ActiveState'] == 'deactivating'
+             and unit['SubState'].startswith('stop') and unit['Job'])
+        pid = runtime.call('maintenance-main-pid', ['systemctl', 'show', 'azd-santa-runtime.service', '--value', '--property=MainPID']).stdout.strip()
+        need(pid == str(os.getpid()))
     ids = runtime.call('all-containers', runtime_module_docker(runtime) + ['ps', '--all', '--quiet', '--no-trunc']).stdout.split()
     need(len(ids) <= 256 and all(re.fullmatch(HEX, cid) for cid in ids) and set(selected.values()) <= set(ids))
     all_rows = json.loads(runtime.call('all-mounts', runtime_module_docker(runtime) + ['inspect', *ids]).stdout)
@@ -253,6 +275,11 @@ def verify_storage_snapshot(runtime, roots, volumes, mounts):
     # survive the entire stream before its authentication tag is committed.
     need(volume_paths(runtime) == volumes)
     need(mount_snapshot(roots) == mounts)
+
+
+def storage_fingerprint(runtime):
+    volumes=volume_paths(runtime)
+    return digest(encoded({'volumes':{k:str(v) for k,v in volumes.items()},'mounts':mount_snapshot(volumes)}))
 
 
 def recipient_key(public_der):
@@ -365,12 +392,91 @@ def write_capture(destination, public_der, roots, compatibility, maximum, maximu
         stream.write(encoded(dict(scope='azd-santa-cold-backup-ciphertext-v1',
             ciphertext_sha256=sink.hasher.hexdigest(), ciphertext_bytes=sink.total,
             recipient_sha256=digest(public_der), entries=entries, restore_admission='not_implemented',
-            current_authority='not_established')))
+            current_authority='not_established', maintenance_sha256=compatibility['selection']['maintenance_sha256'],
+            generation_sha256=compatibility['selection']['generation_sha256'])))
         stream.flush(); os.fsync(stream.fileno())
     directory = os.open(destination, os.O_RDONLY | os.O_DIRECTORY)
     try: os.fsync(directory)
     finally: os.close(directory)
     return output
+
+
+def _capture_locked(runtime, service, selection, selection_path, public_der, destination, maximum, maximum_files, deadline, native, native_path, native_receipt, native_receipt_path, capability=None):
+    manifest = selection['runtime_manifest']; path = Path(manifest['path'])
+    # Coherent native-backup integration must supply the sixth volume
+    # and the SINGLE admission/controller generation anchor. Legacy
+    # five-volume controllers cannot produce a backup-success receipt.
+    generation_path = checked_file(path.parent / 'container-generation.json', private=True)
+    generation_raw = generation_path.read_bytes()
+    need(digest(generation_raw) == selection['generation_sha256'])
+    generation = json.loads(generation_raw, object_pairs_hook=unique)
+    need(set(generation) == {'scope', 'manifest_sha256', 'project', 'image_id', 'generation', 'container_ids'}
+         and generation['scope'] == 'private-runtime-container-generation-v1'
+         and generation['manifest_sha256'] == manifest['sha256'] and generation['project'] == runtime.project
+         and generation['container_ids'] == selection['containers'] and re.fullmatch(r'[a-f0-9]{32}', generation['generation'])
+         and generation['image_id'] == runtime.data['services']['web']['image'])
+    runtime.call = lambda label, args, timeout=30, **_: command(args, runtime.environment, timeout=min(timeout, max(0.01, deadline-time.monotonic())))
+    unit = checked_file(service.UNIT, within_root=False)
+    need(unit.read_bytes() == service.unit_text(Path(service.__file__), path, manifest['sha256']).encode())
+    identity = host_identity(selection['target'])
+    runtime.inspect(running=False, record=False)
+    if capability is not None: need(storage_fingerprint(runtime)==capability.storage_sha)
+    volumes = volume_paths(runtime)
+    before = cold_state(runtime, selection['containers'], volumes, capability)
+    runtime.backing_data()
+    # postmaster.pid survives an unclean PostgreSQL stop; never bless it.
+    db = runtime.images[runtime.data['services']['db']['image']]
+    db_env = dict(item.split('=', 1) for item in db['Config']['Env'])
+    pgdata = volumes['postgres_data'] / str(Path(db_env['PGDATA']).relative_to('/var/lib/postgresql'))
+    need(not (pgdata / 'postmaster.pid').exists() and not (pgdata / 'postmaster.pid').is_symlink())
+    roots = native.archive_roots(volumes, native_receipt, selection['maintenance_sha256'])
+    operation=Path(selection_path).parent
+    need(operation==path.parent/('backup-'+native_receipt['plan']['operation_id']) and native_receipt_path.parent==operation/'snapshot')
+    request_path=checked_file(path.parent/'backup-request.json',private=True)
+    need(digest(request_path.read_bytes())==selection['maintenance_sha256'])
+    evidence={request_path,operation/'drain-complete.json',operation/'worker-stop-complete.json',operation/'stop-complete.json',
+              operation/'snapshot/plan.json',operation/'snapshot/repository-intent.json',
+              operation/'snapshot/snapshot-intent.json',operation/'snapshot/native-observed.json'}
+    for file in evidence: checked_file(file,private=True)
+    files = {Path(p) for p in runtime.binding['files']}
+    files.update(evidence)
+    conf = Path(runtime.binding['compose']).parent / 'conf'
+    need(set(conf.iterdir()) == {conf / 'base.json'})
+    files.update({path, Path(selection_path), Path(__file__).absolute(), Path(service.__file__), native_path, native_receipt_path, generation_path,
+                  *(Path(service.__file__).with_name(name) for name in service.HELPERS),
+                  Path(runtime.binding['compose']).parent / 'migration.env', unit})
+    for index, file in enumerate(sorted(files)):
+        checked_file(file, private=file.suffix == '.env' or file == Path(selection_path), within_root=file != unit)
+        roots['control/' + str(index) + '/' + file.name] = file
+    mounts = mount_snapshot(roots)
+    control_hashes = {name: digest(file.read_bytes()) for name, file in roots.items() if name.startswith('control/')}
+    destination = Path(destination)
+    need(destination.is_absolute() and not destination.exists() and not destination.is_symlink()
+         and destination.parent == destination.parent.resolve(strict=True))
+    for parent in (destination.parent, *destination.parent.parents):
+        info = parent.stat(); need(info.st_uid == 0 and not info.st_mode & 0o022)
+    need(not any(destination.is_relative_to(root) for root in [*volumes.values(), path.parent.parent]))
+    destination.mkdir(mode=0o700)
+    compatibility = dict(scope='azd-santa-cold-backup-v1', selection=selection, host=identity,
+        images={name: {'reference': data['image'], 'id': runtime.images[data['image']]['Id']}
+                for name, data in runtime.data['services'].items()},
+        postgres_major=db_env['PG_MAJOR'], rabbit_node='rabbit@rabbitmq', volumes={k:str(v) for k,v in volumes.items()},
+        control_files={name:str(file) for name,file in roots.items() if name.startswith('control/')},
+        control_files_sha256=control_hashes,
+        mounts=mounts,
+        elasticsearch_backup='native-filesystem-snapshot-repository', native_snapshot=native_receipt,
+        selected_files_sha256=runtime.binding['files'], source_commit=service.COMMIT,
+        crypto_version=__import__('cryptography').__version__,
+        restore_admission='not_implemented', current_authority='not_established')
+    def final_check():
+        if capability is not None: need(storage_fingerprint(runtime)==capability.storage_sha)
+        verify_storage_snapshot(runtime, roots, volumes, mounts)
+        need(cold_state(runtime, selection['containers'], volumes, capability) == before)
+        need(host_identity(selection['target']) == identity)
+        service.load_manifest(path, manifest['sha256'])
+        need(digest(generation_path.read_bytes()) == selection['generation_sha256'])
+        need(control_hashes == {name: digest(file.read_bytes()) for name, file in roots.items() if name.startswith('control/')})
+    return write_capture(destination, public_der, roots, compatibility, maximum, maximum_files, deadline, final_check, mounts)
 
 
 def capture(selection_path, expected, public_der, destination, *, maximum=8 * 1024**3, maximum_files=100000, seconds=1800):
@@ -403,71 +509,336 @@ def capture(selection_path, expected, public_der, destination, *, maximum=8 * 10
         prior = signal.signal(signal.SIGALRM, expired); signal.alarm(seconds)
         try:
             runtime = service.Runtime(path, manifest['sha256'])
-            # Coherent native-backup integration must supply the sixth volume
-            # and the SINGLE admission/controller generation anchor. Legacy
-            # five-volume controllers cannot produce a backup-success receipt.
-            generation_path = checked_file(path.parent / 'container-generation.json', private=True)
-            generation_raw = generation_path.read_bytes()
-            need(digest(generation_raw) == selection['generation_sha256'])
-            generation = json.loads(generation_raw, object_pairs_hook=unique)
-            need(set(generation) == {'scope', 'manifest_sha256', 'project', 'image_id', 'generation', 'container_ids'}
-                 and generation['scope'] == 'private-runtime-container-generation-v1'
-                 and generation['manifest_sha256'] == manifest['sha256'] and generation['project'] == runtime.project
-                 and generation['container_ids'] == selection['containers'] and re.fullmatch(r'[a-f0-9]{32}', generation['generation'])
-                 and generation['image_id'] == runtime.data['services']['web']['image'])
-            runtime.call = lambda label, args, timeout=30, **_: command(args, runtime.environment, timeout=min(timeout, max(0.01, deadline-time.monotonic())))
-            unit = checked_file(service.UNIT, within_root=False)
-            need(unit.read_bytes() == service.unit_text(Path(service.__file__), path, manifest['sha256']).encode())
-            identity = host_identity(selection['target'])
-            runtime.inspect(running=False, record=False)
-            volumes = volume_paths(runtime)
-            before = cold_state(runtime, selection['containers'], volumes)
-            runtime.backing_data()
-            # postmaster.pid survives an unclean PostgreSQL stop; never bless it.
-            db = runtime.images[runtime.data['services']['db']['image']]
-            db_env = dict(item.split('=', 1) for item in db['Config']['Env'])
-            pgdata = volumes['postgres_data'] / str(Path(db_env['PGDATA']).relative_to('/var/lib/postgresql'))
-            need(not (pgdata / 'postmaster.pid').exists() and not (pgdata / 'postmaster.pid').is_symlink())
-            roots = native.archive_roots(volumes, native_receipt, selection['maintenance_sha256'])
-            files = {Path(p) for p in runtime.binding['files']}
-            conf = Path(runtime.binding['compose']).parent / 'conf'
-            need(set(conf.iterdir()) == {conf / 'base.json'})
-            files.update({path, Path(selection_path), Path(__file__).absolute(), Path(service.__file__), native_path, native_receipt_path, generation_path,
-                          *(Path(service.__file__).with_name(name) for name in service.HELPERS),
-                          Path(runtime.binding['compose']).parent / 'migration.env', unit})
-            for index, file in enumerate(sorted(files)):
-                checked_file(file, private=file.suffix == '.env' or file == Path(selection_path), within_root=file != unit)
-                roots['control/' + str(index) + '/' + file.name] = file
-            mounts = mount_snapshot(roots)
-            control_hashes = {name: digest(file.read_bytes()) for name, file in roots.items() if name.startswith('control/')}
-            destination = Path(destination)
-            need(destination.is_absolute() and not destination.exists() and not destination.is_symlink()
-                 and destination.parent == destination.parent.resolve(strict=True))
-            for parent in (destination.parent, *destination.parent.parents):
-                info = parent.stat(); need(info.st_uid == 0 and not info.st_mode & 0o022)
-            need(not any(destination.is_relative_to(root) for root in [*volumes.values(), path.parent.parent]))
-            destination.mkdir(mode=0o700)
-            compatibility = dict(scope='azd-santa-cold-backup-v1', selection=selection, host=identity,
-                images={name: {'reference': data['image'], 'id': runtime.images[data['image']]['Id']}
-                        for name, data in runtime.data['services'].items()},
-                postgres_major=db_env['PG_MAJOR'], rabbit_node='rabbit@rabbitmq', volumes={k:str(v) for k,v in volumes.items()},
-                control_files={name:str(file) for name,file in roots.items() if name.startswith('control/')},
-                control_files_sha256=control_hashes,
-                mounts=mounts,
-                elasticsearch_backup='native-filesystem-snapshot-repository', native_snapshot=native_receipt,
-                selected_files_sha256=runtime.binding['files'], source_commit=service.COMMIT,
-                crypto_version=__import__('cryptography').__version__,
-                restore_admission='not_implemented', current_authority='not_established')
-            def final_check():
-                verify_storage_snapshot(runtime, roots, volumes, mounts)
-                need(cold_state(runtime, selection['containers'], volumes) == before)
-                need(host_identity(selection['target']) == identity)
-                service.load_manifest(path, manifest['sha256'])
-                need(digest(generation_path.read_bytes()) == selection['generation_sha256'])
-                need(control_hashes == {name: digest(file.read_bytes()) for name, file in roots.items() if name.startswith('control/')})
-            return write_capture(destination, public_der, roots, compatibility, maximum, maximum_files, deadline, final_check, mounts)
+            return _capture_locked(runtime, service, selection, selection_path, public_der, destination, maximum, maximum_files, deadline, native, native_path, native_receipt, native_receipt_path)
         finally:
             signal.alarm(0); signal.signal(signal.SIGALRM, prior)
+
+
+def _native_module(runtime):
+    path = checked_file(Path(__file__).with_name('native_snapshot.py').absolute())
+    need(digest(path.read_bytes()) == runtime.binding['helpers_sha256']['native_snapshot.py'])
+    module = types.ModuleType('maintenance_native'); module.__file__ = str(path)
+    exec(compile(path.read_bytes(), str(path), 'exec'), module.__dict__)
+    return module, path
+
+
+def _bounded_calls(runtime, deadline):
+    previous = runtime.call
+    def call(label, args, *, timeout=30, allowed_failure=False, **_):
+        runtime.phase = 'backup-' + label
+        return command(args, runtime.environment, timeout=min(timeout, max(0.01, deadline-time.monotonic())), allowed_failure=allowed_failure)
+    runtime.call = call
+    return previous
+
+
+def _states(runtime, ids):
+    rows = json.loads(runtime.call('selected-states', runtime_module_docker(runtime) + ['inspect', *ids]).stdout)
+    need(len(rows) == len(ids) and {row['Id'] for row in rows} == set(ids))
+    return {row['Id']: {k: row['State'][k] for k in STATE_FIELDS} for row in rows}
+
+
+def _dedicated(runtime, original):
+    ids = runtime.call('dedicated-inventory', runtime_module_docker(runtime) + ['ps', '--all', '--quiet', '--no-trunc']).stdout.split()
+    need(len(ids) <= 256 and set(original.values()) <= set(ids) and all(re.fullmatch(HEX, cid) for cid in ids))
+    rows = json.loads(runtime.call('dedicated-states', runtime_module_docker(runtime) + ['inspect', *ids]).stdout)
+    need(len(rows) == len(ids) and {r['Id'] for r in rows} == set(ids))
+    for row in rows:
+        if row['Id'] not in original.values():
+            need(row['State']['Running'] is False and row['State']['Paused'] is False
+                 and row['State']['Restarting'] is False and row['State']['Pid'] == 0)
+
+
+def _queue_inventory(runtime, broker, *, metadata=False):
+    fields = ['name', 'messages_ready', 'messages_unacknowledged']
+    if metadata: fields += ['durable', 'auto_delete']
+    raw = runtime.call('queue-inventory', runtime_module_docker(runtime) +
+        ['exec', broker, 'rabbitmqctl', 'list_queues', *fields, '--formatter', 'json'], timeout=25).stdout
+    rows = json.loads(raw)
+    need(type(rows) is list and 0 < len(rows) <= 64 and len({r['name'] for r in rows}) == len(rows))
+    for row in rows:
+        need(set(row) == set(fields) and re.fullmatch(r'[A-Za-z0-9_.:@-]{1,192}', row['name'])
+             and all(type(row[k]) is int and row[k] >= 0 for k in ('messages_ready', 'messages_unacknowledged')))
+        if metadata: need(type(row['durable']) is bool and type(row['auto_delete']) is bool)
+    return rows
+
+
+def storage_headroom(repository, destination_parent, maximum):
+    """Conservative local disk reservation check, not a filesystem quota."""
+    first,second=os.statvfs(repository),os.statvfs(destination_parent)
+    same=repository.stat().st_dev==destination_parent.stat().st_dev
+    margin=128*1024**2
+    need(first.f_bavail*first.f_frsize >= maximum*(2 if same else 1)+margin)
+    need(second.f_bavail*second.f_frsize >= maximum*(2 if same else 1)+margin)
+
+
+def _request(runtime):
+    path = checked_file(runtime.manifest_path.parent / 'backup-request.json', private=True)
+    raw = path.read_bytes(); value = json.loads(raw, object_pairs_hook=unique)
+    need(set(value) == {'scope', 'operation_id', 'manifest_sha256', 'generation_sha256', 'target', 'boot_id',
+                       'recipient_der_base64', 'recipient_sha256', 'destination', 'maximum_bytes', 'maximum_files', 'seconds',
+                       'queue_inventory', 'backup_program_sha256', 'storage_sha256'})
+    need(value['scope'] == 'azd-santa-backup-maintenance-v1' and re.fullmatch(r'[a-f0-9]{32}', value['operation_id'])
+         and value['manifest_sha256'] == runtime.digest and value['backup_program_sha256'] == digest(Path(__file__).read_bytes())
+         and re.fullmatch(HEX, value['generation_sha256']) and re.fullmatch(HEX,value['storage_sha256']))
+    need(type(value['maximum_bytes']) is int and CHUNK <= value['maximum_bytes'] <= 32*1024**3
+         and type(value['maximum_files']) is int and 1 <= value['maximum_files'] <= 1000000
+         and type(value['seconds']) is int and 60 <= value['seconds'] <= 3300)
+    public = base64.b64decode(value['recipient_der_base64'], validate=True)
+    need(base64.b64encode(public).decode() == value['recipient_der_base64'] and digest(public) == value['recipient_sha256'])
+    recipient_key(public)
+    host_identity(value['target'])  # Completed/resumed originals may reboot.
+    need(re.fullmatch(r'[a-f0-9-]{36}', value['boot_id']))
+    generation_path = checked_file(runtime.manifest_path.parent / 'container-generation.json', private=True)
+    need(digest(generation_path.read_bytes()) == value['generation_sha256'])
+    return value, digest(raw), public
+
+
+def request_backup(runtime, target, public, destination, *, maximum=8*1024**3, maximum_files=100000, seconds=1800):
+    """Machine producer; selected host invocation is authorized by its caller.
+
+    This reserves once and invokes normal systemctl stop once. Timeout means
+    observe the retained operation, never request/stop/submit it again.
+    """
+    recipient_key(public)
+    need(type(maximum) is int and CHUNK <= maximum <= 32*1024**3 and type(maximum_files) is int
+         and 1 <= maximum_files <= 1000000 and type(seconds) is int and 60 <= seconds <= 3300)
+    identity = host_identity(target)
+    previous = _bounded_calls(runtime, time.monotonic()+60)
+    try:
+        selected = runtime.inspect(running=True)
+        runtime.container_generation(selected); _dedicated(runtime, selected)
+        status = dict(line.split('=', 1) for line in runtime.call('ready-unit', ['systemctl', 'show', 'azd-santa-runtime.service',
+            '--property=LoadState,ActiveState,SubState,MainPID']).stdout.splitlines())
+        need(status['LoadState'] == 'loaded' and status['ActiveState'] == 'active' and status['SubState'] == 'running'
+             and re.fullmatch(r'[1-9][0-9]*', status['MainPID']))
+        service=load_controller()
+        unit=checked_file(service.UNIT,within_root=False)
+        need(unit.read_bytes()==service.unit_text(Path(service.__file__),runtime.manifest_path,runtime.digest).encode())
+        with Path('/proc/'+status['MainPID']+'/cmdline').open('rb') as stream: argv=stream.read(8193)
+        need(len(argv)<=8192 and argv.rstrip(b'\0').split(b'\0')[1:]==[v.encode() for v in (
+            '-I',str(service.__file__),'run','--manifest',str(runtime.manifest_path),'--sha256',runtime.digest)])
+        inventory = _queue_inventory(runtime, selected['rabbitmq'], metadata=True)
+        need(all(r['durable'] or (r['auto_delete'] and r['messages_ready'] == r['messages_unacknowledged'] == 0) for r in inventory))
+        destination = Path(destination)
+        need(destination.is_absolute() and destination.parent == destination.parent.resolve(strict=True)
+             and not destination.exists() and not destination.is_symlink())
+        for parent in (destination.parent, *destination.parent.parents):
+            info=parent.stat(); need(info.st_uid == 0 and not info.st_mode & 0o022)
+        storage_headroom(volume_paths(runtime)['elasticsearch_snapshots'],destination.parent,maximum)
+        generation = checked_file(runtime.manifest_path.parent / 'container-generation.json', private=True)
+        request = dict(scope='azd-santa-backup-maintenance-v1', operation_id=uuid.uuid4().hex,
+            manifest_sha256=runtime.digest, generation_sha256=digest(generation.read_bytes()), target=target,
+            boot_id=identity['boot_id'], recipient_der_base64=base64.b64encode(public).decode(), recipient_sha256=digest(public),
+            destination=str(destination), maximum_bytes=maximum, maximum_files=maximum_files, seconds=seconds,
+            queue_inventory=inventory, backup_program_sha256=digest(Path(__file__).read_bytes()),storage_sha256=storage_fingerprint(runtime))
+        request_path=runtime.manifest_path.parent/'backup-request.json'
+        write_private = load_controller().private_write
+        write_private(request_path, request); load_controller().sync_directory(request_path.parent)
+    finally: runtime.call=previous
+    # Submission boundary: no automatic second stop after an unknown result.
+    runtime.call('backup-stop-submitted', ['systemctl', 'stop', 'azd-santa-runtime.service'], timeout=seconds+120)
+    completion=checked_file(request_path.parent/('backup-'+request['operation_id'])/'maintenance-complete.json',private=True)
+    need(json.loads(completion.read_bytes())['request_sha256']==digest(request_path.read_bytes()))
+    return completion
+
+
+def _stopped(runtime, original, names, term_names=()):
+    rows = _states(runtime, [original[name] for name in names])
+    for name in names:
+        state=rows[original[name]]
+        need(state['Status']=='exited' and state['Running'] is False and state['Paused'] is False
+             and state['Restarting'] is False and state['Pid']==0 and state['OOMKilled'] is False and not state['Error']
+             and (state['ExitCode']==0 or (name in term_names and state['ExitCode']==143)))
+    return rows
+
+
+def _worker_join_proof(runtime, worker_id, worker_state, request_sha):
+    """Held until the separate exact-source graceful-worker overlay is reviewed.
+
+    Integration must verify installed command/module bytes before stopping and
+    bind startup nonce/StartedAt to this request, then require current child
+    joins/zero exits/consumer-close proof. No status/flag can bypass this gate.
+    """
+    raise ValueError('Reviewed worker child-join proof is not integrated')
+
+
+def _worker_clean_stop(runtime, original, request_sha, expected_queues):
+    """Require original exit zero, empty queues AND reviewed child-join proof."""
+    states = _stopped(runtime, original, ('workers',))
+    publishers = _stopped(runtime, original, ('web', 'celery'))
+    rows = _queue_inventory(runtime, original['rabbitmq'])
+    need(len(rows) == len(expected_queues) and {r['name'] for r in rows} == set(expected_queues)
+         and all(r['messages_ready'] == r['messages_unacknowledged'] == 0 for r in rows))
+    return dict(scope='azd-santa-worker-exit-zero-v1', request_sha256=request_sha,
+                worker_id=original['workers'], worker_state=states[original['workers']],
+                publisher_states=publishers, queues=rows,
+                child_join_proof=_worker_join_proof(runtime,original['workers'],states[original['workers']],request_sha))
+
+
+class _MaintenanceCapability:
+    """Unserialized, process-local proof; no CLI/JSON bypass of cold checks."""
+    def __init__(self, runtime, original, states, request_sha, key, storage_sha=None):
+        need(key is _MAINTENANCE_KEY)
+        need(isinstance(storage_sha,str) and re.fullmatch(HEX,storage_sha))
+        self.runtime=runtime;self.original=dict(original);self.states=states;self.request_sha=request_sha
+        self.pid=os.getpid();self.key=key
+        self.storage_sha=storage_sha
+
+    def verify(self, runtime, selected):
+        need(self.key is _MAINTENANCE_KEY and self.runtime is runtime and self.pid==os.getpid()
+             and selected==self.original and runtime.stopping is True and runtime.backup_ready is True
+             and runtime.supervisor_lock_fd is not None)
+        info=os.fstat(runtime.supervisor_lock_fd)
+        lock=(runtime.manifest_path.parent/'supervisor.lock').stat()
+        need((info.st_dev,info.st_ino)==(lock.st_dev,lock.st_ino))
+
+
+def _snapshot_job(runtime, checkpoint, native_path, request_sha, operation_id, maximum_bytes):
+    for path in (checkpoint,native_path): need(re.fullmatch(r'/[A-Za-z0-9/_.-]+',str(path)))
+    name='santa-backup-native-'+operation_id
+    source_sha=runtime.binding['helpers_sha256']['native_snapshot.py']
+    need(digest(native_path.read_bytes())==source_sha)
+    code=("from pathlib import Path;import types,hashlib;raw=Path('/run/native.py').read_bytes();"
+          f"assert hashlib.sha256(raw).hexdigest()=={source_sha!r};"
+          "m=types.ModuleType('native');exec(compile(raw,'/run/native.py','exec'),m.__dict__);"
+          f"m.run_reserved(Path('/run/backup'),{request_sha!r},{operation_id!r},seconds=600,maximum_bytes={maximum_bytes!r})")
+    runtime.helpers.add(name)
+    try:
+        runtime.call('native-snapshot',runtime_module_docker(runtime)+['run','--rm','--pull','never','--name',name,
+            '--network',runtime.project+'_default','--read-only','--user','0','--cap-drop','ALL','--security-opt','no-new-privileges:true',
+            '--label','com.docker.compose.project='+runtime.project,'--label','com.docker.compose.service=web','--label','com.docker.compose.oneoff=True',
+            '--mount','type=bind,source='+str(checkpoint)+',target=/run/backup',
+            '--mount','type=bind,source='+str(native_path)+',target=/run/native.py,readonly',
+            '--entrypoint','python',runtime.data['services']['web']['image'],'-I','-S','-c',code],timeout=650)
+    finally: runtime.stop_helpers()
+
+
+def stop_capture(runtime):
+    """Called only from the original supervisor's stopping path, under its lock."""
+    request_path=runtime.manifest_path.parent/'backup-request.json'
+    if not request_path.exists() and not request_path.is_symlink(): return False
+    request, request_sha, public=_request(runtime)
+    operation=runtime.manifest_path.parent/('backup-'+request['operation_id'])
+    if (operation/'resume-authorized.json').exists():
+        startup_allowed(runtime); return False  # Completed request is never replayed.
+    need(host_identity(request['target'])['boot_id'] == request['boot_id'])
+    need(runtime.stopping is True and runtime.backup_ready is True and runtime.supervisor_lock_fd is not None)
+    native,native_path=_native_module(runtime)
+    operation.mkdir(mode=0o700)  # Existing/unknown operation is never resumed here.
+    native.write_new(operation/'maintenance-intent.json',dict(request_sha256=request_sha,generation_sha256=request['generation_sha256']))
+    deadline=time.monotonic()+request['seconds'];previous=_bounded_calls(runtime,deadline)
+    def expired(*_): raise TimeoutError('Backup maintenance deadline exceeded')
+    prior=signal.signal(signal.SIGALRM,expired);signal.alarm(request['seconds'])
+    try:
+        selected=runtime.inspect(running=True);runtime.container_generation(selected)
+        need(storage_fingerprint(runtime)==request['storage_sha256'])
+        need(set(runtime.cleanup_ids)==set(selected.values()));_dedicated(runtime,selected)
+        def stop(names, seconds=30):
+            runtime.call('close-'+ '-'.join(names),runtime_module_docker(runtime)+['stop','--time',str(seconds),*(selected[n] for n in names)],timeout=seconds+60)
+        stop(('web','celery'),60)
+        publishers={name:selected[name] for name in ('web','celery')}
+        def publisher_states(): return [dict(Id=cid,State=s) for cid,s in _stopped(runtime,selected,('web','celery')).items()]
+        original={r['name']:r for r in request['queue_inventory']}
+        # Known empty auto-delete control queues must disappear after publishers
+        # close. Every durable queue remains; no synthetic zero rows are added.
+        durable=sorted(name for name,r in original.items() if r['durable'])
+        need(durable)
+        quiet_deadline=min(deadline,time.monotonic()+30)
+        while True:
+            rows=_queue_inventory(runtime,selected['rabbitmq'])
+            need(set(r['name'] for r in rows)<=set(original))
+            if set(r['name'] for r in rows)==set(durable): break
+            need(time.monotonic()<quiet_deadline);publisher_states();time.sleep(1)
+        drain=native.drain(request_sha,publishers,durable,publisher_states,
+            lambda:_queue_inventory(runtime,selected['rabbitmq']),seconds=min(120,max(2,int(deadline-time.monotonic()))))
+        native.write_new(operation/'drain-complete.json',drain)
+        stop(('workers',))
+        worker = _worker_clean_stop(runtime,selected,request_sha,durable)
+        native.write_new(operation/'worker-stop-complete.json',worker)
+        # One owned, existing-image stdlib-only helper. No Django/SQL imports,
+        # owner env, socket, source tree or data volumes are mounted.
+        checkpoint=operation/'snapshot';checkpoint.mkdir(mode=0o700)
+        _snapshot_job(runtime,checkpoint,native_path,request_sha,request['operation_id'],request['maximum_bytes'])
+        receipt_path=checked_file(checkpoint/'native-complete.json',private=True)
+        receipt=json.loads(receipt_path.read_bytes(),object_pairs_hook=unique)
+        need(receipt['plan']['binding_sha256']==request_sha and receipt['plan']['operation_id']==request['operation_id'])
+        native.archive_roots(volume_paths(runtime),receipt,request_sha)
+        stop(('elastic',));_stopped(runtime,selected,('elastic',),('elastic',))
+        stop(('rabbitmq','redis','db'))
+        states=_stopped(runtime,selected,tuple(selected),('elastic',))
+        native.write_new(operation/'stop-complete.json',dict(request_sha256=request_sha,states=states))
+        selection=dict(scope='azd-santa-native-cold-backup-selection-v1',target=request['target'],
+            runtime_manifest={'path':str(runtime.manifest_path),'sha256':runtime.digest},controller_sha256=CONTROLLER_SHA,
+            backup_program_sha256=digest(Path(__file__).read_bytes()),recipient_sha256=digest(public),containers=selected,
+            generation_sha256=request['generation_sha256'],maintenance_sha256=request_sha,
+            native_snapshot={'path':str(receipt_path),'sha256':digest(receipt_path.read_bytes()),'program_sha256':digest(native_path.read_bytes())})
+        selection_path=operation/'capture-selection.json';native.write_new(selection_path,selection)
+        cap=_MaintenanceCapability(runtime,selected,states,request_sha,_MAINTENANCE_KEY,request['storage_sha256'])
+        cap.verify(runtime,selected)
+        service=load_controller()
+        result=_capture_locked(runtime,service,selection,selection_path,public,request['destination'],request['maximum_bytes'],
+            request['maximum_files'],deadline,native,native_path,receipt,receipt_path,cap)
+        complete=checked_file(result.with_name('complete.json'),private=True,within_root=False)
+        native.write_new(operation/'maintenance-complete.json',dict(request_sha256=request_sha,
+            generation_sha256=request['generation_sha256'],ciphertext_receipt_sha256=digest(complete.read_bytes())))
+        return True
+    except Exception as error:
+        native.write_new(operation/'maintenance-failed.json',dict(request_sha256=request_sha,error_type=type(error).__name__,automatic_replay=False))
+        raise
+    finally:
+        signal.alarm(0);signal.signal(signal.SIGALRM,prior);runtime.call=previous
+
+
+def startup_allowed(runtime):
+    request,request_sha,_=_request(runtime)
+    operation=runtime.manifest_path.parent/('backup-'+request['operation_id'])
+    completed=json.loads(checked_file(operation/'maintenance-complete.json',private=True).read_bytes())
+    authorized=json.loads(checked_file(operation/'resume-authorized.json',private=True).read_bytes())
+    need(completed['request_sha256']==request_sha and completed['generation_sha256']==request['generation_sha256']
+         and authorized=={'scope':'azd-santa-original-runtime-resume-v1','request_sha256':request_sha,
+            'completion_sha256':digest((operation/'maintenance-complete.json').read_bytes())})
+
+
+def _authorize_resume(runtime):
+    request,request_sha,_=_request(runtime)
+    operation=runtime.manifest_path.parent/('backup-'+request['operation_id'])
+    complete_path=checked_file(operation/'maintenance-complete.json',private=True)
+    complete=json.loads(complete_path.read_bytes());need(complete['request_sha256']==request_sha)
+    destination=Path(request['destination'])
+    receipt_path=checked_file(destination/'complete.json',private=True,within_root=False)
+    need(digest(receipt_path.read_bytes())==complete['ciphertext_receipt_sha256'])
+    receipt=json.loads(receipt_path.read_bytes())
+    need(receipt['maintenance_sha256']==request_sha and receipt['generation_sha256']==request['generation_sha256'])
+    ciphertext=checked_file(destination/'backup.sealed',private=True,limit=request['maximum_bytes'],within_root=False)
+    with ciphertext.open('rb') as stream: actual=hashlib.file_digest(stream,'sha256').hexdigest()
+    need(actual==receipt['ciphertext_sha256'] and ciphertext.stat().st_size==receipt['ciphertext_bytes'])
+    selected=runtime.inspect(running=False);runtime.container_generation(selected)
+    need(_stopped(runtime,selected,tuple(selected),('elastic',))==json.loads((operation/'stop-complete.json').read_bytes())['states'])
+    unit=dict(line.split('=',1) for line in runtime.call('resume-unit',['systemctl','show','azd-santa-runtime.service',
+        '--property=LoadState,ActiveState,SubState,MainPID,Result']).stdout.splitlines())
+    need(unit=={'LoadState':'loaded','ActiveState':'inactive','SubState':'dead','MainPID':'0','Result':'success'})
+    source=load_controller();unit_path=checked_file(source.UNIT,within_root=False)
+    need(unit_path.read_bytes()==source.unit_text(Path(source.__file__),runtime.manifest_path,runtime.digest).encode())
+    native,_=_native_module(runtime)
+    native.write_new(operation/'resume-authorized.json',dict(scope='azd-santa-original-runtime-resume-v1',request_sha256=request_sha,
+        completion_sha256=digest(complete_path.read_bytes())))
+    startup_allowed(runtime)
+
+
+def resume_original(runtime):
+    """Verify under the existing lock, then release it before one unit start."""
+    import fcntl
+    deadline=time.monotonic()+600;previous=_bounded_calls(runtime,deadline)
+    def expired(*_): raise TimeoutError('Original-runtime resume deadline exceeded')
+    prior=signal.signal(signal.SIGALRM,expired);signal.alarm(600)
+    try:
+        lock_path=checked_file(runtime.manifest_path.parent/'supervisor.lock',private=True)
+        with lock_path.open('r+b') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            _authorize_resume(runtime)
+        runtime.call('explicit-backup-resume',['systemctl','start','azd-santa-runtime.service'],timeout=450)
+    finally:
+        signal.alarm(0);signal.signal(signal.SIGALRM,prior);runtime.call=previous
 
 
 def main():

@@ -118,8 +118,10 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
         'elastic': {**service(lock['elasticsearch'], '896m'),
                     'environment': {'ES_JAVA_OPTS': '-Xms256m -Xmx256m',
                                     'discovery.type': 'single-node',
+                                    'path.repo': '/mnt/azd-santa-snapshots',
                                     'xpack.security.enabled': 'false'},
-                    'volumes': ['elasticsearch_data:/usr/share/elasticsearch/data']},
+                    'volumes': ['elasticsearch_data:/usr/share/elasticsearch/data',
+                                'elasticsearch_snapshots:/mnt/azd-santa-snapshots']},
     }
     for name, command, memory in (
             ('web', ['gunicorn', '--bind', '0.0.0.0:8000', '--workers', '1', '--threads', '2'], '512m'),
@@ -135,7 +137,7 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
     services['web']['ports'] = ['127.0.0.1:8000:8000']
     compose = {'name': 'santa-zentral-eval-' + secrets.token_hex(6), 'services': services,
                'volumes': {name: {} for name in (
-                   'postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data')}}
+                   'postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data', 'elasticsearch_snapshots')}}
     # Atomic reservation before any output. Failed preparation leaves evidence;
     # callers must inspect it and choose a new destination rather than retry over it.
     destination = Path(destination).absolute()

@@ -26,7 +26,7 @@ HEX = re.compile('[0-9a-f]{64}')
 GUID = re.compile('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 REDIS = ['redis-server', '--appendonly', 'yes', '--appendfsync', 'always', '--aof-load-truncated',
          'no', '--maxmemory-policy', 'noeviction', '--no-appendfsync-on-rewrite', 'no', '--save', '']
-VOLUMES = {'postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data'}
+VOLUMES = {'postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data', 'elasticsearch_snapshots'}
 ENV_KEYS = {'db.env': {'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD'},
     'rabbitmq.env': {'RABBITMQ_DEFAULT_USER', 'RABBITMQ_DEFAULT_PASS'},
     'runtime.env': {'POSTGRES_USER', 'POSTGRES_PASSWORD', 'ZENTRAL_DJANGO_SECRET', 'ZENTRAL_METRICS_TOKEN',
@@ -197,7 +197,8 @@ def attest_runtime(request):
     allowed = {'image', 'pull_policy', 'restart', 'mem_limit', 'logging', 'security_opt', 'command',
                'env_file', 'environment', 'volumes', 'depends_on', 'ports', 'hostname'}
     dependency_mounts = {'db': ['postgres_data:/var/lib/postgresql'], 'redis': ['redis_data:/data'],
-        'rabbitmq': ['rabbitmq_data:/var/lib/rabbitmq'], 'elastic': ['elasticsearch_data:/usr/share/elasticsearch/data']}
+        'rabbitmq': ['rabbitmq_data:/var/lib/rabbitmq'], 'elastic': ['elasticsearch_data:/usr/share/elasticsearch/data', 'elasticsearch_snapshots:/mnt/azd-santa-snapshots']}
+    need(config['services']['elastic'].get('environment', {}).get('path.repo') == '/mnt/azd-santa-snapshots')
     web, networks, services = None, set(), {}
     for service, declaration in config['services'].items():
         need(set(declaration) <= allowed and declaration.get('ports', []) == (['127.0.0.1:8000:8000'] if service == 'web' else []))
@@ -211,6 +212,8 @@ def attest_runtime(request):
         need(re.fullmatch('[a-f0-9]{64}', ids))
         services[service] = ids
         info = loads(docker(['inspect', ids]))[0]
+        if service == 'elastic':
+            need(unique([item.split('=', 1) for item in info['Config']['Env']]).get('path.repo') == '/mnt/azd-santa-snapshots')
         labels = info['Config'].get('Labels', {})
         need(info['State']['Running'] is True and labels.get('com.docker.compose.project') == project
              and labels.get('com.docker.compose.service') == service and info['Config']['Image'] == image)
@@ -231,9 +234,10 @@ def attest_runtime(request):
                 need(mount['Type'] == 'bind' and mount['Source'] == str(conf) and mount['RW'] is False)
             else:
                 destinations = {'/var/lib/postgresql': 'postgres_data', '/data': 'redis_data', '/var/lib/rabbitmq': 'rabbitmq_data',
-                                '/usr/share/elasticsearch/data': 'elasticsearch_data', '/var/zentral': 'media_data'}
+                                '/usr/share/elasticsearch/data': 'elasticsearch_data', '/var/zentral': 'media_data',
+                                '/mnt/azd-santa-snapshots': 'elasticsearch_snapshots'}
                 need(mount['Type'] == 'volume' and mount['Destination'] in destinations
-                     and mount['Name'] == project + '_' + destinations[mount['Destination']])
+                     and mount['Name'] == project + '_' + destinations[mount['Destination']] and mount['RW'] is True)
         if service in ('web', 'workers', 'celery'):
             need(info['Image'] == b['ImageId'] and labels.get('org.opencontainers.image.revision') == b['SourceCommit'])
             need(image_info['Config']['Labels'].get('io.azd-santa.variant') == 'core-experiment')

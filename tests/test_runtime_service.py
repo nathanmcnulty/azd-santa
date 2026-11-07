@@ -217,6 +217,7 @@ class Lifecycle(unittest.TestCase):
         runtime.python = Mock()
         runtime.backing_data = Mock()
         runtime.container_generation = Mock(return_value={'container_ids': runtime.inspect.return_value})
+        runtime.manifest_path = Path('/var/lib/azd-santa-qualification/runtime/runtime-service/manifest.json')
         calls = []
         def call(label, args, **kwargs):
             calls.append((label, args))

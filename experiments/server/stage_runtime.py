@@ -54,6 +54,28 @@ def require_host():
         raise ValueError('Fresh staging requires the selected privileged Linux host')
 
 
+def initialize_snapshot_volume(project, configured, run):
+    """Fresh empty local volume only; no repair of an existing repository."""
+    image = configured['services']['elastic']['image']
+    images = json.loads(run('snapshot-image', DOCKER + ['image', 'inspect', image]).stdout)
+    if len(images) != 1 or images[0]['Config'].get('User') != '1000:0':
+        raise ValueError('Pinned Elasticsearch snapshot owner differs')
+    root = Path(run('snapshot-docker-root', DOCKER + ['info', '--format', '{{.DockerRootDir}}']).stdout.strip())
+    name = project + '_elasticsearch_snapshots'
+    records = json.loads(run('snapshot-volume', DOCKER + ['volume', 'inspect', name]).stdout)
+    path = root / 'volumes' / name / '_data'
+    if (not root.is_absolute() or root != root.resolve(strict=True) or len(records) != 1 or
+            records[0].get('Name') != name or records[0].get('Driver') != 'local' or records[0].get('Options') or
+            records[0].get('Labels', {}).get('com.docker.compose.project') != project or
+            records[0].get('Mountpoint') != str(path) or path != path.resolve(strict=True) or not path.is_dir() or
+            next(path.iterdir(), None) is not None or path.stat().st_uid != 0):
+        raise ValueError('Fresh private native repository volume required')
+    os.chown(path, 1000, 0); path.chmod(0o700)
+    info = path.stat()
+    if info.st_uid != 1000 or info.st_gid != 0 or stat.S_IMODE(info.st_mode) != 0o700:
+        raise ValueError('Native repository ownership was not established')
+
+
 def stage(source, lock_path, destination, image_id):
     require_host()
     destination = Path(destination).absolute()
@@ -137,6 +159,9 @@ def stage(source, lock_path, destination, image_id):
              "assert Path('/zentral/docker-entrypoint.py').stat().st_mode & 0o777 == 0o755")
     run('image-body', DOCKER + ['run', '--rm', '--network', 'none', '--pull', 'never', '--entrypoint', 'python', image_id, '-I', '-c', probe])
     run('compose-config', compose + ['config', '--quiet'])
+    run('dependency-pull', compose + ['pull', '--policy', 'missing', 'db', 'redis', 'rabbitmq', 'elastic'], timeout=300)
+    run('dependency-create', compose + ['create', '--pull', 'never', 'db', 'redis', 'rabbitmq', 'elastic'], timeout=120)
+    initialize_snapshot_volume(project, configured, run)
     run('dependencies', compose + ['up', '--detach', '--no-recreate', '--pull', 'never', 'db', 'redis', 'rabbitmq', 'elastic'], timeout=120)
     wait('database', compose + ['exec', '-T', 'db', 'pg_isready', '-U', db['POSTGRES_USER'], '-d', db['POSTGRES_DB']])
     wait('broker', compose + ['exec', '-T', 'rabbitmq', 'rabbitmq-diagnostics', '-q', 'check_running'])

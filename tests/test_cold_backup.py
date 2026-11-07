@@ -258,10 +258,13 @@ class ColdBackup(unittest.TestCase):
             with self.assertRaises(ValueError): backup.host_identity(target)
         self.assertIsNone(backup.NoRedirect().redirect_request(None,None,None,None,None,None))
 
-    def test_component_exposes_no_restore_stop_start_or_cleanup_commands(self):
+    def test_standalone_capture_has_no_restore_container_mutation_or_cleanup_bypass(self):
         source=Path(backup.__file__).read_text()
-        for action in ("['start'", "['stop'", "['rm'", 'shutil.rmtree', 'extractall', 'operator_security_store', 'operator_access'):
+        for action in ("['rm'", 'shutil.rmtree', 'extractall', 'operator_security_store', 'operator_access'):
             self.assertNotIn(action,source)
+        capture=source[source.index('def _capture_locked('):source.index('def _native_module(')]
+        for action in ("['start'", "['stop'", "'systemctl', 'start'", "'systemctl', 'stop'"):
+            self.assertNotIn(action,capture)
         self.assertIn('fcntl.LOCK_EX | fcntl.LOCK_NB',source)
         self.assertIn("service.load_manifest(path, manifest['sha256'])",source)
         self.assertIn("not (pgdata / 'postmaster.pid').exists()",source)

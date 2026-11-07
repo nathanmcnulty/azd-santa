@@ -33,11 +33,11 @@ DEPENDENCIES = ('db', 'redis', 'rabbitmq', 'elastic')
 POLICIES = {'policy': 'azd_santa_operator.py',
             'recovery': 'azd_santa_operator_recovery.py',
             'sealed': 'azd_santa_sealed_setup.py', 'admission': 'azd_santa_admission.py'}
-HELPERS = ('test_live_zentral.py', 'prepare_zentral_eval.py')
+HELPERS = ('test_live_zentral.py', 'prepare_zentral_eval.py', 'cold_backup.py', 'native_snapshot.py')
 _HELPER = None
 VOLUMES = {'db': ['postgres_data:/var/lib/postgresql'],
            'redis': ['redis_data:/data'], 'rabbitmq': ['rabbitmq_data:/var/lib/rabbitmq'],
-           'elastic': ['elasticsearch_data:/usr/share/elasticsearch/data'],
+           'elastic': ['elasticsearch_data:/usr/share/elasticsearch/data', 'elasticsearch_snapshots:/mnt/azd-santa-snapshots'],
            **{name: ['./conf:/zentral-eval-conf:ro', 'media_data:/var/zentral'] for name in APPS}}
 
 
@@ -160,9 +160,11 @@ def check_redis_data(root):
 def bundle(compose):
     path, digest = compose_helper().validate_compose(checked_path(compose, private=True))
     data = json.loads(path.read_text())
-    if (data['volumes'] != {name: {} for name in ('postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data')} or
+    if (data['volumes'] != {name: {} for name in ('postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data', 'elasticsearch_snapshots')} or
             any(sorted(data['services'][name].get('volumes', [])) != sorted(expected) for name, expected in VOLUMES.items())):
         raise ValueError('Exact per-service persistent data/configuration mounts required')
+    if data['services']['elastic'].get('environment', {}).get('path.repo') != '/mnt/azd-santa-snapshots':
+        raise ValueError('Fixed native snapshot repository required')
     if data['services']['rabbitmq'].get('hostname') != 'rabbitmq':
         raise ValueError('Pinned broker node identity required')
     if any(s.get('restart') != 'no' for s in data['services'].values()):
@@ -254,7 +256,7 @@ ExecStart=/usr/bin/python3 -I {script} run --manifest {manifest} --sha256 {diges
 Restart=on-failure
 RestartSec=30
 TimeoutStartSec=420
-TimeoutStopSec=360
+TimeoutStopSec=3600
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
@@ -307,6 +309,16 @@ class Runtime:
         self.stopping = False
         self.phase = 'prepared'
         self.helpers = set()
+        self.supervisor_lock_fd = None
+        self.backup_ready = False
+
+    def backup_module(self):
+        path = trusted_sources().with_name('cold_backup.py')
+        if sha(path.read_bytes()) != self.binding['helpers_sha256']['cold_backup.py']:
+            raise ValueError('Bound backup source changed')
+        module = types.ModuleType('runtime_backup'); module.__file__ = str(path)
+        exec(compile(path.read_bytes(), str(path), 'exec'), module.__dict__)
+        return module
 
     def ensure_running(self):
         if self.stopping:
@@ -514,6 +526,9 @@ class Runtime:
 
     def start(self):
         self.ensure_running()
+        request = self.manifest_path.parent / 'backup-request.json'
+        if request.exists() or request.is_symlink():
+            self.backup_module().startup_allowed(self)
         selected = self.inspect(running=False)
         generation = self.container_generation(selected)
         self.cleanup_ids = tuple(generation['container_ids'].values())
@@ -605,11 +620,17 @@ class Runtime:
             self.helpers.remove(name)
 
     def stop(self):
+        captured = False
         try:
             self.stop_helpers()
+            if (getattr(self, 'stopping', False) and getattr(self, 'backup_ready', False)
+                    and getattr(self, 'supervisor_lock_fd', None) is not None):
+                request = self.manifest_path.parent / 'backup-request.json'
+                if request.exists() or request.is_symlink():
+                    captured = self.backup_module().stop_capture(self)
         finally:
             authorized = getattr(self, 'cleanup_ids', ())
-            if authorized:
+            if authorized and not captured:
                 current = self.call('cleanup-selection', DOCKER + ['ps', '--all', '--quiet', '--no-trunc'], allow_stopping=True).stdout.split()
                 selected = [cid for cid in authorized if cid in current]
                 if selected:
@@ -619,12 +640,14 @@ class Runtime:
         import fcntl
         with (self.manifest_path.parent / 'supervisor.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.supervisor_lock_fd = lock.fileno()
             def stopping(*_):
                 self.stopping = True
             signal.signal(signal.SIGTERM, stopping)
             signal.signal(signal.SIGINT, stopping)
             try:
                 self.start()
+                self.backup_ready = True
                 self.ensure_running()
                 address = os.environ.get('NOTIFY_SOCKET')
                 if address:
@@ -642,7 +665,8 @@ class Runtime:
                               error_type=type(error).__name__, detail=str(error)))
                 raise
             finally:
-                self.stop()
+                try: self.stop()
+                finally: self.supervisor_lock_fd = None
 
 
 def main():
@@ -653,7 +677,7 @@ def main():
     prepare_parser.add_argument('--destination', required=True)
     for name in POLICIES:
         prepare_parser.add_argument('--' + name + '-sha256', required=True)
-    for name in ('run', 'unit', 'install', 'admission-reconcile', 'admission-bind-fresh'):
+    for name in ('run', 'unit', 'install', 'admission-reconcile', 'admission-bind-fresh', 'backup', 'backup-resume'):
         command = commands.add_parser(name)
         command.add_argument('--manifest', required=True)
         command.add_argument('--sha256', required=True)
@@ -661,6 +685,12 @@ def main():
             command.add_argument('--initialize-missing', action='store_true')
         if name == 'install':
             command.add_argument('--enable-now', action='store_true')
+        if name == 'backup':
+            for field in ('vm-id', 'vm-instance-id', 'recipient-public-der', 'destination'):
+                command.add_argument('--' + field, required=True)
+            command.add_argument('--seconds', type=int, default=1800)
+            command.add_argument('--maximum-bytes', type=int, default=8*1024**3)
+            command.add_argument('--maximum-files', type=int, default=100000)
     args = parser.parse_args()
     if sys.platform != 'linux' or os.geteuid() != 0:
         raise RuntimeError('Privileged Linux runtime management required')
@@ -676,6 +706,17 @@ def main():
         print(Runtime(args.manifest, args.sha256).bind_admission_fresh())
     elif args.operation == 'admission-reconcile':
         Runtime(args.manifest, args.sha256).reconcile_admission(initialize_missing=args.initialize_missing)
+    elif args.operation in ('backup', 'backup-resume'):
+        runtime = Runtime(args.manifest, args.sha256)
+        backup = runtime.backup_module()
+        if args.operation == 'backup':
+            recipient = checked_path(args.recipient_public_der)
+            if recipient.stat().st_size > 1024: raise ValueError('Bounded public recipient required')
+            public = recipient.read_bytes()
+            backup.request_backup(runtime, {'VmId': args.vm_id, 'VmInstanceId': args.vm_instance_id}, public,
+                                  args.destination, seconds=args.seconds, maximum=args.maximum_bytes, maximum_files=args.maximum_files)
+        else:
+            backup.resume_original(runtime)
     else:
         Runtime(args.manifest, args.sha256).supervise()
 

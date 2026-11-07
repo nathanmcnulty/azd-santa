@@ -142,4 +142,60 @@ class NativeSnapshot(unittest.TestCase):
         with self.assertRaises(ValueError):native.archive_roots({k:v for k,v in volumes.items() if k!='elasticsearch_snapshots'},receipt,'a'*64)
 
 
+    def run_client(self, *, unknown=False, oversized=False):
+        import urllib.request
+        calls=[];state={'repository':None,'snapshot':None}
+        class Response:
+            def __init__(self,value):self.raw=native.encoded(value)
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+            def read(self,limit):
+                self_test.assertEqual(limit,1024*1024+1)
+                return self.raw[:limit]
+        self_test=self
+        def open_request(request,timeout):
+            self.assertTrue(request.full_url.startswith('http://elastic:9200/'))
+            self.assertGreater(timeout,0);self.assertLessEqual(timeout,5)
+            method=request.get_method();path=request.full_url.removeprefix('http://elastic:9200')
+            calls.append((method,path))
+            if method=='PUT':
+                body=json.loads(request.data)
+                if body.get('type')=='fs':
+                    state['repository']={self.plan['repository']:{'type':'fs','settings':{'location':self.plan['location']}}}
+                    return Response({'acknowledged':True})
+                state['snapshot']=self.result
+                if unknown:raise TimeoutError('submission outcome unknown')
+                return Response({'accepted':True})
+            if path=='/':return Response({'cluster_uuid':'C'*22,'version':{'number':'9.2.1'}})
+            if path.startswith('/_stats/'):return Response({'_all':{'primaries':{'store':{'size_in_bytes':200000000 if oversized else 1}}}})
+            if path==native.INDICES_PATH:return Response([{'index':'santa-events','status':'open','pri':'1'}])
+            value=state['snapshot'] if path.endswith('/'+self.plan['snapshot']) else state['repository']
+            if value is None:
+                import urllib.error
+                raise urllib.error.HTTPError(request.full_url,404,'missing',{},None)
+            return Response(value)
+        opener=SimpleNamespace(open=open_request)
+        with patch.object(urllib.request,'build_opener',return_value=opener) as builder:
+            native.run_reserved(self.root,'a'*64,'b'*32,maximum_bytes=128*1024**2)
+        self.assertEqual(len(builder.call_args.args),2)  # no proxy, no redirect
+        return calls
+
+    def test_bounded_private_client_persists_full_native_readback_after_one_submission(self):
+        calls=self.run_client()
+        self.assertEqual(len([c for c in calls if c[0]=='PUT']),2)
+        self.assertEqual(json.loads((self.root/'native-observed.json').read_bytes()),self.result)
+        self.assertEqual(json.loads((self.root/'native-complete.json').read_bytes())['state'],'SUCCESS')
+
+    def test_private_client_unknown_submission_retains_intent_without_replay_or_completion(self):
+        with self.assertRaises(TimeoutError):self.run_client(unknown=True)
+        self.assertTrue((self.root/'snapshot-intent.json').exists())
+        self.assertFalse((self.root/'native-complete.json').exists())
+        with self.assertRaises(FileExistsError):self.run_client()
+
+    def test_private_client_source_size_over_budget_blocks_repository_and_snapshot_mutation(self):
+        with self.assertRaises(ValueError):self.run_client(oversized=True)
+        self.assertFalse((self.root/'repository-intent.json').exists())
+        self.assertFalse((self.root/'snapshot-intent.json').exists())
+
+
 if __name__=='__main__':unittest.main()

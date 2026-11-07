@@ -9,18 +9,40 @@ explicitly says filesystem copies are unsupported even with nodes stopped;
 [native snapshots are required](https://www.elastic.co/docs/deploy-manage/tools/snapshot-and-restore#other-backup-methods).
 The revised capture contract requires a completed native repository, excludes
 raw Elasticsearch data and rejects the legacy selection scope. The current
-five-volume controller cannot satisfy this contract. Coherent sixth-volume,
-generation-anchor and controller-maintenance integration is still pending; no
+five-volume layout cannot satisfy this contract. The offline candidate now
+integrates the sixth volume, original generation and controller maintenance; no
 real application-data capture should use the earlier raw-directory candidate.
+Snapshot submission remains deliberately held by a default-failing worker
+child-join proof gate until the separately reviewed graceful-worker overlay and
+its exact source/StartedAt/startup-nonce binding are integrated. Exit zero alone
+cannot bypass it. Positive maintenance tests mock that proof explicitly.
 It adds no service, Azure resource, grant, hook, automatic scheduling or cleanup.
 
 This is a developer qualification component, not the final administrator flow.
-Future reviewed orchestration must machine-produce the selected bindings, stop
-the runtime cleanly, verify/capture it, and resume it safely without requiring an
-administrator to issue container commands. It must package/check cryptography
+The existing controller machine-produces selected bindings and owns the entire
+stop/drain/snapshot/capture sequence. Its explicit completion-gated resume action
+starts the original runtime; no administrator container commands are required.
+Future customer/azd integration must package/check cryptography
 automatically; asking administrators to install Python packages is not the
-intended workflow. No such producer or stop/capture/resume orchestration is
-implemented here. Original containers, volumes and failed evidence are retained.
+intended workflow. This developer host command is not an azd hook, public ingress
+workflow, scheduler or supported restore. Original containers, volumes and failed
+evidence are retained. One reserved backup request per generation is supported;
+replacement/retention of completed requests and recurring backups remain open.
+
+The qualification entry points are `runtime_service.py backup` with its normal
+`--manifest`/`--sha256`, selected `--vm-id`/`--vm-instance-id`,
+`--recipient-public-der` and absent `--destination`; `--maximum-bytes`,
+`--maximum-files` and `--seconds` select bounded resource limits. The caller must
+supply target facts from its already authorized machine selection, not fabricated
+JSON. The producer verifies IMDS, the source-bound active unit/MainPID command,
+all original containers, generation and known queue inventory, reserves the
+private request exclusively and calls normal `systemctl stop` once. On timeout
+observe existing evidence; do not repeat it. After independently inspecting the
+complete result, `runtime_service.py backup-resume --manifest ... --sha256 ...`
+verifies ciphertext hash/length, request/generation/stop receipts and the inactive
+successful unit under the existing lock, releases that lock and starts the unit
+once. An existing resume authorization prevents another submission. This is
+resume of preserved originals, never restoration of archive contents.
 
 ## Selection and coldness
 
@@ -58,10 +80,16 @@ Compose, environment, image/source, command, privilege, network and mount checks
 are reused. Existing controller source is pinned explicitly; a source upgrade
 requires a deliberate new reviewed backup compatibility binding.
 
-Capture holds the existing exclusive supervisor lock. The exact bound systemd
-unit must be loaded, inactive/dead with no pending job. All seven selected
-containers must have previously started and exited with status zero, no OOM,
-error, pause or restart. The tool never stops or starts them. Each local Docker
+Capture holds the existing exclusive supervisor lock. Standalone capture requires
+the exact bound unit inactive/dead with no pending job and seven previously
+started containers exited zero. The controller-owned maintenance path instead
+requires that same supervisor process/MainPID, held lock descriptor, original
+generation and deactivating stop job. Only after its bound drain/native-success/
+stop evidence exists can an unserialized process-local capability accept 143 for
+the exact Elasticsearch container, whose raw data is excluded. Workers and all
+other containers must exit zero;
+all need PID zero and no OOM/error/pause/restart. No CLI/JSON exit-code bypass is
+provided. Each local Docker
 volume's name/project/driver/path is checked, initialized store sentinels are
 required, and PostgreSQL must have no remaining `postmaster.pid`. This is a
 dedicated-host contract: every foreign running, paused or restarting container
@@ -69,9 +97,16 @@ is rejected regardless of its mount paths, so symlink/bind aliases cannot hide
 a concurrent container writer. Stopped foreign containers with known lexical
 mount overlap are also rejected; this is not a general alias graph or permission
 to start other containers during maintenance.
-Actual clean-stop exit codes for the exact dependency images remain a live
-compatibility gate; a nonzero code must not be relabeled clean without a
-separately reviewed engine-specific proof.
+The previously observed 143 exits are TERM termination, not a general clean-stop
+guarantee. Worker 143 is always rejected. Queue samples are insufficient to prove
+that multiprocessing children joined and closed consumers. The private
+`_worker_join_proof` integration point currently fails closed even after worker
+exit zero and final empty-queue readback. Before any live snapshot build, a
+separately reviewed overlay must verify installed command/module bytes before
+stop, bind the current original StartedAt/startup nonce to the request, and prove
+that every current child joined, exited zero and acknowledged cleanup. There is
+no CLI/JSON override. Only Elasticsearch's specific native-success stop phase is
+eligible for 143; actual integrated behavior remains unqualified.
 
 Bounded `/proc/self/mountinfo` readback binds each selected source tree/file to
 its actual covering mount ID, device, filesystem root/source/options and source
@@ -134,21 +169,35 @@ inspection, not automatic replay. The receipt is local evidence, not sender
 authentication, an external trust anchor or a restore authorization.
 
 No compression is used. Tar writes are immediately encrypted in bounded chunks;
-Docker command output is capped at 4 MiB per call and 30 seconds. Defaults are
+Backup Docker output is capped at 4 MiB per call. Ordinary metadata calls are
+bounded to 30 seconds; stop and native-helper calls have explicit longer bounds
+within the single maintenance deadline. Defaults are
 8 GiB ciphertext, 100,000 entries and 30 minutes, with explicit hard ceilings of
 32 GiB, 1,000,000 entries and two hours. Limits include archive overhead and cause
 failure rather than omission. A Linux alarm covers the complete capture window;
 filesystem reads/writes still depend on the selected local filesystem/host. A
+conservative free-space preflight reserves each selected filesystem's maximum
+snapshot/ciphertext allowance plus 128 MiB (twice the maximum when sharing a
+device). The native helper rejects observed primary-store bytes plus 64 MiB
+metadata allowance above its byte budget; native snapshot rate is capped at
+20 MiB/s. These checks are not a filesystem quota or a proof of worst-case disk
+amplification. Actual selected-host disk/resource behavior remains a gate; an
+operator may choose a smaller explicit pilot bound rather than omit data. A
 same-host backup is not independent disaster protection: copying ciphertext and
 its trusted receipt to independently retained storage remains an integration gate.
 
 ## Qualification and remaining gates
 
-`native_snapshot.py` supplies pure, offline-tested protocol/drain primitives.
-Caller-owned transports must bound JSON bodies and time, use the selected exact
-ES/Rabbit containers/network and suppress raw secret diagnostics. The helper is
+`native_snapshot.py` supplies offline-tested protocol/drain primitives and a
+bounded private-network client. It runs once in the existing pinned application
+image as an owned read-only/cap-drop helper with only its private checkpoint bind
+and read-only hash-checked helper source. It receives no runtime/migration env,
+Docker socket or datastore volume and imports no Django/SQL code. HTTP JSON is
+capped at 1 MiB with five-second calls, redirects/proxies disabled and a 600-second
+native deadline. ES version/cluster UUID and full open-index/primary-shard
+inventory are checked. The helper is
 not an endpoint selector, generation attestor, standalone daemon or grant.
-Its sequence must be integrated into the existing supervisor under its existing
+Its sequence runs in the existing supervisor under its existing
 lock and original generation, triggered by an explicit reserved backup request
 followed by normal `systemctl stop`:
 
@@ -156,8 +205,14 @@ followed by normal `systemctl stop`:
 2. Observe the complete known queue inventory with ready and unacknowledged
    counts both zero in two bounded samples, rechecking publisher termination.
    The known inventory includes preprocessing/Celery queues, not merely the
-   three event-consumer readiness queues. Unknown, missing or corrupt queues fail.
-3. Stop the exact original worker processes; do not infer drain from exit 143.
+   three event-consumer readiness queues. The producer records the entire queue
+   inventory before mutation. Known empty non-durable auto-delete control queues
+   must disappear after publishers close; all durable queues remain. Unknown,
+   missing durable or corrupt queues fail. No synthetic zero rows are substituted.
+3. Stop the exact original worker processes, require exit zero and final empty
+   known queues, then require source/current-instance-bound child-join proof.
+   The unintegrated proof gate blocks native submission; never infer drain from
+   exit 143 or queue samples alone.
 4. Register one reserved native filesystem repository/name under fixed
    `/mnt/azd-santa-snapshots/<operation-id>`, then submit one native snapshot.
 5. Observe native SUCCESS, exact snapshot UUID/plan metadata, full open-index
@@ -171,23 +226,27 @@ does not authorize another PUT/name. Unknown/failure retains state. Read-only
 observation can continue; `submit` cannot be replayed over an existing plan.
 Pending/unknown maintenance must block automatic startup/replay. Successful
 completion may be followed by an explicit completion-gated resume wrapper;
-normal stop without a request retains its existing behavior. These controller
-and wrapper paths are not yet implemented in this pure-helper slice.
+normal stop without a request retains its existing behavior. Failed maintenance
+still performs only the already authorized original-container cleanup. Startup
+checks pending maintenance before selection/cleanup authorization, preserving
+the admission fix that forbids stopping unbound inspected containers. The unit
+stop timeout is 3,600 seconds; the request deadline is capped at 3,300 seconds.
 
-The coherent fresh-only generator must give Elasticsearch one private sixth
-local volume and fixed `path.repo`, initialize only its verified empty volume
-for the exact image's UID/GID before ES starts, and propagate exact mounts to
-staging/controller/host attestation. This adds no paid service. The existing
+The fresh-only private generator gives Elasticsearch one private sixth local
+volume and fixed `path.repo`. Staging pulls/creates dependencies before starting
+them, verifies the pinned image user `1000:0` and the exact empty local volume,
+then initializes its ownership/mode to `1000:0`/0700. It does not repair nonempty
+volumes. Exact mounts/path.repo propagate to runtime and host attestation; legacy
+five-volume manifests are rejected. This adds no paid service. The existing
 stopped VM lacks `path.repo`; it must not be reset or silently retrofitted.
 Actual qualification needs a later fresh integrated namespace.
 
-Current capture still requires exit zero. Elasticsearch/worker 143 acceptance
-must be a narrow in-process capability produced by that same controller-owned
-drain/native-snapshot/stop sequence, never a bypass flag or blanket allowed exit
-code. A stopping unit may use that capability rather than falsely asserting
-that it is already inactive; source/identity/coldness checks must still run.
-This maintenance capability and integration are pending the reviewed admission
-original-CID anchor change. Full current-authority restore remains open.
+Both backup helpers are part of the controller's existing source-hash inventory;
+packaging/upload callers must supply them alongside the reviewed admission
+helper and invoke `admission-bind-fresh` before unit installation. Fixed-source
+installer inventories and any legacy uploader need corresponding integration
+before they can deploy this layout. No source-only result qualifies a cold azd
+installation. Full current-authority restore remains open.
 
 The existing Ubuntu host was separately observed by the coordinator to have
 Python 3.12.3 and distro `python3-cryptography 41.0.7-4ubuntu0.4`; no installation
@@ -213,7 +272,11 @@ trees and secret files, authenticated tamper/truncation rejection, wrong keys,
 limits, unsupported files, selection drift, mocked IMDS/cold-state boundaries,
 foreign-running-container aliases, synthetic authoritative mount-table cases,
 same-device descriptor mount-ID changes and final volume/mount/inode changes,
-and retained incomplete output after failed final readback. They do not prove
+retained incomplete output after failed final readback, full mocked maintenance
+phase ordering, worker 143/missing-child-proof denial before snapshot submission,
+unknown-job retention/no replay and corrupt-ciphertext resume denial. Native
+client tests mock every HTTP call, including actual request body/read limits and
+single-submission behavior. They do not prove
 actual database consistency, crash durability, Docker/systemd/IMDS ownership,
 live backup, host resource consumption or restore.
 

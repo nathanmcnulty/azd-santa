@@ -199,3 +199,47 @@ def archive_roots(volumes, receipt, binding_sha256):
     result = {'volumes/' + name: path for name, path in volumes.items() if name not in ('elasticsearch_data', 'elasticsearch_snapshots')}
     result['elasticsearch_snapshot_repository'] = repository
     return result
+
+
+def run_reserved(directory, binding_sha256, operation_id, *, seconds=600, maximum_bytes):
+    """Existing pinned-image helper only: bounded selected-network HTTP client.
+
+    Host owns generation/lock/container identity and starts this helper ONCE.
+    No Django imports, owner credentials, listener or datastore mounts are used.
+    """
+    import urllib.request
+    import urllib.error
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs): return None
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    end = time.monotonic() + seconds
+    def api(method, path, body):
+        need(time.monotonic() < end and path.startswith('/') and len(path) <= 4096)
+        request = urllib.request.Request('http://elastic:9200' + path,
+            data=encoded(body) if body is not None else None,
+            headers={'Content-Type': 'application/json'}, method=method)
+        try:
+            with opener.open(request, timeout=min(5, max(0.1, end-time.monotonic()))) as response:
+                raw = response.read(1024*1024+1)
+        except urllib.error.HTTPError as error:
+            code=error.code;error.close()
+            if method == 'GET' and code == 404: return None
+            raise ValueError('Native snapshot HTTP failed') from None
+        need(len(raw) <= 1024*1024)
+        return json.loads(raw)
+    info = api('GET', '/', None)
+    stats=api('GET','/_stats/store?filter_path=_all.primaries.store.size_in_bytes',None)
+    size=stats['_all']['primaries']['store']['size_in_bytes']
+    need(type(size) is int and size>=0 and size+64*1024**2<=maximum_bytes)
+    rows = api('GET', INDICES_PATH, None)
+    need(type(rows) is list and 0 < len(rows) <= 128)
+    selected = plan(binding_sha256, operation_id, info['cluster_uuid'], info['version']['number'],
+                    [row['index'] for row in rows], sum(int(row['pri']) for row in rows))
+    result = submit(directory, selected, api)
+    while result is None and time.monotonic() < end:
+        time.sleep(1); result = observe(directory, selected, api)  # GET only.
+    need(result is not None)
+    observed=api('GET','/_snapshot/'+selected['repository']+'/'+selected['snapshot'],None)
+    need(completed_snapshot(observed,selected)==result)
+    write_new(directory/'native-observed.json',observed)
+    write_new(directory / 'native-complete.json', result)

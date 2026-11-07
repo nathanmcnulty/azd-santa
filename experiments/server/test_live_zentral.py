@@ -50,6 +50,7 @@ def validate_compose(path):
             'postgres_data:/var/lib/postgresql', 'rabbitmq_data:/var/lib/rabbitmq',
             'redis_data:/data',
             'elasticsearch_data:/usr/share/elasticsearch/data', 'media_data:/var/zentral',
+            'elasticsearch_snapshots:/mnt/azd-santa-snapshots',
             './conf:/zentral-eval-conf:ro'} for volume in service.get('volumes', [])),
             'Unexpected evaluation volume or host mount')
         require(service.get('ports', []) == (['127.0.0.1:8000:8000'] if name == 'web' else []),

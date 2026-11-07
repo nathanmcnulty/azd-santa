@@ -6,5 +6,7 @@ Describe 'Cold encrypted backup qualification component' {
         $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
         $native = & $python -m unittest discover -s $PSScriptRoot -p test_native_snapshot.py 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($native -join "`n")
+        $flow = & $python -m unittest discover -s $PSScriptRoot -p test_backup_maintenance.py 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($flow -join "`n")
     }
 }
