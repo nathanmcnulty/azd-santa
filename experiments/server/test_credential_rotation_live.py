@@ -317,8 +317,13 @@ def run(compose_path, destination, expected_image, expected_helper, expected_gen
         orm(compose, fixture, '''
 with transaction.atomic():
  r=Rule.objects.select_for_update().get(configuration_id=fixture['configuration_id'],target__identifier=fixture['changed_identifier'])
- need(r.policy==Rule.Policy.BLOCKLIST and r.version==1)
- r.policy=Rule.Policy.ALLOWLIST;r.version=2;r.full_clean();r.save(update_fields=['policy','version'])
+ need(r.policy==Rule.Policy.BLOCKLIST and r.version==1 and r.ruleset_id is None)
+ r.policy=Rule.Policy.ALLOWLIST;r.version=2
+ # Pinned UpdateRuleForm excludes ruleset; fixture rules have no RuleSet.
+ # Exclude only that null=True/blank=False relation, retaining every other
+ # field/model check and both uniqueness/constraint validation stages.
+ r.full_clean(exclude=['ruleset'],validate_unique=True,validate_constraints=True)
+ r.save(update_fields=['policy','version'])
 print('SANTA_SYNTHETIC_JSON:'+json.dumps({'changed':True}))
 ''')
         full_sync(compose, fixture, 0, observations, 'replacement-reconciles-stale-cursor', True, old, 'Bearer ' + device['secret'], cursor, reconcile=True)

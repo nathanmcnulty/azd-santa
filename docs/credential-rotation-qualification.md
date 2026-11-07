@@ -38,7 +38,10 @@ and valid replacement legacy requests complete. Production clients should use
 headers; URL credentials can enter ordinary access logs.
 
 Exactly one rule actually present in the interrupted page changes from Blocklist
-version1 to Allowlist version2. Replacement preflight must reconcile the lost
+version1 to Allowlist version2. The fixture must retain `ruleset_id=None`;
+validation excludes only the pinned model's nullable/nonblank RuleSet relation,
+matching the upstream update form's omission, while preserving policy/version,
+model, uniqueness and constraint validation. Replacement preflight must reconcile the lost
 clean session **without requesting a clean** and with coherent nonzero reported
 counts (six binary rules, zero other types). The prior session must still be
 open/clean with no queued forced sync, so a forced clean or zero-count fallback
