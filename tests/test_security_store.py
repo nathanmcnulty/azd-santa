@@ -134,6 +134,36 @@ class SecurityStore(unittest.TestCase):
 
 
 class LiveGate(unittest.TestCase):
+    def test_disappearing_inspected_container_does_not_interrupt_a_replacement(self):
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = 'santa-zentral-eval-' + 'a' * 12
+            original, replacement = 'b' * 64, 'd' * 64
+            calls = []
+            def external(command, **kwargs):
+                calls.append(command)
+                if 'inspect' in command:
+                    value = json.dumps([{'Config': {'Labels': {'com.docker.compose.project': project,
+                        'com.docker.compose.service': 'redis'}}, 'Mounts': [{'Destination': '/data',
+                        'Type': 'volume', 'Name': project + '_redis_data'}]}])
+                elif 'kill' in command:
+                    # The selected original disappeared during preparation;
+                    # another container now represents the Compose service.
+                    self.assertEqual(command[-1], original)
+                    return SimpleNamespace(returncode=1, stdout='', stderr='selected container missing')
+                else:
+                    value = original
+                return SimpleNamespace(returncode=0, stdout=value, stderr='')
+            with patch.object(gate, 'validate_durable_compose', return_value=(root/'compose.json', 'c'*64, project)), \
+                 patch.object(gate.subprocess, 'run', side_effect=external), \
+                 patch.object(gate, 'policy_probe', return_value={'policy_sha256':'a'*64, 'passed':True}):
+                with self.assertRaisesRegex(ValueError, 'Selected Redis operation failed'):
+                    gate.run(root/'compose.json', root/'result', 'a'*64, allow_redis_restart=True)
+            self.assertEqual([c for c in calls if 'kill' in c],
+                [['docker', '--host', 'unix:///var/run/docker.sock', 'kill', '--signal', 'KILL', original]])
+            self.assertFalse(any('start' in c or '--force-recreate' in c or replacement in c for c in calls))
+
     def test_redis_interruption_requires_explicit_flag_before_any_external_call(self):
         with patch.object(gate.subprocess, 'run') as external:
             with self.assertRaisesRegex(ValueError, 'interruption authorization'):

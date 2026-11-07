@@ -145,8 +145,10 @@ def run(compose_path, destination, expected_policy, *, allow_redis_restart=False
     require(initial.get('policy_sha256') == expected_policy and initial.get('passed') is True,
             'Policy source mismatch; Redis not interrupted')
     started = time.monotonic()
-    execute('kill', command + ['kill', '--signal', 'KILL', 'redis'])
-    execute('start', command + ['up', '--detach', '--no-deps', 'redis'])
+    # Preparation may take time. Never resolve a replacement service when the
+    # interruption was authorized for this inspected concrete container.
+    execute('kill', docker + ['kill', '--signal', 'KILL', original_id])
+    execute('start', docker + ['start', original_id])
     wait_ready('restart')
     restarted_id, restarted_volume = binding('restarted')
     require(restarted_id == original_id and restarted_volume == volume, 'Restart changed container or volume unexpectedly')
