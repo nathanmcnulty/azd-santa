@@ -136,7 +136,7 @@ m=EnrolledMachine.objects.filter(enrollment__configuration=c)
 need(m.count()<=2)
 for em in m:
  d=next(d for d in fixture['devices'] if d['enrollment_id']==em.enrollment_id)
- need(em.hardware_uuid==d['uuid'] and em.serial_number==d['serial'] and em.client_mode==Configuration.MONITOR_MODE)
+ need(str(em.hardware_uuid)==d['uuid'] and em.serial_number==d['serial'] and em.client_mode==Configuration.MONITOR_MODE)
 result=dict(authority=authority,machines=list(m.order_by('pk').values('pk','enrollment_id','hardware_uuid','last_preflight_at','last_postflight_at','sync_session','sync_session_clean','forced_sync_type')),
  rules=list(MachineRule.objects.filter(enrolled_machine__in=m).order_by('pk').values('pk','enrolled_machine_id','target__identifier','policy','version','cursor','sync_session','staged_removal','committed_policy','committed_version')),
  counters=list(TargetCounter.objects.filter(configuration=c).order_by('pk').values('target_id','blocked_count')))
