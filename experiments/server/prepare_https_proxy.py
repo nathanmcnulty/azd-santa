@@ -1,7 +1,7 @@
 """Original Unlicense: offline Caddy candidate; admission deliberately held closed.
 
 No downloader, DNS client, Azure client, server startup or ingress integration.
-Future installer owns authoritative ARM facts; this does not manufacture them.
+HttpsEndpoint.psm1 supplies selected cached ARM facts; this never manufactures them.
 """
 import hashlib
 import ipaddress
@@ -128,3 +128,16 @@ def validate_windows(config, binary):
                  no_server_started=True, admission='held-closed', linux_and_admission_gates='not_run')
     private_write(config.with_name('validation.json'), json.dumps(proof).encode())
     return proof
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--facts', required=True)
+    parser.add_argument('--expected-facts-sha256', required=True)
+    parser.add_argument('--destination', required=True)
+    args = parser.parse_args()
+    raw = Path(args.facts).read_bytes()
+    need(len(raw) <= 16384 and re.fullmatch('[a-f0-9]{64}', args.expected_facts_sha256)
+         and hashlib.sha256(raw).hexdigest() == args.expected_facts_sha256)
+    prepare(json.loads(raw), args.destination)
