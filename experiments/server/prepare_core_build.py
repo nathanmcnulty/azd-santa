@@ -570,6 +570,8 @@ def render_core_dockerfile(
         "'/zentral/server/realms/backends/registry.py', "
         "'/zentral/server/azd_santa_operator.py', "
         "'/zentral/server/azd_santa_admission.py', "
+        "'/zentral/server/azd_santa_worker_lifecycle.py', "
+        "'/zentral/server/base/management/commands/runworkers.py', "
         "'/zentral/server/azd_santa_request_limits.py', "
         "'/zentral/zentral/contrib/santa/public_views.py')]\"\n"
         "# tini executes this file directly: prove shebang and non-root execute access.\n"
@@ -592,7 +594,12 @@ def _operator_layer(source_root):
     spec = importlib.util.spec_from_file_location('prepare_database_roles', helper)
     database = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(database)
-    return program + '\n' + recovery.docker_program(source_root) + '\n' + database.docker_program(source_root), digest
+    helper = Path(__file__).with_name('prepare_worker_lifecycle.py')
+    spec = importlib.util.spec_from_file_location('prepare_worker_lifecycle', helper)
+    workers = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(workers)
+    worker = workers.docker_program(source_root)
+    return program + '\n' + recovery.docker_program(source_root) + '\n' + database.docker_program(source_root) + '\n' + worker['program'], digest
 
 
 def _request_limits_layer(source_root):

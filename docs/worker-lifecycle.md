@@ -1,9 +1,11 @@
 # Pinned worker shutdown overlay
 
 This original helper and source overlay are a bounded prerequisite for reliable
-shutdown/backup qualification. They change no running service, controller,
-generator, backup path, Docker image or tenant resource. Core-image composition
-and real Linux TERM/Kombu behavior remain coordinator gates.
+shutdown/backup qualification. The core builder composes the reviewed overlay;
+fresh staging, normal runtime startup and backup preflight verify installed bytes.
+The controller-owned backup flow binds the current startup/clean proof. This is
+offline source integration, not a running-service or Docker-image change. Actual
+Linux TERM/Kombu/queue/native-snapshot behavior remains a coordinator gate.
 
 Pinned Zentral command
 `server/base/management/commands/runworkers.py` at commit
@@ -11,7 +13,7 @@ Pinned Zentral command
 supervises daemon child processes and restarts exits with a 10–20 second delay.
 `prepare_worker_lifecycle.docker_program(source_root)` verifies exact input bytes,
 compiles the derived command and returns a source/hash-bound installation program.
-The future core builder must compose this stage explicitly; nothing is installed
+The core builder composes this stage explicitly; nothing is installed
 by importing the preparation tool. Existing source mismatch or helper overwrite
 fails closed. The Apache/core derivative carries a modification notice; the
 original helper uses the Unlicense. No enterprise module is copied or bypassed.
@@ -56,8 +58,8 @@ credentials, connection URLs or caught exception details.
 Installed helper: `/zentral/server/azd_santa_worker_lifecycle.py`.
 Installed command: `/zentral/server/base/management/commands/runworkers.py`.
 The compiler returns `module_sha256`, `command_sha256`, `upstream_sha256` and
-`source_commit` for the image/controller binding. Before stop, a future controller
-must verify installed bytes against that reviewed source and bind the original
+`source_commit` for the image/controller binding. Before stop, the controller
+verifies installed bytes against that reviewed source and binds the original
 worker container ID, its StartedAt and current startup nonce. Source preparation
 alone is insufficient.
 
@@ -71,12 +73,14 @@ clean success requires positive PID, integer exit0 and true acknowledgment.
 The clean marker follows worker joins and handle closes. Forkserver/resource
 tracker auxiliaries are CPython infrastructure, not broker worker proofs.
 
-Backup integration remains separate: bound `docker logs --since <StartedAt>`
-from the exact original container, require one matching startup and clean marker,
-verify hashes/nonce/PID/child schema and actual container exit0/PID0, and recheck
-all known queues after publishers and workers are gone. Historical log success,
-proxy timeout, generic connection release or exit143 is not a bypass. No controller
-or backup code is changed by this candidate.
+Backup integration reads bounded `docker logs --since <StartedAt> --timestamps`
+from the exact original container and requires one matching startup/clean marker.
+It verifies hashes/nonce/strict PID/child schema and actual container exit0/PID0,
+then rechecks all known queues after publishers and workers are gone. Before
+mutation, a stdlib-only read-only probe verifies the actual marker parent's
+in-container command and installed hashes; that namespace PID is independent of
+Docker's host State.Pid. Historical log success,
+proxy timeout, generic connection release or exit143 is not a bypass. Actual process/queue behavior is not established by these source checks.
 
 Offline tests include actual local Windows spawn processes with held synthetic
 callbacks, acknowledgment/late-delivery ordering, connection closure and forced

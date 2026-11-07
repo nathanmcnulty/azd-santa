@@ -157,6 +157,10 @@ def stage(source, lock_path, destination, image_id):
              f"assert hashlib.sha256(Path('/zentral/server/azd_santa_database_roles.py').read_bytes()).hexdigest()=={module_hash!r}; "
              f"assert hashlib.sha256(Path('/zentral/docker-entrypoint.py').read_bytes()).hexdigest()=={ENTRYPOINT_SHA256!r}; "
              "assert Path('/zentral/docker-entrypoint.py').stat().st_mode & 0o777 == 0o755")
+    # Immutable app image must contain the exact reviewed worker overlay.
+    from runtime_service import WORKER_HASHES
+    for file, digest in WORKER_HASHES.items():
+        probe += f"; assert hashlib.sha256(Path('/zentral/server/{file}').read_bytes()).hexdigest()=={digest!r}"
     run('image-body', DOCKER + ['run', '--rm', '--network', 'none', '--pull', 'never', '--entrypoint', 'python', image_id, '-I', '-c', probe])
     run('compose-config', compose + ['config', '--quiet'])
     run('dependency-pull', compose + ['pull', '--policy', 'missing', 'db', 'redis', 'rabbitmq', 'elastic'], timeout=300)

@@ -48,6 +48,19 @@ class Lifecycle(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'configuration changed'):
                 service.load_manifest(manifest, digest)
 
+    def test_manifest_refuses_missing_or_rebound_worker_source_even_with_new_input_checksum(self):
+        compose=self.fixture()
+        with patch.object(service,'checked_path',side_effect=lambda p,**_:Path(p)):
+            path=service.prepare(compose,compose.parent/'runtime-service',{n:'a'*64 for n in service.POLICIES})
+            original=json.loads(path.read_bytes())
+            self.assertEqual(original['worker_hashes'],service.WORKER_HASHES)
+            for missing in (True,False):
+                value=copy.deepcopy(original)
+                if missing:value.pop('worker_hashes')
+                else:value['worker_hashes']['base/management/commands/runworkers.py']='0'*64
+                path.write_text(json.dumps(value))
+                with self.assertRaises(ValueError):service.load_manifest(path,service.sha(path.read_bytes()))
+
     def test_refuses_unpinned_dependency_and_independent_autostart(self):
         for kind in ('restart', 'image'):
             compose = self.fixture()

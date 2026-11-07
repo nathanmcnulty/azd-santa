@@ -33,7 +33,9 @@ DEPENDENCIES = ('db', 'redis', 'rabbitmq', 'elastic')
 POLICIES = {'policy': 'azd_santa_operator.py',
             'recovery': 'azd_santa_operator_recovery.py',
             'sealed': 'azd_santa_sealed_setup.py', 'admission': 'azd_santa_admission.py'}
-HELPERS = ('test_live_zentral.py', 'prepare_zentral_eval.py', 'cold_backup.py', 'native_snapshot.py')
+HELPERS = ('test_live_zentral.py', 'prepare_zentral_eval.py', 'cold_backup.py', 'native_snapshot.py', 'worker_lifecycle.py')
+WORKER_HASHES = {'azd_santa_worker_lifecycle.py': 'e86d20287324eca25ef24c4c405e7d923feafb2d2760c1f22b799f0a02d0a50f',
+                 'base/management/commands/runworkers.py': 'be379c804120c5a0dd3620bab14adbd5f8a0b89f51ed43ee2284d6eb1f0d9515'}
 _HELPER = None
 VOLUMES = {'db': ['postgres_data:/var/lib/postgresql'],
            'redis': ['redis_data:/data'], 'rabbitmq': ['rabbitmq_data:/var/lib/rabbitmq'],
@@ -85,6 +87,8 @@ def trusted_sources():
     controller = checked_path(Path(__file__).absolute())
     for name in HELPERS:
         checked_path(controller.with_name(name))
+    if sha(controller.with_name('worker_lifecycle.py').read_bytes()) != WORKER_HASHES['azd_santa_worker_lifecycle.py']:
+        raise ValueError('Reviewed worker lifecycle helper changed')
     return controller
 
 
@@ -196,7 +200,7 @@ def prepare(compose, destination, policy_hashes):
             destination.parent != path.parent or destination.name != 'runtime-service'):
         raise ValueError('Service control directory must be local to its selected runtime')
     manifest = dict(scope='private-initialized-runtime-service-v1', compose=str(path),
-                    project=data['name'], files=files, policy_hashes=policy_hashes,
+                    project=data['name'], files=files, policy_hashes=policy_hashes, worker_hashes=WORKER_HASHES,
                     source_commit=COMMIT, controller_sha256=sha(Path(__file__).read_bytes()),
                     helpers_sha256={name: sha(Path(__file__).with_name(name).read_bytes()) for name in HELPERS})
     if destination.exists() or destination.is_symlink():
@@ -216,13 +220,15 @@ def load_manifest(path, expected):
     if not re.fullmatch(r'[a-f0-9]{64}', expected) or sha(raw) != expected:
         raise ValueError('Selected service manifest changed')
     manifest = json.loads(raw)
-    keys = {'scope', 'compose', 'project', 'files', 'policy_hashes', 'source_commit', 'controller_sha256', 'helpers_sha256'}
+    keys = {'scope', 'compose', 'project', 'files', 'policy_hashes', 'source_commit', 'controller_sha256', 'helpers_sha256', 'worker_hashes'}
     if set(manifest) != keys or manifest['scope'] != 'private-initialized-runtime-service-v1' or manifest['source_commit'] != COMMIT:
         raise ValueError('Unrecognized runtime service manifest')
     if manifest['controller_sha256'] != sha(Path(__file__).read_bytes()):
         raise ValueError('Selected runtime controller changed')
     if manifest['helpers_sha256'] != {name: sha(Path(__file__).with_name(name).read_bytes()) for name in HELPERS}:
         raise ValueError('Selected runtime validation helpers changed')
+    if manifest['worker_hashes'] != WORKER_HASHES:
+        raise ValueError('Selected worker lifecycle source changed')
     compose, data, files = bundle(manifest['compose'])
     if files != manifest['files'] or data['name'] != manifest['project'] or path.parent != compose.parent / 'runtime-service':
         raise ValueError('Selected runtime/configuration changed')
@@ -544,6 +550,8 @@ class Runtime:
         code = 'from pathlib import Path; import hashlib; '
         for name, file in POLICIES.items():
             code += f"assert hashlib.sha256(Path('/zentral/server/{file}').read_bytes()).hexdigest()=={self.binding['policy_hashes'][name]!r}; "
+        for file, digest in WORKER_HASHES.items():
+            code += f"assert hashlib.sha256(Path('/zentral/server/{file}').read_bytes()).hexdigest()=={digest!r}; "
         code += "from django.db import connection; from django.db.migrations.executor import MigrationExecutor; e=MigrationExecutor(connection); assert not e.migration_plan(e.loader.graph.leaf_nodes()); "
         code += "from zentral.core.stores.models import Store; assert Store.objects.count()==1; s=Store.objects.get(provisioning_uid='elasticsearch'); assert s.backend=='ELASTICSEARCH' and s.admin_console"
         self.python('source-schema-store', code)

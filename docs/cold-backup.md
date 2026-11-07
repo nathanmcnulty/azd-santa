@@ -12,10 +12,11 @@ raw Elasticsearch data and rejects the legacy selection scope. The current
 five-volume layout cannot satisfy this contract. The offline candidate now
 integrates the sixth volume, original generation and controller maintenance; no
 real application-data capture should use the earlier raw-directory candidate.
-Snapshot submission remains deliberately held by a default-failing worker
-child-join proof gate until the separately reviewed graceful-worker overlay and
-its exact source/StartedAt/startup-nonce binding are integrated. Exit zero alone
-cannot bypass it. Positive maintenance tests mock that proof explicitly.
+The separately reviewed graceful-worker overlay is composed into the core build
+and its source/current-instance/child-join proof gate is integrated offline.
+Exit zero alone cannot bypass it. Maintenance tests execute the real strict proof
+parser against mocked Docker/source/process observations; actual Linux/Kombu,
+native snapshot and application capture remain unqualified.
 It adds no service, Azure resource, grant, hook, automatic scheduling or cleanup.
 
 This is a developer qualification component, not the final administrator flow.
@@ -100,11 +101,13 @@ to start other containers during maintenance.
 The previously observed 143 exits are TERM termination, not a general clean-stop
 guarantee. Worker 143 is always rejected. Queue samples are insufficient to prove
 that multiprocessing children joined and closed consumers. The private
-`_worker_join_proof` integration point currently fails closed even after worker
-exit zero and final empty-queue readback. Before any live snapshot build, a
-separately reviewed overlay must verify installed command/module bytes before
-stop, bind the current original StartedAt/startup nonce to the request, and prove
-that every current child joined, exited zero and acknowledged cleanup. There is
+`_worker_join_proof` gate verifies the separately reviewed worker lifecycle
+module and command hashes against the source-bound runtime manifest. The request
+producer checks installed bytes, the actual in-container parent command, original
+CID/StartedAt and the single current startup nonce before mutation. Maintenance
+rechecks that same instance before stopping, then requires its matching clean
+marker with every current child joined, exited zero and acknowledging cleanup.
+The parent PID is in the container namespace, not Docker's host State.Pid. There is
 no CLI/JSON override. Only Elasticsearch's specific native-success stop phase is
 eligible for 143; actual integrated behavior remains unqualified.
 
@@ -211,8 +214,8 @@ followed by normal `systemctl stop`:
    missing durable or corrupt queues fail. No synthetic zero rows are substituted.
 3. Stop the exact original worker processes, require exit zero and final empty
    known queues, then require source/current-instance-bound child-join proof.
-   The unintegrated proof gate blocks native submission; never infer drain from
-   exit 143 or queue samples alone.
+   The proof gate blocks native submission on missing/mismatched/current-instance
+   proof; never infer drain from exit 143 or queue samples alone.
 4. Register one reserved native filesystem repository/name under fixed
    `/mnt/azd-santa-snapshots/<operation-id>`, then submit one native snapshot.
 5. Observe native SUCCESS, exact snapshot UUID/plan metadata, full open-index
@@ -258,8 +261,16 @@ five-volume manifests are rejected. This adds no paid service. The existing
 stopped VM lacks `path.repo`; it must not be reset or silently retrofitted.
 Actual qualification needs a later fresh integrated namespace.
 
-Both backup helpers are part of the controller's existing source-hash inventory;
-packaging/upload callers must supply them alongside the reviewed admission
+The backup helpers and `worker_lifecycle.py` are part of the controller's existing
+source-hash inventory. Its machine-produced `worker_hashes` pins the exact installed
+module and derived command, verified during staging and normal startup as well as
+backup preflight. The unchanged `runworkers` Compose command uses that built overlay;
+no privileged runtime env or listener is added. Worker stdout logs are read only
+from the exact original CID with `--since StartedAt` and Docker timestamps, under
+the bounded output cap. Missing/duplicate/old-nonce markers fail closed; long log
+histories exceeding the cap also fail rather than silently dropping proof.
+
+Packaging/upload callers must supply these files alongside the reviewed admission
 helper and invoke `admission-bind-fresh` before unit installation. Fixed-source
 installer inventories and any legacy uploader need corresponding integration
 before they can deploy this layout. No source-only result qualifies a cold azd

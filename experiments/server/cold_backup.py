@@ -31,7 +31,7 @@ import urllib.request
 import uuid
 
 ROOT = Path('/var/lib/azd-santa-qualification')
-CONTROLLER_SHA = 'b20752d8a493fc8118631e924a6732c3a2ea18a03fdaab4d43f5bff8ee47e8f5'
+CONTROLLER_SHA = 'a4aa813dd792dcb941ebfae71562b7bcf24578f2b6b41a67f82c5ed40058527f'
 MAGIC = b'AZDSANTABACKUP1\n'
 CHUNK = 1024 * 1024
 HEX = r'[a-f0-9]{64}'
@@ -576,7 +576,7 @@ def _request(runtime):
     raw = path.read_bytes(); value = json.loads(raw, object_pairs_hook=unique)
     need(set(value) == {'scope', 'operation_id', 'manifest_sha256', 'generation_sha256', 'target', 'boot_id',
                        'recipient_der_base64', 'recipient_sha256', 'destination', 'maximum_bytes', 'maximum_files', 'seconds',
-                       'queue_inventory', 'backup_program_sha256', 'storage_sha256'})
+                       'queue_inventory', 'backup_program_sha256', 'storage_sha256', 'worker_instance'})
     need(value['scope'] == 'azd-santa-backup-maintenance-v1' and re.fullmatch(r'[a-f0-9]{32}', value['operation_id'])
          and value['manifest_sha256'] == runtime.digest and value['backup_program_sha256'] == digest(Path(__file__).read_bytes())
          and re.fullmatch(HEX, value['generation_sha256']) and re.fullmatch(HEX,value['storage_sha256']))
@@ -617,6 +617,7 @@ def request_backup(runtime, target, public, destination, *, maximum=8*1024**3, m
         with Path('/proc/'+status['MainPID']+'/cmdline').open('rb') as stream: argv=stream.read(8193)
         need(len(argv)<=8192 and argv.rstrip(b'\0').split(b'\0')[1:]==[v.encode() for v in (
             '-I',str(service.__file__),'run','--manifest',str(runtime.manifest_path),'--sha256',runtime.digest)])
+        worker_instance=_worker_current(runtime,selected['workers'])
         inventory = _queue_inventory(runtime, selected['rabbitmq'], metadata=True)
         need(all(r['durable'] or (r['auto_delete'] and r['messages_ready'] == r['messages_unacknowledged'] == 0) for r in inventory))
         destination = Path(destination)
@@ -630,7 +631,7 @@ def request_backup(runtime, target, public, destination, *, maximum=8*1024**3, m
             manifest_sha256=runtime.digest, generation_sha256=digest(generation.read_bytes()), target=target,
             boot_id=identity['boot_id'], recipient_der_base64=base64.b64encode(public).decode(), recipient_sha256=digest(public),
             destination=str(destination), maximum_bytes=maximum, maximum_files=maximum_files, seconds=seconds,
-            queue_inventory=inventory, backup_program_sha256=digest(Path(__file__).read_bytes()),storage_sha256=storage_fingerprint(runtime))
+            queue_inventory=inventory, worker_instance=worker_instance, backup_program_sha256=digest(Path(__file__).read_bytes()),storage_sha256=storage_fingerprint(runtime))
         request_path=runtime.manifest_path.parent/'backup-request.json'
         write_private = load_controller().private_write
         write_private(request_path, request); load_controller().sync_directory(request_path.parent)
@@ -652,27 +653,92 @@ def _stopped(runtime, original, names, term_names=()):
     return rows
 
 
-def _worker_join_proof(runtime, worker_id, worker_state, request_sha):
-    """Held until the separate exact-source graceful-worker overlay is reviewed.
+def _worker_markers(raw, hashes, *, completed):
+    """Only source-owned stdout markers from this container start are eligible."""
+    need(isinstance(raw,str) and len(raw.encode()) <= 4*CHUNK)
+    starts=[];ends=[]
+    for line in raw.splitlines():
+        need(len(line.encode())<=65536)
+        match=re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z (SANTA_WORKERS_(?:START|CLEAN_STOP)_JSON:)(.*)',line)
+        if not match: continue
+        value=json.loads(match[2],object_pairs_hook=unique)
+        keys={'scope','nonce','parent_pid','grace_seconds','module_sha256','command_sha256'}
+        clean=match[1]=='SANTA_WORKERS_CLEAN_STOP_JSON:'
+        need(set(value)==keys|({'children'} if clean else set())
+             and value['scope']==('azd-santa-workers-clean-stop-v1' if clean else 'azd-santa-workers-start-v1')
+             and re.fullmatch(r'[a-f0-9]{32}',value['nonce'])
+             and type(value['parent_pid']) is int and value['parent_pid']>0
+             and type(value['grace_seconds']) is int and value['grace_seconds']==20
+             and value['module_sha256']==hashes['azd_santa_worker_lifecycle.py']
+             and value['command_sha256']==hashes['base/management/commands/runworkers.py'])
+        if clean: need(len(starts)==1)
+        (ends if clean else starts).append(value)
+    need(len(starts)==1 and len(ends)==(1 if completed else 0))
+    if completed:
+        clean=ends[0];start=starts[0]
+        need({k:v for k,v in clean.items() if k not in ('scope','children')}=={k:v for k,v in start.items() if k!='scope'})
+        children=clean['children']
+        need(type(children) is list and 0<len(children)<=64)
+        for child in children:
+            need(set(child)=={'pid','exit_code','clean'} and type(child['pid']) is int and child['pid']>0
+                 and child['pid']!=start['parent_pid'] and type(child['exit_code']) is int
+                 and child['exit_code']==0 and child['clean'] is True)
+        pids=[c['pid'] for c in children]
+        need(pids==sorted(set(pids)))
+        return start,clean
+    return starts[0],None
 
-    Integration must verify installed command/module bytes before stopping and
-    bind startup nonce/StartedAt to this request, then require current child
-    joins/zero exits/consumer-close proof. No status/flag can bypass this gate.
-    """
-    raise ValueError('Reviewed worker child-join proof is not integrated')
+
+def _worker_logs(runtime, worker_id, started_at):
+    need(re.fullmatch(HEX,worker_id) and re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z',started_at)
+         and not started_at.startswith('0001'))
+    return runtime.call('worker-instance-logs',runtime_module_docker(runtime)+
+        ['logs','--since',started_at,'--timestamps',worker_id]).stdout
 
 
-def _worker_clean_stop(runtime, original, request_sha, expected_queues):
-    """Require original exit zero, empty queues AND reviewed child-join proof."""
-    states = _stopped(runtime, original, ('workers',))
-    publishers = _stopped(runtime, original, ('web', 'celery'))
-    rows = _queue_inventory(runtime, original['rabbitmq'])
-    need(len(rows) == len(expected_queues) and {r['name'] for r in rows} == set(expected_queues)
-         and all(r['messages_ready'] == r['messages_unacknowledged'] == 0 for r in rows))
-    return dict(scope='azd-santa-worker-exit-zero-v1', request_sha256=request_sha,
-                worker_id=original['workers'], worker_state=states[original['workers']],
-                publisher_states=publishers, queues=rows,
-                child_join_proof=_worker_join_proof(runtime,original['workers'],states[original['workers']],request_sha))
+def _worker_current(runtime, worker_id):
+    """Pre-mutation source/process/startup observation, not operator JSON."""
+    service=load_controller();hashes=service.WORKER_HASHES
+    need(runtime.binding['worker_hashes']==hashes)
+    before=_states(runtime,[worker_id])[worker_id]
+    need(before['Status']=='running' and before['Running'] is True and before['Pid']>0
+         and before['Paused'] is False and before['Restarting'] is False and before['OOMKilled'] is False)
+    start,_=_worker_markers(_worker_logs(runtime,worker_id,before['StartedAt']),hashes,completed=False)
+    # Parent PID is inside the container's namespace, independent of Docker's
+    # host State.Pid. Verify the real current command, never assume PID1/tini.
+    code=("from pathlib import Path;import hashlib,json;"
+          f"p=Path('/proc/{start['parent_pid']}');"
+          "argv=p.joinpath('cmdline').read_bytes().rstrip(bytes([0])).split(bytes([0]));"
+          "assert argv==[b'python',b'server/manage.py',b'runworkers'];"
+          f"paths={list(hashes)!r};"
+          "print(json.dumps({name:hashlib.sha256(Path('/zentral/server',name).read_bytes()).hexdigest() for name in paths}))")
+    observed=json.loads(runtime.call('worker-source-process',runtime_module_docker(runtime)+
+        ['exec',worker_id,'python','-I','-S','-c',code]).stdout,object_pairs_hook=unique)
+    need(observed==hashes and _states(runtime,[worker_id])[worker_id]==before)
+    return dict(container_id=worker_id,started_at=before['StartedAt'],start_marker=start)
+
+
+def _worker_join_proof(runtime, worker_id, worker_state, request_sha, instance):
+    need(set(instance)=={'container_id','started_at','start_marker'} and instance['container_id']==worker_id
+         and instance['started_at']==worker_state['StartedAt'])
+    service=load_controller();need(runtime.binding['worker_hashes']==service.WORKER_HASHES)
+    start,clean=_worker_markers(_worker_logs(runtime,worker_id,instance['started_at']),service.WORKER_HASHES,completed=True)
+    need(start==instance['start_marker'])
+    return dict(scope='azd-santa-workers-clean-stop-proof-v1',request_sha256=request_sha,
+                container_id=worker_id,started_at=instance['started_at'],start_marker=start,clean_marker=clean)
+
+
+def _worker_clean_stop(runtime, original, request_sha, expected_queues, instance):
+    """Require original exit zero, empty queues AND current joined-child proof."""
+    states=_stopped(runtime,original,('workers',))
+    publishers=_stopped(runtime,original,('web','celery'))
+    rows=_queue_inventory(runtime,original['rabbitmq'])
+    need(len(rows)==len(expected_queues) and {r['name'] for r in rows}==set(expected_queues)
+         and all(r['messages_ready']==r['messages_unacknowledged']==0 for r in rows))
+    return dict(scope='azd-santa-worker-exit-zero-v1',request_sha256=request_sha,
+                worker_id=original['workers'],worker_state=states[original['workers']],
+                publisher_states=publishers,queues=rows,
+                child_join_proof=_worker_join_proof(runtime,original['workers'],states[original['workers']],request_sha,instance))
 
 
 class _MaintenanceCapability:
@@ -752,8 +818,9 @@ def stop_capture(runtime):
         drain=native.drain(request_sha,publishers,durable,publisher_states,
             lambda:_queue_inventory(runtime,selected['rabbitmq']),seconds=min(120,max(2,int(deadline-time.monotonic()))))
         native.write_new(operation/'drain-complete.json',drain)
+        need(_worker_current(runtime,selected['workers'])==request['worker_instance'])
         stop(('workers',))
-        worker = _worker_clean_stop(runtime,selected,request_sha,durable)
+        worker = _worker_clean_stop(runtime,selected,request_sha,durable,request['worker_instance'])
         native.write_new(operation/'worker-stop-complete.json',worker)
         # One owned, existing-image stdlib-only helper. No Django/SQL imports,
         # owner env, socket, source tree or data volumes are mounted.

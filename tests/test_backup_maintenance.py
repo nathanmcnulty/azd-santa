@@ -33,10 +33,17 @@ class Maintenance(unittest.TestCase):
             data={'services':{'web':{'image':'sha256:'+'c'*64}}},
             inspect=Mock(return_value=self.ids),container_generation=Mock(),stop_helpers=Mock())
         self.runtime.call=self.call
+        self.runtime.binding={'worker_hashes':service.WORKER_HASHES}
+        self.start_marker=dict(scope='azd-santa-workers-start-v1',nonce='4'*32,parent_pid=7,grace_seconds=20,
+            module_sha256=service.WORKER_HASHES['azd_santa_worker_lifecycle.py'],
+            command_sha256=service.WORKER_HASHES['base/management/commands/runworkers.py'])
+        self.clean_marker={**self.start_marker,'scope':'azd-santa-workers-clean-stop-v1',
+            'children':[dict(pid=12,exit_code=0,clean=True),dict(pid=13,exit_code=0,clean=True)]}
+        self.instance=dict(container_id=self.ids['workers'],started_at=self.states[self.ids['workers']]['StartedAt'],start_marker=self.start_marker)
         self.request=dict(scope='azd-santa-backup-maintenance-v1',operation_id='d'*32,manifest_sha256='a'*64,
             generation_sha256='e'*64,target={'VmId':'selected','VmInstanceId':'selected'},boot_id='f'*36,
             recipient_sha256='1'*64,destination=str(self.root/'absent-output'),maximum_bytes=1000000,
-            maximum_files=100,seconds=60,storage_sha256='3'*64,queue_inventory=[dict(name='events',durable=True,auto_delete=False,messages_ready=0,messages_unacknowledged=0)])
+            maximum_files=100,seconds=60,worker_instance=self.instance,storage_sha256='3'*64,queue_inventory=[dict(name='events',durable=True,auto_delete=False,messages_ready=0,messages_unacknowledged=0)])
         (self.control/'backup-request.json').write_text('machine fixture')
         self.native_path=ROOT/'experiments/server/native_snapshot.py'
         self.writer=native.write_new
@@ -47,6 +54,20 @@ class Maintenance(unittest.TestCase):
 
     def call(self,label,args,**kwargs):
         self.events.append(label)
+        if label=='worker-source-process':
+            compile(args[-1],'<worker-readonly-probe>','exec')
+            self.assertIn("/proc/7",args[-1]);self.assertNotIn('/proc/123',args[-1])
+            observed=service.WORKER_HASHES if self.failure!='worker-source-drift' else {**service.WORKER_HASHES,'azd_santa_worker_lifecycle.py':'0'*64}
+            if self.failure=='worker-start-drift':self.states[self.ids['workers']]['StartedAt']='2026-11-07T02:00:00Z'
+            return SimpleNamespace(stdout=json.dumps(observed))
+        if label=='worker-instance-logs':
+            self.assertEqual(args[-1],self.ids['workers']);self.assertEqual(args[args.index('--since')+1],self.states[self.ids['workers']]['StartedAt'])
+            text='2026-11-07T01:00:00Z SANTA_WORKERS_START_JSON:'+json.dumps(self.start_marker)+'\n'
+            if not self.states[self.ids['workers']]['Running'] and self.failure!='missing-worker-proof':
+                clean=copy.deepcopy(self.clean_marker)
+                if self.failure=='stale-worker-proof':clean['nonce']='5'*32
+                text+='2026-11-07T01:01:00Z SANTA_WORKERS_CLEAN_STOP_JSON:'+json.dumps(clean)+'\n'
+            return SimpleNamespace(stdout=text)
         if label=='resume-unit':return SimpleNamespace(stdout='LoadState=loaded\nActiveState=inactive\nSubState=dead\nMainPID=0\nResult=success\n')
         if label.startswith('close-'):
             for cid in args[6:]:
@@ -90,9 +111,8 @@ class Maintenance(unittest.TestCase):
              patch.object(backup,'_dedicated'),patch.object(backup,'volume_paths',return_value={}), \
              patch.object(backup,'storage_fingerprint',return_value='3'*64), \
              patch.object(backup,'checked_file',side_effect=lambda p,**kw:Path(p)), \
-             patch.object(backup,'load_controller',return_value=SimpleNamespace()), \
+             patch.object(backup,'load_controller',return_value=SimpleNamespace(WORKER_HASHES=service.WORKER_HASHES)), \
              patch.object(backup,'_snapshot_job',side_effect=self.snapshot_job), \
-             patch.object(backup,'_worker_join_proof',side_effect=lambda *a: (_ for _ in ()).throw(ValueError('held')) if self.failure=='missing-worker-proof' else {'offline_mock_only':True}), \
              patch.object(backup,'_capture_locked',side_effect=self.capture), \
              patch.object(native,'archive_roots',return_value={}),patch.object(native,'write_new',side_effect=self.writer), \
              patch.object(native,'drain',side_effect=drain),patch.object(backup.signal,'signal'), \
@@ -137,8 +157,40 @@ class Maintenance(unittest.TestCase):
         self.failure='missing-worker-proof'
         with self.assertRaises(ValueError):self.run_flow()
         self.assertNotIn('snapshot-submit',self.events);self.assertNotIn('encrypted-capture',self.events)
-        with self.assertRaisesRegex(ValueError,'not integrated'):
-            backup._worker_join_proof(self.runtime,self.ids['workers'],self.states[self.ids['workers']],'2'*64)
+        with self.assertRaises(ValueError):
+            backup._worker_markers('2026-11-07T01:00:00Z SANTA_WORKERS_START_JSON:'+json.dumps(self.start_marker),service.WORKER_HASHES,completed=True)
+
+    def test_prior_worker_nonce_cannot_advance_to_native_snapshot(self):
+        self.failure='stale-worker-proof'
+        with self.assertRaises(ValueError):self.run_flow()
+        self.assertNotIn('snapshot-submit',self.events)
+
+    def test_strict_worker_marker_schema_requires_all_zero_joined_unique_children(self):
+        start='2026-11-07T01:00:00Z SANTA_WORKERS_START_JSON:'+json.dumps(self.start_marker)+'\n'
+        def text(clean):return start+'2026-11-07T01:01:00Z SANTA_WORKERS_CLEAN_STOP_JSON:'+json.dumps(clean)
+        self.assertEqual(backup._worker_markers(text(self.clean_marker),service.WORKER_HASHES,completed=True)[1],self.clean_marker)
+        changes=(lambda c:c.update(nonce='5'*32),lambda c:c.update(module_sha256='0'*64),
+            lambda c:c.update(children=[]),lambda c:c['children'][0].update(exit_code=143),
+            lambda c:c['children'][0].update(clean=False),lambda c:c['children'][0].update(pid=True),
+            lambda c:c['children'][0].update(exit_code=False),lambda c:c['children'].append(c['children'][0]))
+        for change in changes:
+            clean=copy.deepcopy(self.clean_marker);change(clean)
+            with self.assertRaises(ValueError):backup._worker_markers(text(clean),service.WORKER_HASHES,completed=True)
+        for raw in (start+text(self.clean_marker),text(self.clean_marker)+text(self.clean_marker)):
+            with self.assertRaises(ValueError):backup._worker_markers(raw,service.WORKER_HASHES,completed=True)
+
+    def test_worker_source_and_start_drift_fail_readonly_preflight_without_stopping(self):
+        for failure in ('worker-source-drift','worker-start-drift'):
+            self.failure=failure;self.events.clear()
+            with patch.object(backup,'load_controller',return_value=SimpleNamespace(WORKER_HASHES=service.WORKER_HASHES)):
+                with self.assertRaises(ValueError):backup._worker_current(self.runtime,self.ids['workers'])
+            self.assertFalse(any(label.startswith('close-') for label in self.events))
+
+    def test_old_container_or_started_at_cannot_reuse_clean_marker_proof(self):
+        state=copy.deepcopy(self.states[self.ids['workers']]);state['StartedAt']='2026-11-07T02:00:00Z'
+        with self.assertRaises(ValueError):backup._worker_join_proof(self.runtime,self.ids['workers'],state,'2'*64,self.instance)
+        with self.assertRaises(ValueError):backup._worker_join_proof(self.runtime,'9'*64,self.states[self.ids['workers']],'2'*64,self.instance)
+        self.assertNotIn('worker-instance-logs',self.events)
 
     def test_pending_startup_is_blocked_without_minting_completion_or_resume(self):
         with patch.object(backup,'_request',return_value=(self.request,'2'*64,b'public')),patch.object(backup,'checked_file',side_effect=lambda p,**kw:Path(p)):
