@@ -197,6 +197,7 @@
     }
   ],
   "gaps": [
+    "The optional local SQLite durability spike adds no cloud/API permission and is not a runtime storage selection. Production persistent state, restore anchors, revocation/deletion ledgers and their exact identities/data roles remain unqualified; synthetic fixture labels grant no publication authority.",
     "Local artifact inspection adds no Graph, Azure, connector or recipient permission; catalog display metadata and this manifest do not authorize grants.",
     "Minimum read sufficiency, tenant consent, Intune licensing and effective current target authority are not proven by requested scope metadata or local artifacts.",
     "Defender Live Response, Intune health-script publication/status, optional compute/sync hosting and cleanup permissions still need a complete source-specific review; existing behavior is unchanged.",
