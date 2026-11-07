@@ -22,6 +22,9 @@ SOURCE_HASHES = {
 DEPENDENCIES = ('postgres', 'redis', 'rabbitmq', 'elasticsearch')
 DIGEST_REF = re.compile(r'[a-z0-9][a-z0-9./:_-]*@sha256:[0-9a-f]{64}')
 IMAGE_ID = re.compile(r'sha256:[0-9a-f]{64}')
+REDIS_COMMAND = ['redis-server', '--appendonly', 'yes', '--appendfsync', 'always',
+                 '--aof-load-truncated', 'no', '--maxmemory-policy', 'noeviction',
+                 '--no-appendfsync-on-rewrite', 'no', '--save', '']
 OPTIONAL_APPS = ('zentral.contrib.jamf', 'zentral.contrib.munki',
                  'zentral.contrib.osquery', 'zentral.contrib.turbo')
 
@@ -84,6 +87,7 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
         'POSTGRES_PASSWORD': secrets.token_urlsafe(48),
         'POSTGRES_HOST': 'db', 'ZENTRAL_DJANGO_SECRET': secrets.token_urlsafe(64),
         'ZENTRAL_METRICS_TOKEN': secrets.token_urlsafe(48),
+        'AZD_SANTA_SECURITY_STORE_ID': secrets.token_hex(32),
         'RABBITMQ_DEFAULT_USER': 'zentral', 'RABBITMQ_DEFAULT_PASS': rabbit_password,
         'ZENTRAL_QUEUE_URL': f'amqp://zentral:{rabbit_password}@rabbitmq:5672//',
     }
@@ -97,7 +101,8 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
     services = {
         'db': {**service(lock['postgres'], '384m'), 'env_file': ['./runtime.env'],
                'volumes': ['postgres_data:/var/lib/postgresql']},
-        'redis': service(lock['redis'], '128m'),
+        'redis': {**service(lock['redis'], '128m'), 'command': list(REDIS_COMMAND),
+                  'volumes': ['redis_data:/data']},
         'rabbitmq': {**service(lock['rabbitmq'], '320m'), 'hostname': 'rabbitmq',
                      'env_file': ['./runtime.env'],
                      'volumes': ['rabbitmq_data:/var/lib/rabbitmq']},
@@ -121,7 +126,7 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
     services['web']['ports'] = ['127.0.0.1:8000:8000']
     compose = {'name': 'santa-zentral-eval-' + secrets.token_hex(6), 'services': services,
                'volumes': {name: {} for name in (
-                   'postgres_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data')}}
+                   'postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data')}}
     # Atomic reservation before any output. Failed preparation leaves evidence;
     # callers must inspect it and choose a new destination rather than retry over it.
     destination = Path(destination).absolute()
@@ -141,6 +146,9 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
         'local_image_id': image, 'dependency_images': lock,
         'declared_image_variant': variant,
         'app_profile': app_profile,
+        'security_store': {'persistence': 'AOF always; no truncated load; no eviction',
+                           'initialization': 'not initialized; explicit privileged fresh/migrate command required',
+                           'restore_authority': 'not reconciled; marker is not an external rollback anchor'},
         'limitations': ['Image variant is a caller declaration, not production license clearance',
                         'Caller must verify full source archive and build binding',
                         'Memory caps are test constraints, not proven sizing',

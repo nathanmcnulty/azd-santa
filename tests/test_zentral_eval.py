@@ -68,7 +68,9 @@ class ZentralEvaluation(unittest.TestCase):
             self.assertEqual(service['logging']['options']['max-file'], '3')
             self.assertNotIn('docker.sock', json.dumps(service))
             self.assertNotIn('runserver', json.dumps(service))
-        self.assertEqual(set(compose['volumes']), {'postgres_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data'})
+        self.assertEqual(set(compose['volumes']), {'postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data'})
+        self.assertEqual(services['redis']['volumes'], ['redis_data:/data'])
+        self.assertEqual(services['redis']['command'], generator.REDIS_COMMAND)
 
     def test_configuration_and_private_secrets(self):
         self.prepare()
@@ -80,6 +82,8 @@ class ZentralEvaluation(unittest.TestCase):
         self.assertEqual(config['notifier']['url'], 'redis://redis:6379/15')
         self.assertNotIn('tls_privkey', config['api'])
         env = dict(line.split('=', 1) for line in (self.destination / 'runtime.env').read_text().splitlines())
+        self.assertRegex(env['AZD_SANTA_SECURITY_STORE_ID'], r'^[0-9a-f]{64}$')
+        self.assertNotIn(env['AZD_SANTA_SECURITY_STORE_ID'], (self.destination / 'provenance.json').read_text())
         for key in ('POSTGRES_PASSWORD', 'RABBITMQ_DEFAULT_PASS', 'ZENTRAL_DJANGO_SECRET'):
             self.assertGreaterEqual(len(env[key]), 48)
             self.assertNotIn(env[key], (self.destination / 'provenance.json').read_text())

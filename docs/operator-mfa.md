@@ -38,8 +38,10 @@ security cache alias has strict errors and two-second socket/connect timeouts;
 new sign-in fails closed when it is unavailable. Signed random verification
 challenges and accepted TOTP timesteps are claimed once in that shared cache,
 including for counterless security keys. This does **not** yet prove replay/attempt
-state survives Redis recreation or restoration: the current lab Redis has no
-durable volume. Resolve and test that boundary with #53/#54 before ingress.
+state survives Redis recreation or restoration: the previously qualified lab
+Redis has no durable volume. The [durability candidate](security-store-durability.md)
+adds AOF and explicit store admission; its actual crash/recreation tests and #54
+current-authority restoration gate remain required before ingress.
 
 Six pinned Apache/core files integrate the policy. Their exact original/result
 hashes are checked before image construction and again inside the build;

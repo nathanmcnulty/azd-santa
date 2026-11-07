@@ -59,6 +59,12 @@ class OperatorRequests(TransactionTestCase):
         isolated = override_settings(CACHES=caches)
         isolated.enable()
         self.addCleanup(isolated.disable)
+        # Each fresh isolated DB/prefix is deliberately provisioned. Never
+        # initialize or flush the product namespace from the request path.
+        policy.initialize_security_store('fresh')
+        cache, client = policy._security_client()
+        marker = cache.make_key(policy.STORE_MARKER)
+        self.addCleanup(lambda: client.delete(marker))
 
     def new_client(self):
         return Client(enforce_csrf_checks=True, HTTP_HOST='localhost', HTTP_USER_AGENT='Mozilla/5.0 synthetic-recovery')
