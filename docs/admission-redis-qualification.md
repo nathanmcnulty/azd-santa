@@ -96,3 +96,58 @@ This tool does not exercise Django's persistence/configuration client checks,
 request parsing/HTTP dispatch, held work after a request timeout, server load,
 Redis restart durability, native Santa or a real Mac. Those remain separate
 acceptance gates for issue58. No cloud or tenant permission is added.
+
+## Optional hosted Linux gate
+
+`.github/workflows/qualify-redis-lua.yml` adds a non-required Ubuntu 24.04 job
+for relevant pull requests, main pushes and explicit workflow dispatch. It does
+not change a ruleset, catalog enforcement or required status checks. Workflow,
+CI driver, harness, admission policy, operator policy and dependency-lock changes
+trigger the gate. Checkout/upload actions reuse the repository's immutable pins;
+the GitHub token has only `contents: read`, checkout does not persist credentials,
+and no cloud login, tenant secret, deployment environment or role grant is used.
+
+The CI-only stdlib driver `scripts/ci/qualify_redis.py` runs as root with isolated
+Python and a scrubbed environment on the disposable hosted runner. It reads the
+Redis digest reference from `dependency-images.lock.json`, pulls that digest for
+Linux amd64, verifies the returned RepoDigest, and binds the actual image ID. It
+creates exactly one labeled container with a separate random owner label. The
+container runs as UID/GID999, has a read-only root filesystem, no network or
+published ports, only a64MiB tmpfs at `/data`,64MiB memory with no extra swap,
+half a CPU,32PIDs, all capabilities dropped, no-new-privileges, no restart policy
+and no Docker log storage. Actual container metadata must match these bounds.
+
+Exactly the harness and its two product sources are copied into an absent
+root-owned0700 directory with0600 files. The original harness CLI receives only
+the selected64-hex CID, actual image ID and absent private evidence destination.
+Read-only PING startup checks are bounded to20seconds; the harness is invoked
+once with an external240-second subprocess timeout, inside a10-minute job. No
+test dependency installation, FLUSH, key cleanup or application Redis lookup
+occurs. Normal exits and handled signals check the original CID/image/owner
+labels and stop only that container. Unknown creation or cleanup cannot trigger
+global name/label cleanup or replay; runner disposal is the final safety bound.
+The container and private diagnostic files are never reused or copied elsewhere.
+
+Only after successful harness completion, strict receipt/source validation and
+confirmed owned-container stop does the driver emit one nonsecret JSON receipt.
+The artifact step uploads that one exact file, only on success, with three-day
+retention. Its whitelist includes the source commit, dependency digest, actual
+image/CID, source hashes and validated case names. Private attempts, stdout/stderr,
+Redis keys, tokens, arbitrary error/limitation text and source files are excluded.
+Failure diagnostics remain private only until the ephemeral runner is discarded;
+there is no failed-run private artifact. This differs intentionally from the
+coordinator's retained private VM qualification above.
+
+The exporter admits only the reviewed `disposable-redis-admission-lua-v1` scope
+with27 unique observation families or `disposable-redis-admission-fenced-lua-v2`
+with37 families. It retains that harness scope explicitly and rejects unknown
+versions, incomplete/extra case inventories and unexpected receipt fields. The
+new fenced harness is integrated separately; this workflow does not edit its
+product/source pins or claim its cases passed from an older v1 receipt.
+
+The driver/workflow have offline orchestration, target-isolation, once-only
+failure cleanup and artifact-whitelist tests. No hosted run is established by
+those mocks or YAML parsing. Actual hosted Docker/image/startup/Lua/cleanup and
+artifact delivery still need the first reviewed run. A pass qualifies only the
+disposable Redis Lua cases for those exact sources; Django/HTTP, durable app
+Redis, native clients, public HTTPS and Azure cold installation remain separate.
