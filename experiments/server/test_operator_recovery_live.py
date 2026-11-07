@@ -30,8 +30,9 @@ from django.contrib.auth.models import Group
 from django.contrib.auth.tokens import default_token_generator
 from django.core.management import call_command, CommandError
 from django.db import close_old_connections, connection, connections
-from django.test import Client, TransactionTestCase, override_settings
-from django.test.runner import DiscoverRunner
+from django.test import Client, SimpleTestCase, override_settings
+from django.test.utils import setup_test_environment, teardown_test_environment
+import azd_recovery_fixture as fixture
 from accounts.models import User, UserTOTP, UserWebAuthn, APIToken, OIDCAPITokenIssuer
 from django.urls import reverse
 from zentral.core.events.base import BaseEvent
@@ -47,12 +48,22 @@ def post_event(event):
     EVENTS.append(event)
 
 
-class OperatorRequests(TransactionTestCase):
-    reset_sequences = True
+class OperatorRequests(SimpleTestCase):
+    databases = {'default'}
+
+    def clean_owned_rows(self):
+        fixture.runtime_identity('/run/azd-recovery-conf/fixture.json')
+        # No flush/TRUNCATE/sequence reset. Unknown rows fail rather than delete.
+        if User.objects.exclude(username__startswith=PREFIX + '-').exists() or Group.objects.exclude(name=PREFIX).exists():
+            raise RuntimeError('Unexpected rows in disposable recovery fixture')
+        User.objects.filter(username__startswith=PREFIX + '-').delete()
+        Group.objects.filter(name=PREFIX).delete()
 
     def setUp(self):
+        self.clean_owned_rows()
+        self.addCleanup(self.clean_owned_rows)
         EVENTS.clear()
-        # Test DB sequence resets reuse user PKs. Keep real shared Redis and its
+        # Keep real shared Redis and its
         # fail-closed options, but never collide with main/other-test budgets.
         caches = copy.deepcopy(settings.CACHES)
         caches['azd_santa_security']['KEY_PREFIX'] = 'azd-recovery-tests:' + PREFIX + ':' + self._testMethodName
@@ -486,42 +497,24 @@ def case_identity(case):
 def run():
     PRIVATE.mkdir(mode=0o700)
     capture = io.StringIO()
-    name = 'azd_recovery_' + uuid.uuid4().hex[:24]
-    if (set(connections) != {'default'} or not re.fullmatch(r'azd_recovery_[0-9a-f]{24}', name)
-            or connection.settings_dict['TEST'].get('MIRROR') or connection.vendor != 'postgresql'
-            or settings.DEBUG or settings.PASSWORD_RESET_TIMEOUT != 600):
-        raise RuntimeError('Expected the reviewed private PostgreSQL/non-debug/reset policy')
-    # Never let Django's test runner destroy or reuse a pre-existing database.
-    with connection.cursor() as cursor:
-        cursor.execute('SELECT 1 FROM pg_database WHERE datname = %s', [name])
-        if cursor.fetchone():
-            raise RuntimeError('Generated isolated test database already exists')
-    original = copy.deepcopy(connection.settings_dict['TEST'])
-    connection.settings_dict['TEST']['NAME'] = name
-    runner = DiscoverRunner(verbosity=0, interactive=False, keepdb=False)
+    identity = fixture.runtime_identity('/run/azd-recovery-conf/fixture.json')
+    if settings.DEBUG or settings.PASSWORD_RESET_TIMEOUT != 600:
+        raise RuntimeError('Expected reviewed non-debug/reset policy')
     def write(filename, value):
         fd = os.open(PRIVATE / filename, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, 'w') as output:
             output.write(value)
     with contextlib.redirect_stdout(capture), contextlib.redirect_stderr(capture), patch.object(BaseEvent, 'post', post_event):
-        runner.setup_test_environment()
-        old = None
+        setup_test_environment()
         try:
-            old = runner.setup_databases()
             call_command('collectstatic', interactive=False, verbosity=0)
             result = unittest.TextTestRunner(stream=capture, verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(OperatorRequests))
         finally:
             try:
-                if old is not None:
-                    runner.teardown_databases(old)
+                connections.close_all()
+                teardown_test_environment()
             finally:
-                try:
-                    runner.teardown_test_environment()
-                finally:
-                    connection.settings_dict['TEST'] = original
-                    # A cleanup error must not discard the only private record
-                    # of earlier request failures. It still prevents acceptance.
-                    write('private-tests.log', capture.getvalue())
+                write('private-tests.log', capture.getvalue())
     receipt = dict(scope='private-real-django-operator-recovery', namespace=PREFIX,
         tests=result.testsRun, passed=result.wasSuccessful(), skipped=len(result.skipped),
         failures=[case_identity(case) for case, _ in result.failures], errors=[case_identity(case) for case, _ in result.errors],
@@ -529,6 +522,7 @@ def run():
         policy_sha256=hashlib.sha256(Path(policy.__file__).read_bytes()).hexdigest(),
         recovery_sha256=hashlib.sha256(Path(recovery.__file__).read_bytes()).hexdigest(),
         database_scope='Disposable isolated PostgreSQL test database; audit posting mocked, delivery unproven',
+        database_identity=identity,
         limitation='Synthetic operators, direct Django request client; no real-browser/TLS/native-Mac/restore proof')
     write('receipt.json', json.dumps(receipt))
     print(json.dumps(receipt))

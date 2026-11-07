@@ -146,3 +146,83 @@ recipient validation, real encryption and transactional/output-failure checks.
 See [sealed setup acceptance](sealed-operator-setup.md) for exact image, module,
 harness and receipt bindings. This extends private Django acceptance; the complete
 Azure handoff and real browser/TLS setup remain open.
+
+## Restricted-role recovery qualification fixture
+
+`experiments/server/run_recovery_fixture.py` is the opt-in host wrapper for the
+role-separated fresh core image. Supply the selected `--compose`, reviewed
+`--harness` (`test_operator_recovery_live.py`), new `--destination`, immutable
+`--image`, `--policy-sha256`, and `--recovery-sha256`. Run it only on the selected
+privileged private Linux qualification host after fresh database/security-store
+initialization. It is not a startup hook or a retry/upgrade tool.
+
+The owner-only job consumes `migration.env`, creates a uniquely named absent
+`azd_recovery_<24 hex>` database, migrates it, and grants the already-existing
+runtime role CONNECT/TEMP, table DML and sequence access. It grants no permanent
+schema CREATE, database/role creation, ownership or TRUNCATE. The migration
+ledger remains read-only to runtime. A job-only configuration copy overrides
+POSTGRES_NAME before Django loads; the selected main configuration is unchanged.
+
+The subsequent request container inherits only normal `runtime.env`. It receives
+read-only secret-free fixture configuration and a receipt binding the database
+name/OID, image, Compose, environment and source hashes. It receives neither the
+owner env file nor owner credentials. The harness verifies actual SQL identity
+`zentral_runtime`, DB name/OID, role flags and denied permanent-schema/ledger/
+TRUNCATE authority before any fixture cleanup. All 13 cases and their genuine
+PostgreSQL row-lock/concurrent WebAuthn checks are preserved. `SimpleTestCase`
+allows explicit database access without a global transaction or Django's
+privileged CREATE DATABASE/flush machinery. Cleanup deletes only suite-prefixed
+users (including their dependent credentials) and its exact group. Unknown rows
+fail closed. Session rows can remain in this disposable DB until teardown;
+sequences are never reset. Audit posting stays mocked to prevent isolated DB
+object IDs entering the main pipeline.
+
+Only accepted, known-terminal requests permit a separate owner teardown job.
+It checks exact name/OID/owner and absence of active database backends before
+DROP; it does not terminate other sessions. This assumes the selected trusted
+host/DB owner serializes the private namespace, not a malicious concurrent DBA.
+Timeouts, setup/request failures, identity changes and unknown outcomes retain
+private evidence and the fixture for deliberate inspection. No automatic retry,
+existing-volume migration, runtime privilege broadening or held-restart
+adaptation is supplied.
+
+Offline guards are not real PostgreSQL or request acceptance. Selected live
+success-path qualification is recorded below; retained-fixture behavior on an
+actual failed/unknown request still needs fault qualification. Broader main-data
+isolation auditing, browser/TLS/native Mac, audit delivery and restore safety
+remain separate gates.
+
+### Actual restricted-role fixture, 2026-11-06
+
+The fresh role-separated image and configuration in
+[database-role qualification](database-role-separation.md#actual-private-qualification-2026-11-06)
+passed owner fixture creation/migration, all 13 request cases with zero skips or
+failures, and guarded owner teardown. Every request used SQL identity
+`zentral_runtime` in `azd_recovery_938443ab9e854a5e91c64134`, OID `20123`.
+The runtime had no CREATEDB, permanent-schema CREATE/ownership or TRUNCATE
+authority. The owner credential remained outside the request process.
+
+Recovery harness SHA-256:
+`80fd82b20f5368a9390b8d8972a9e6e9e2e8ae3c72a498c92fa0fbf450c2aaa1`;
+fixture module SHA-256:
+`199bb4a26b106c3e7974abda2f05751ab7f89c6337c720a2087c92a604f45b1e`.
+The receipt-bound fixture JSON SHA-256 was
+`d0d30329306597097931199d9f8bb4976ac035bc931e6d10527ec8581d7dcf32`.
+These are distinct source and identity-artifact bindings.
+
+The accepted request result was followed by exact-name/OID/no-active-backend
+DROP. A separate query through the main runtime then confirmed that database
+was absent and that normal database authority still passed. The selected main
+operator and Santa-state checks passed separately. This is not an audit of every
+main database row or schema object. Audit posting inside Recovery13 remains
+mocked; the real main-stack bootstrap/recovery audit delivery has its own receipt.
+
+Private evidence under `runtime-santa-role-split-searchwait/` includes
+`recovery-runtime-fixture/initialize-process.json`,
+`recovery-runtime-fixture/requests/receipt.json`,
+`recovery-runtime-fixture/teardown-process.json`,
+`recovery-runtime-fixture/receipt.json` and the independent reboot-state receipts.
+All 13 original method source slices remain pinned. Their preservation guard
+uses normalized source rather than Python-version-dependent AST formatting;
+the Windows CI failure was confined to that earlier test oracle, not runtime or
+harness bytes.
