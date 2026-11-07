@@ -26,7 +26,9 @@ def test_count(source):
     return len(tests)
 
 
-def run(compose_path, harness_path, destination, expected_policy, expected_recovery=None):
+def run(compose_path, harness_path, destination, expected_policy, expected_recovery=None, fixture_directory=None):
+    if bool(expected_recovery) != bool(fixture_directory):
+        raise ValueError('Recovery requires owner-prepared isolated runtime fixture')
     compose, digest = validate_compose(compose_path)
     if not re.fullmatch(r'[a-f0-9]{64}', expected_policy):
         raise ValueError('Expected an exact policy source hash')
@@ -47,6 +49,18 @@ def run(compose_path, harness_path, destination, expected_policy, expected_recov
         '--project-name', project, '-f', str(compose), 'run', '--rm', '--no-deps',
         '--name', name, '--volume', str(harness) + ':/tmp/azd_operator_mfa_tests.py:ro',
         '--entrypoint', 'python', 'web', 'server/manage.py', 'shell', '--no-imports', '-c', code]
+    if fixture_directory:
+        directory = Path(fixture_directory).resolve(strict=True)
+        loader = ("import hashlib,json,types,sys; from pathlib import Path; "
+            "p=Path('/run/azd-recovery-conf/recovery_database_fixture.py'); "
+            "b=json.loads(Path('/run/azd-recovery-conf/binding.json').read_text()); "
+            "assert hashlib.sha256(p.read_bytes()).hexdigest()==b['fixture_sha256']; "
+            "m=types.ModuleType('azd_recovery_fixture'); m.__file__=str(p); sys.modules[m.__name__]=m; "
+            "exec(compile(p.read_bytes(),str(p),'exec'),m.__dict__); ")
+        command[-1] = loader + code
+        command[command.index('--entrypoint'):command.index('--entrypoint')] = [
+            '--volume', str(directory) + ':/run/azd-recovery-conf:ro',
+            '--env', 'ZENTRAL_CONF_DIR=/run/azd-recovery-conf']
     try:
         result = subprocess.run(command, capture_output=True, text=True, env=env, timeout=600)
     except subprocess.TimeoutExpired as error:
@@ -79,7 +93,15 @@ def run(compose_path, harness_path, destination, expected_policy, expected_recov
     allowed = {'scope', 'namespace', 'tests', 'passed', 'skipped', 'failures', 'errors',
                'harness_sha256', 'policy_sha256', 'limitation'}
     if expected_recovery:
-        allowed.update({'recovery_sha256', 'database_scope'})
+        allowed.update({'recovery_sha256', 'database_scope', 'database_identity'})
+        from recovery_database_fixture import NAME
+        fixture = json.loads((Path(fixture_directory) / 'fixture.json').read_text())
+        if type(fixture.get('database_oid')) is not int or not 0 < fixture['database_oid'] < 2**32:
+            raise RuntimeError('Unrecognized fixture database OID')
+        identity = dict(database=fixture['binding']['database'], database_oid=fixture['database_oid'],
+            sql_user='zentral_runtime', fixture_sha256=hashlib.sha256((Path(fixture_directory) / 'fixture.json').read_bytes()).hexdigest())
+        if (not NAME.fullmatch(identity['database']) or receipt.get('database_identity') != identity):
+            raise RuntimeError('Restricted runtime database identity mismatch')
         if (receipt.get('recovery_sha256') != expected_recovery or receipt.get('database_scope') !=
                 'Disposable isolated PostgreSQL test database; audit posting mocked, delivery unproven'):
             raise RuntimeError('Recovery source/database evidence mismatch')
@@ -103,6 +125,7 @@ def run(compose_path, harness_path, destination, expected_policy, expected_recov
     if result.returncode != 0 or receipt.get('passed') is not True:
         raise RuntimeError('Real MFA request checks failed; inspect private redacted diagnostics')
     print('SANTA_OPERATOR_MFA_ACCEPTED_REQUESTS ' + str(destination))
+    return receipt
 
 
 if __name__ == '__main__':
@@ -112,5 +135,6 @@ if __name__ == '__main__':
     parser.add_argument('--destination', required=True)
     parser.add_argument('--policy-sha256', required=True)
     parser.add_argument('--recovery-sha256')
+    parser.add_argument('--fixture-directory')
     args = parser.parse_args()
-    run(args.compose, args.harness, args.destination, args.policy_sha256, args.recovery_sha256)
+    run(args.compose, args.harness, args.destination, args.policy_sha256, args.recovery_sha256, args.fixture_directory)
