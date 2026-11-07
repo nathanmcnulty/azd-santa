@@ -20,7 +20,7 @@ class Generation(unittest.TestCase):
         self.runtime,self.rows=self.fixture.inspection_fixture()
         self.runtime.manifest_path=self.root/'manifest.json';self.runtime.digest='a'*64
         self.runtime.evidence=self.root;self.runtime.python=Mock()
-        self.runtime.helpers=set();self.runtime.phase='prepared'
+        self.runtime.helpers=set();self.runtime.phase='prepared';self.runtime.stopping=False;self.runtime.supervisor_lock_fd=None
         self.fcntl=ModuleType('fcntl');self.fcntl.LOCK_EX=1;self.fcntl.LOCK_NB=2;self.fcntl.flock=Mock()
 
     def anchor(self,selected):
