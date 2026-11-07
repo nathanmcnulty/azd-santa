@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -95,7 +96,7 @@ class Boundaries(unittest.TestCase):
             bad=copy.deepcopy(receipt);edit(bad)
             with self.assertRaises(ValueError):ci.public_receipt(bad,CID,IMAGE,hashes,'e'*40,REFERENCE)
 
-    def exercise(self,fail=False):
+    def exercise(self,fail=False,cleanup_fail=False,receipt_fail=False):
         with tempfile.TemporaryDirectory() as name:
             base=Path(name).resolve();source=base/'checkout';(source/'experiments/server').mkdir(parents=True)
             for filename in ci.FILES:(source/'experiments/server'/filename).write_bytes(filename.encode())
@@ -106,17 +107,24 @@ class Boundaries(unittest.TestCase):
             hashes={filename:hashlib.sha256(filename.encode()).hexdigest() for filename in ci.FILES}
             phases=[];commands=[];runner=MagicMock()
             def call(phase,args,**kwargs):
+                ci.select_phase(phase)
                 phases.append(phase);commands.append((phase,args,kwargs))
                 if phase=='image':return json.dumps([dict(Id=IMAGE,RepoDigests=[REFERENCE],Os='linux',Architecture='amd64')])
                 if phase=='create':return CID
                 if phase.startswith('ready-'):return '"PONG"'
                 if phase=='harness':
-                    if fail:raise TimeoutError('Unknown synthetic result')
-                    (private/'evidence').mkdir();(private/'evidence/receipt.json').write_text(json.dumps(private_receipt(hashes)))
+                    if fail:raise TimeoutError('PRIVATE FAILURE TEXT MUST NEVER EXPORT')
+                    value=private_receipt(hashes)
+                    if receipt_fail:value['secret']='PRIVATE RECEIPT FIELD MUST NEVER EXPORT'
+                    (private/'evidence').mkdir();(private/'evidence/receipt.json').write_text(json.dumps(value))
                     return 'SANTA_ADMISSION_REDIS_LUA_OK\n'
+                if phase=='stop-owned' and cleanup_fail:raise OSError('PRIVATE CLEANUP TEXT MUST NEVER EXPORT')
                 return CID
             runner.call.side_effect=call
-            runner.inspect.side_effect=lambda phase,cid:row(running=phase not in ('created','cleanup-stopped'))
+            def inspect(phase,cid):
+                ci.select_phase(phase)
+                return row(running=phase not in ('created','cleanup-stopped'))
+            runner.inspect.side_effect=inspect
             def write(path,value):
                 # Portable exclusive writes only; Linux owner/mode is NOT proven.
                 with path.open('xb') as stream:stream.write(value if isinstance(value,bytes) else json.dumps(value).encode())
@@ -124,8 +132,12 @@ class Boundaries(unittest.TestCase):
                  patch.object(ci,'read_source',side_effect=lambda path:path.read_bytes()),\
                  patch.object(ci.sys,'platform','linux'),patch.object(ci.sys,'flags',SimpleNamespace(isolated=True)),\
                  patch.object(ci.os,'geteuid',return_value=0,create=True),patch.object(ci.secrets,'token_hex',return_value=TOKEN):
-                if fail:
-                    with self.assertRaises(TimeoutError):ci.run(source,'e'*40)
+                if fail or cleanup_fail or receipt_fail:
+                    with self.assertRaises(ci.CiFailure) as caught:ci.run(source,'e'*40)
+                    diagnostic=caught.exception.diagnostic()
+                    self.assertEqual(diagnostic['phase'],'cleanup_stop' if cleanup_fail else 'receipt_validation' if receipt_fail else 'harness')
+                    self.assertEqual(diagnostic['kind'],'io_error' if cleanup_fail else 'validation' if receipt_fail else 'timeout')
+                    self.assertNotIn('PRIVATE',json.dumps(diagnostic))
                 else:self.assertTrue(ci.run(source,'e'*40)['passed'])
             self.assertEqual(sorted(path.name for path in (private/'sources').iterdir()),sorted(ci.FILES))
             stop=next(command for phase,command,_ in commands if phase=='stop-owned')
@@ -136,10 +148,42 @@ class Boundaries(unittest.TestCase):
             self.assertEqual(harness[0][:2],['/usr/bin/python3','-I'])
             self.assertEqual(harness[0][harness[0].index('--container-id')+1],CID)
             self.assertEqual(harness[0][harness[0].index('--expected-image')+1],IMAGE)
-            self.assertEqual(runner.inspect.call_args.args,('cleanup-stopped',CID))
+            self.assertEqual(runner.inspect.call_args.args,('cleanup-owner' if cleanup_fail else 'cleanup-stopped',CID))
 
     def test_once_only_pipeline_stages_exact_files_and_cleans_owned_id_before_success(self):self.exercise()
     def test_unknown_harness_outcome_never_retries_and_still_stops_owned_id(self):self.exercise(fail=True)
+    def test_successful_cleanup_preserves_receipt_validation_phase(self):self.exercise(receipt_fail=True)
+    def test_cleanup_failure_reports_its_own_phase_instead_of_original_harness_failure(self):self.exercise(fail=True,cleanup_fail=True)
+
+    def test_command_exit_and_timeout_diagnostics_export_no_command_or_output(self):
+        runner=object.__new__(ci.Runner);runner.root=Path('/unused');runner.environment={}
+        for outcome,kind,code in [(subprocess.CompletedProcess(['PRIVATE COMMAND'],17,b'PRIVATE STDOUT',b'PRIVATE STDERR'),'command_exit',17),
+                                  (subprocess.TimeoutExpired(['PRIVATE COMMAND'],30,output=b'PRIVATE OUTPUT'),'timeout',None)]:
+            with patch.object(ci,'write'),patch.object(ci.subprocess,'run') as run:
+                if isinstance(outcome,Exception):run.side_effect=outcome
+                else:run.return_value=outcome
+                with self.assertRaises(ci.CiFailure) as caught:runner.call('create',['PRIVATE COMMAND'])
+                value=caught.exception.diagnostic()
+                self.assertEqual((value['phase'],value['kind'],value['exit_code']),('docker_create',kind,code))
+                self.assertNotIn('PRIVATE',json.dumps(value))
+
+    def test_failed_receipt_exports_only_source_bound_bounded_completed_count(self):
+        hashes={name:'f'*64 for name in ci.FILES}
+        value=private_receipt(hashes);value['passed']=False
+        value['completed']=['private_case_name_'+str(index) for index in range(3)]
+        value['action']='PRIVATE ACTION MUST NOT EXPORT';del value['observations'];del value['limitation']
+        count=ci.completed_count(value,CID,IMAGE,hashes)
+        public=ci.CiFailure('harness','command_exit',1,count).diagnostic()
+        self.assertEqual(public['completed_observations'],3)
+        self.assertNotIn('private_case_name',json.dumps(public));self.assertNotIn('PRIVATE ACTION',json.dumps(public))
+        for edit in (lambda r:r.update(scope='unknown'),lambda r:r.update(passed=True),lambda r:r.update(extra='PRIVATE'),
+                     lambda r:r.update(harness_sha256='0'*64),lambda r:r.update(container_id='0'*64),
+                     lambda r:r.update(completed=['case_'+str(index) for index in range(38)]),
+                     lambda r:r.update(completed=['same','same']),lambda r:r.update(completed=['private\ntext'])):
+            bad=copy.deepcopy(value);edit(bad)
+            with self.assertRaises(ValueError):ci.completed_count(bad,CID,IMAGE,hashes)
+        self.assertIsNone(ci.CiFailure('UNKNOWN PRIVATE PHASE','PRIVATE KIND',999999,999999).diagnostic()['completed_observations'])
+        self.assertNotIn('PRIVATE',json.dumps(ci.CiFailure('UNKNOWN PRIVATE PHASE','PRIVATE KIND').diagnostic()))
 
     def test_workflow_token_artifact_and_trigger_contract(self):
         workflow=(REPO/'.github/workflows/qualify-redis-lua.yml').read_text()

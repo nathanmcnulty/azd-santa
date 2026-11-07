@@ -138,6 +138,14 @@ Failure diagnostics remain private only until the ephemeral runner is discarded;
 there is no failed-run private artifact. This differs intentionally from the
 coordinator's retained private VM qualification above.
 
+Failed jobs emit one fixed-schema `SANTA_REDIS_CI_FAILED_JSON` line to stderr:
+an allowlisted phase, bounded exit code/timeout classification and optionally a
+0..37 completed-observation count from an exact-source/CID/image-bound private
+failure receipt. No case names, command, stdout/stderr or exception text cross
+that boundary. Successful cleanup preserves the original failure phase; failed
+cleanup reports its own phase. This changes diagnostics only, not acceptance,
+container tolerance, retries or private-artifact policy.
+
 The exporter admits only the reviewed `disposable-redis-admission-lua-v1` scope
 with27 unique observation families or `disposable-redis-admission-fenced-lua-v2`
 with37 families. It retains that harness scope explicitly and rejects unknown

@@ -27,6 +27,43 @@ DOCKER = ['/usr/bin/docker', '--host', 'unix:///var/run/docker.sock']
 INSPECT = ('{"id":{{json .Id}},"image":{{json .Image}},"labels":{{json .Config.Labels}},'
            '"user":{{json .Config.User}},"host":{{json .HostConfig}},"mounts":{{json .Mounts}},'
            '"running":{{json .State.Running}},"ports":{{json .NetworkSettings.Ports}}}')
+PHASES = {'preflight', 'source_staging', 'docker_pull', 'image_readback', 'docker_create',
+          'created_inspection', 'docker_start', 'started_inspection', 'redis_readiness',
+          'harness', 'harness_marker', 'receipt_validation', 'cleanup_owner', 'cleanup_stop',
+          'cleanup_stopped', 'internal'}
+_PHASE = 'preflight'
+
+
+def select_phase(value):
+    global _PHASE
+    aliases = {'pull': 'docker_pull', 'image': 'image_readback', 'create': 'docker_create',
+               'created': 'created_inspection', 'start': 'docker_start', 'started': 'started_inspection',
+               'cleanup-owner': 'cleanup_owner', 'stop-owned': 'cleanup_stop', 'cleanup-stopped': 'cleanup_stopped'}
+    value = 'redis_readiness' if re.fullmatch(r'ready-[0-9]{1,2}', value) else aliases.get(value, value)
+    _PHASE = value if value in PHASES else 'internal'
+
+
+class CiFailure(Exception):
+    def __init__(self, phase, kind, exit_code=None, completed=None):
+        self.phase = phase if phase in PHASES else 'internal'
+        self.kind = kind if kind in {'validation', 'command_exit', 'timeout', 'output_limit',
+                                    'interrupted', 'io_error', 'internal_error'} else 'internal_error'
+        self.exit_code = exit_code if type(exit_code) is int and -64 <= exit_code <= 255 else None
+        self.completed = completed if type(completed) is int and 0 <= completed <= 37 else None
+        super().__init__('Disposable Redis CI failed')
+
+    def diagnostic(self):
+        return dict(scope='disposable-redis-ci-failure-v1', phase=self.phase, kind=self.kind,
+                    exit_code=self.exit_code, completed_observations=self.completed, automatic_replay=False)
+
+
+def failure(error):
+    if isinstance(error, CiFailure): return error
+    kind = ('timeout' if isinstance(error, (TimeoutError, subprocess.TimeoutExpired)) else
+            'interrupted' if isinstance(error, (KeyboardInterrupt, SystemExit)) else
+            'io_error' if isinstance(error, OSError) else
+            'validation' if isinstance(error, ValueError) else 'internal_error')
+    return CiFailure(_PHASE, kind)
 
 
 def need(value):
@@ -121,6 +158,28 @@ def public_receipt(value, cid, image, hashes, source_commit, reference):
                 limitation='Disposable Redis Lua only; no Azure, HTTP, Django, durability, native or application acceptance')
 
 
+def completed_count(value, cid, image, hashes):
+    need(type(value) is dict and set(value) == {'scope', 'container_id', 'image_id', 'sources',
+        'harness_sha256', 'passed', 'completed', 'action'} and value['scope'] in RECEIPT_SCOPES
+        and value['passed'] is False and value['container_id'] == cid and value['image_id'] == image
+        and value['harness_sha256'] == hashes[FILES[0]]
+        and value['sources'] == {name: hashes[name] for name in FILES[1:]})
+    rows = value['completed']
+    need(type(rows) is list and len(rows) <= RECEIPT_SCOPES[value['scope']]
+         and all(type(item) is str and re.fullmatch(r'[a-z0-9_]{1,96}', item) for item in rows)
+         and len(set(rows)) == len(rows))
+    return len(rows)
+
+
+def failed_count(path, cid, image, hashes):
+    try:
+        info = path.lstat()
+        need(info.st_uid == 0 and not info.st_mode & 0o077 and info.st_nlink == 1)
+        return completed_count(json.loads(read_source(path)), cid, image, hashes)
+    except BaseException:
+        return None  # Missing/untrusted diagnostic is never success or count zero.
+
+
 class Runner:
     def __init__(self, root):
         self.root = root
@@ -128,15 +187,18 @@ class Runner:
         (root / 'docker-config').mkdir(mode=0o700)
 
     def call(self, phase, args, timeout=30, allowed_failure=False):
+        select_phase(phase)
         try:
             result = subprocess.run(args, capture_output=True, timeout=timeout, env=self.environment)
         except subprocess.TimeoutExpired:
             write(self.root / (phase + '.json'), dict(timed_out=True, automatic_retry=False))
-            raise ValueError('Disposable CI outcome requires inspection') from None
+            raise CiFailure(_PHASE, 'timeout') from None
         write(self.root / (phase + '.json'), dict(returncode=result.returncode,
             stdout=result.stdout[:1024*1024].decode(errors='replace'), stderr=result.stderr[:1024*1024].decode(errors='replace')))
-        need(len(result.stdout) <= 1024*1024 and len(result.stderr) <= 1024*1024
-             and (result.returncode == 0 or allowed_failure))
+        if len(result.stdout) > 1024*1024 or len(result.stderr) > 1024*1024:
+            raise CiFailure(_PHASE, 'output_limit')
+        if result.returncode != 0 and not allowed_failure:
+            raise CiFailure(_PHASE, 'command_exit', result.returncode)
         return result.stdout.decode() if result.returncode == 0 else None
 
     def inspect(self, phase, cid):
@@ -144,10 +206,12 @@ class Runner:
 
 
 def run(source_root, source_commit):
+    select_phase('preflight')
     need(sys.platform == 'linux' and os.geteuid() == 0 and sys.flags.isolated
          and re.fullmatch(r'[a-f0-9]{40}', source_commit))
     source_root = Path(source_root)
     need(source_root == source_root.resolve(strict=True))
+    select_phase('source_staging')
     # Absent-only fixed hosted-runner namespace. Never reuse an earlier attempt.
     ROOT.mkdir(mode=0o700)
     need(ROOT.stat().st_uid == 0 and stat.S_IMODE(ROOT.stat().st_mode) == 0o700)
@@ -186,16 +250,25 @@ def run(source_root, source_commit):
         # finally closes only the owned disposable server and never retries it.
         result = runner.call('harness', ['/usr/bin/python3', '-I', str(staged / FILES[0]),
             '--container-id', cid, '--expected-image', image, '--destination', str(ROOT / 'evidence')], timeout=240)
-        need(result.strip() == 'SANTA_ADMISSION_REDIS_LUA_OK')
+        select_phase('harness_marker'); need(result.strip() == 'SANTA_ADMISSION_REDIS_LUA_OK')
+        select_phase('receipt_validation')
         raw = read_source(ROOT / 'evidence/receipt.json')
         receipt = public_receipt(json.loads(raw), cid, image, hashes, source_commit, reference)
+    except BaseException as error:
+        original = failure(error)
+        if original.phase == 'harness':
+            original.completed = failed_count(ROOT / 'evidence/failed.json', cid, image, hashes)
+        raise original from None
     finally:
-        if cid is not None:
-            need(re.fullmatch(r'[a-f0-9]{64}', cid))
-            row = runner.inspect('cleanup-owner', cid); owned(row, cid, image, token)
-            runner.call('stop-owned', DOCKER + ['stop', '--time', '5', cid], timeout=15)
-            row = runner.inspect('cleanup-stopped', cid); owned(row, cid, image, token)
-            need(row['running'] is False)
+        try:
+            if cid is not None:
+                select_phase('cleanup_owner'); need(re.fullmatch(r'[a-f0-9]{64}', cid))
+                row = runner.inspect('cleanup-owner', cid); owned(row, cid, image, token)
+                runner.call('stop-owned', DOCKER + ['stop', '--time', '5', cid], timeout=15)
+                row = runner.inspect('cleanup-stopped', cid); owned(row, cid, image, token)
+                need(row['running'] is False)
+        except BaseException as error:
+            raise failure(error) from None
     need(receipt is not None)
     return receipt
 
@@ -209,5 +282,6 @@ if __name__ == '__main__':
     for selected_signal in (signal.SIGTERM, signal.SIGINT): signal.signal(selected_signal, cancelled)
     try:
         print(json.dumps(run(args.source_root, args.source_commit), sort_keys=True))
-    except BaseException:
-        raise SystemExit('Disposable Redis CI failed; private diagnostics remain on the ephemeral runner. No automatic replay.') from None
+    except BaseException as error:
+        print('SANTA_REDIS_CI_FAILED_JSON:' + json.dumps(failure(error).diagnostic(), sort_keys=True), file=sys.stderr)
+        raise SystemExit(1) from None
