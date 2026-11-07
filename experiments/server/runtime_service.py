@@ -10,7 +10,6 @@ if __name__ == '__main__' and not sys.flags.isolated:
 
 import argparse
 import hashlib
-import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -20,6 +19,7 @@ import socket
 import stat
 import subprocess
 import time
+import types
 import uuid
 import urllib.request
 
@@ -87,10 +87,13 @@ def compose_helper():
     controller = trusted_sources()
     if _HELPER is None:
         for name in ('prepare_zentral_eval', 'test_live_zentral'):
-            spec = importlib.util.spec_from_file_location(name, controller.with_name(name + '.py'))
-            module = importlib.util.module_from_spec(spec)
+            path = controller.with_name(name + '.py')
+            module = types.ModuleType(name)
+            module.__file__ = str(path)
+            module.__package__ = ''
             sys.modules[name] = module
-            spec.loader.exec_module(module)
+            # Execute the checked source itself, never a timestamp-valid .pyc.
+            exec(compile(path.read_bytes(), str(path), 'exec'), module.__dict__)
         if module.COMMIT != COMMIT:
             raise ValueError('Runtime helper source revision changed')
         _HELPER = module
