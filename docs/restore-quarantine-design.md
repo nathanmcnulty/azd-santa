@@ -5,6 +5,19 @@ and proposed workflow for [issue54](https://github.com/nathanmcnulty/azd-santa/i
 It does not enable restore, qualify full restoration, or establish an external
 current-authority ledger. Cold encrypted backup acceptance is a separate gate.
 
+The separate `experiments/server/restore_cipher.py` primitive now authenticates
+the existing sealed format against an externally trusted ciphertext digest and
+recipient key. It discards decrypted chunks and returns only after complete GCM
+tag and digest verification. It creates no plaintext file, parses no archive and
+never restores or admits a service. Eight synthetic crypto tests cover producer
+roundtrip, tampering, truncation, recipient/digest/header/size/deadline failures.
+The Linux root/private-file descriptor guard still needs actual Linux filesystem
+qualification. Archive validation/extraction, key management, compatibility and
+the full quarantine/reissue workflow below remain unimplemented. A successful
+ciphertext check does not establish current authority; the caller must obtain
+the expected digest from trusted external evidence and bound blocking I/O with
+an outer process deadline.
+
 The proposed initial scope is a quarantined restore of the known Santa profile,
 followed by new identities and credentials. Preserve the original backup and
 restored history. Never reactivate restored identities or silently reuse old
