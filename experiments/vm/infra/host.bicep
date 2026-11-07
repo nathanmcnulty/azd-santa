@@ -48,6 +48,8 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
 
 // Explicit egress for the Azure agent and OS updates, not public ingress.
 // A Standard IPv4 address is cheaper here than a dedicated NAT gateway.
+// Stable Azure-managed DNS on this same PIP; no ingress rule or extra IP.
+// Do not add creation-only preview domainNameLabelScope to an existing PIP.
 resource egress 'Microsoft.Network/publicIPAddresses@2024-05-01' = {
   name: 'pip-santa-lab-egress'
   location: location
@@ -56,6 +58,9 @@ resource egress 'Microsoft.Network/publicIPAddresses@2024-05-01' = {
   properties: {
     publicIPAllocationMethod: 'Static'
     publicIPAddressVersion: 'IPv4'
+    dnsSettings: {
+      domainNameLabel: 'santa-${take(replace(subscription().subscriptionId, '-', ''), 16)}-${tags['azd-env-name']}-vm'
+    }
   }
 }
 
