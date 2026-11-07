@@ -173,7 +173,7 @@ class Installer(unittest.TestCase):
         import io
         from unittest.mock import MagicMock
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder); canary = root / 'untrusted-compose'; canary.write_text('DO NOT EXECUTE')
+            root = Path(folder).resolve(); canary = root / 'untrusted-compose'; canary.write_text('DO NOT EXECUTE')
             sub = '11111111-1111-4111-8111-111111111111'
             target = dict(TenantId='22222222-2222-4222-8222-222222222222', SubscriptionId=sub, EnvironmentName='synthetic',
                 ResourceGroup='rg-azd-santa-vm-synthetic', VmName='vm-santa-lab',
