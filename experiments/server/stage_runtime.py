@@ -141,8 +141,8 @@ def stage(source, lock_path, destination, image_id):
     wait('database', compose + ['exec', '-T', 'db', 'pg_isready', '-U', db['POSTGRES_USER'], '-d', db['POSTGRES_DB']])
     wait('broker', compose + ['exec', '-T', 'rabbitmq', 'rabbitmq-diagnostics', '-q', 'check_running'])
     wait('redis', compose + ['exec', '-T', 'redis', 'redis-cli', 'PING'], expected='PONG')
-    search = "import json,urllib.request; o=urllib.request.build_opener(urllib.request.ProxyHandler({})); r=json.load(o.open('http://elastic:9200/_cluster/health?wait_for_status=yellow&timeout=30s',timeout=35)); assert r['status'] in ('yellow','green')"
-    run('search', compose + ['run', '--rm', '--no-deps', '--pull', 'never', '--entrypoint', 'python', 'web', '-c', search])
+    search = "import json,urllib.request; o=urllib.request.build_opener(urllib.request.ProxyHandler({})); r=json.load(o.open('http://elastic:9200/_cluster/health?wait_for_status=yellow&timeout=5s',timeout=8)); assert not r['timed_out'] and r['status'] in ('yellow','green')"
+    wait('search', compose + ['run', '--rm', '--no-deps', '--pull', 'never', '--entrypoint', 'python', 'web', '-c', search])
     evidence = destination / 'database-initialization'
     evidence.mkdir(mode=0o700)
     binding = dict(scope='fresh-private-database-initialization', image=image_id, project=project,

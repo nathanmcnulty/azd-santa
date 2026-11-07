@@ -27,6 +27,7 @@ class Staging(unittest.TestCase):
         self.image = 'sha256:' + 'a' * 64
         self.calls = []
         self.failure = None
+        self.search_attempts = 0
 
     def run_stage(self):
         def prepare(*args):
@@ -55,6 +56,10 @@ class Staging(unittest.TestCase):
             output = json.loads((self.destination / 'compose.json').read_text())['name'] + '_postgres_data'
         elif args[-1] == 'PING':
             output = 'PONG'
+        elif '/_cluster/health' in args[-1]:
+            self.search_attempts += 1
+            if self.failure == 'search-never' or (self.failure == 'search-delayed' and self.search_attempts < 3):
+                status = 1
         elif '--env-from-file' in args:
             if self.failure and self.failure.startswith('timeout'):
                 raise subprocess.TimeoutExpired(args, 600, stderr='private-owner-timeout')
@@ -147,6 +152,25 @@ class Staging(unittest.TestCase):
         with self.assertRaises(FileExistsError): self.run_stage()
         self.assertEqual(len(self.calls), count)
         self.assertEqual(sum('--env-from-file' in args for args in self.calls), 1)
+
+    def test_search_connection_refusal_waits_before_requesting_initialization(self):
+        self.failure = 'search-delayed'
+        with patch.object(runtime.time, 'sleep'), contextlib.redirect_stdout(io.StringIO()):
+            self.run_stage()
+        self.assertEqual(self.search_attempts, 3)
+        search_calls = [index for index, args in enumerate(self.calls) if '/_cluster/health' in args[-1]]
+        owner_call = next(index for index, args in enumerate(self.calls) if '--env-from-file' in args)
+        self.assertGreater(owner_call, search_calls[-1])
+
+    def test_search_readiness_deadline_never_requests_owner_initialization(self):
+        self.failure = 'search-never'
+        def clock():
+            return 121 if self.search_attempts else 0
+        with patch.object(runtime.time, 'monotonic', side_effect=clock), patch.object(runtime.time, 'sleep'):
+            with self.assertRaisesRegex(TimeoutError, 'search'):
+                self.run_stage()
+        self.assertFalse((self.destination / 'database-initialization').exists())
+        self.assertFalse(any('--env-from-file' in args for args in self.calls))
 
     def test_initializer_timeout_stops_only_its_verified_concrete_id(self):
         self.failure = 'timeout'
