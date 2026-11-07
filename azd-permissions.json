@@ -19,7 +19,7 @@
       "evidence": [
         { "path": "experiments/server/SetupTransport.psm1", "sha256": "d52590ce2ea9a4f08c726c5a0aa03551426245f26be0f84124abb67ea8453d8a" },
         { "path": "experiments/server/installation_readback.py", "sha256": "863dde984f65576fb103babcd91defb61e5c003994f1ee860ab1d9e46e823490" },
-        { "path": "experiments/server/operator_setup_host.py", "sha256": "e97be062b1ccfccca18becef4b841d54d1d5080d48f9a6138c260232cd1ddeeb" }
+        { "path": "experiments/server/operator_setup_host.py", "sha256": "0b0fe20a28e99fb2455d2e311d60d397f274ef617072836f7116364254501dc8" }
       ]
     },
     {
