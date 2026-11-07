@@ -246,7 +246,7 @@ class OperatorRequests(TransactionTestCase):
                 password = secrets.token_urlsafe(30)
                 return self.post(clients[index], paths[index], dict(new_password1=password, new_password2=password)).status_code
             finally:
-                close_old_connections()
+                connections.close_all()
         with ThreadPoolExecutor(max_workers=2) as pool:
             self.assertEqual(sorted(pool.map(reset, (0, 1))), [200, 302])
 
@@ -261,7 +261,7 @@ class OperatorRequests(TransactionTestCase):
             except CommandError:
                 return False
             finally:
-                close_old_connections()
+                connections.close_all()
         with ThreadPoolExecutor(max_workers=2) as pool:
             self.assertEqual(sorted(pool.map(bootstrap, (0, 1))), [False, True])
         self.assertEqual(User.objects.filter(is_service_account=False).count(), 1)
@@ -367,7 +367,7 @@ class OperatorRequests(TransactionTestCase):
                             result = self.post(client, reverse('accounts:verify_webauthn'), dict(token_response=assertion))
                             return result.status_code, policy.PROOF in client.session
                     finally:
-                        close_old_connections()
+                        connections.close_all()
 
                 other = 'recover' if first == 'verify' else 'verify'
                 with ThreadPoolExecutor(max_workers=2) as pool:
@@ -441,6 +441,10 @@ def run():
     original = copy.deepcopy(connection.settings_dict['TEST'])
     connection.settings_dict['TEST']['NAME'] = name
     runner = DiscoverRunner(verbosity=0, interactive=False, keepdb=False)
+    def write(filename, value):
+        fd = os.open(PRIVATE / filename, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w') as output:
+            output.write(value)
     with contextlib.redirect_stdout(capture), contextlib.redirect_stderr(capture), patch.object(BaseEvent, 'post', post_event):
         runner.setup_test_environment()
         old = None
@@ -449,15 +453,17 @@ def run():
             call_command('collectstatic', interactive=False, verbosity=0)
             result = unittest.TextTestRunner(stream=capture, verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(OperatorRequests))
         finally:
-            if old is not None:
-                runner.teardown_databases(old)
-            runner.teardown_test_environment()
-            connection.settings_dict['TEST'] = original
-    def write(filename, value):
-        fd = os.open(PRIVATE / filename, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, 'w') as output:
-            output.write(value)
-    write('private-tests.log', capture.getvalue())
+            try:
+                if old is not None:
+                    runner.teardown_databases(old)
+            finally:
+                try:
+                    runner.teardown_test_environment()
+                finally:
+                    connection.settings_dict['TEST'] = original
+                    # A cleanup error must not discard the only private record
+                    # of earlier request failures. It still prevents acceptance.
+                    write('private-tests.log', capture.getvalue())
     receipt = dict(scope='private-real-django-operator-recovery', namespace=PREFIX,
         tests=result.testsRun, passed=result.wasSuccessful(), skipped=len(result.skipped),
         failures=[case_identity(case) for case, _ in result.failures], errors=[case_identity(case) for case, _ in result.errors],
