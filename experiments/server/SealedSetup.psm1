@@ -49,9 +49,31 @@ function ConvertFrom-SantaBase64 {
     return ,$bytes
 }
 
+function Assert-SantaPrivatePathSyntax {
+    param([string]$Path, [bool]$Windows = $IsWindows)
+    if ($Windows) {
+        # Reject streams, UNC/device namespaces and Win32 normalization aliases
+        # lexically, before any filesystem or network lookup.
+        if ($Path -cnotmatch '^[A-Za-z]:\\[^/:*?"<>|]+$') { throw 'An ordinary local drive path is required.' }
+        foreach ($part in $Path.Substring(3).Split('\')) {
+            if (-not $part -or $part -match '[. ]$' -or $part -match '[\x00-\x1f]' -or
+                $part -match '^(?i:CON|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³])(?:\.|$)') { throw 'Ambiguous local output path.' }
+        }
+    } elseif (-not [IO.Path]::IsPathFullyQualified($Path) -or $Path.StartsWith('//')) {
+        throw 'An absolute local output path is required.'
+    }
+}
+
 function Write-SantaPrivateBytes {
     param([string]$Path, [byte[]]$Bytes)
-    if (-not [IO.Path]::IsPathFullyQualified($Path)) { throw 'An absolute private output path is required.' }
+    Assert-SantaPrivatePathSyntax $Path
+    if ($IsWindows -and [IO.DriveInfo]::new([IO.Path]::GetPathRoot($Path)).DriveType -notin @(
+        [IO.DriveType]::Fixed, [IO.DriveType]::Removable, [IO.DriveType]::Ram)) { throw 'A local filesystem drive is required.' }
+    $parent = [IO.DirectoryInfo]::new([IO.Path]::GetDirectoryName($Path))
+    while ($parent) {
+        if (-not $parent.Exists -or ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Existing non-link parent directories are required.' }
+        $parent = $parent.Parent
+    }
     $stream = $null
     try {
         if ($IsWindows) {

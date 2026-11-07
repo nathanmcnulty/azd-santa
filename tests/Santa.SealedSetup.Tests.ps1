@@ -27,6 +27,14 @@ Describe 'Private setup transport local crypto boundaries' {
         $output = & $cryptoPython $vector 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
     }
+    It 'rejects Windows streams and remote/device paths without filesystem access' {
+        $module = Get-Module SealedSetup
+        foreach ($path in @('C:\private\existing.json:setup', '\\server\share\setup.json', '\\?\C:\private\setup.json',
+            'C:\private\..\setup.json', 'C:\private\NUL.json', 'C:\private\setup.json.', 'C:\private\setup.json ')) {
+            { & $module { param($value) Assert-SantaPrivatePathSyntax $value $true } $path } | Should -Throw
+        }
+        { & $module { Assert-SantaPrivatePathSyntax 'C:\private\setup.json' $true } } | Should -Not -Throw
+    }
     It 'decrypts real Python crypto in .NET and writes an exclusive owner-private artifact' {
         $recipient = New-SantaSetupRecipient
         $envelope = New-TestEnvelope $recipient
