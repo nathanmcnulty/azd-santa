@@ -32,12 +32,20 @@ through that same unit. Neither a new hook invocation nor a service failure can
 rerun initialization. Existing runtime units, containers/volumes or a different
 source binding are rejected rather than repurposed. Public source staging can
 resume missing identical files before job reservation; application state cannot.
+An exclusive terminal receipt is recorded by systemd's post-exit process only
+for an actual successful main-process exit. It binds the invocation, context,
+source bundle and completion hashes. After reboot removes the transient unit,
+readback requires this retained proof and an active runtime before the normal
+six readiness gates run again. A missing proof or a currently failed installer
+unit cannot be accepted just because a completion file exists.
 
 The job verifies immutable IMDS VM/subscription identity and pilot tags, then:
 
 1. Installs the exact qualified Ubuntu packages `docker.io=29.1.3-0ubuntu3~24.04.2`
    and `docker-compose-v2=2.40.3+ds1-0ubuntu1~24.04.1` through signed apt metadata.
    It checks the actual selected distro Compose plugin path and binary SHA-256.
+   Override plugin suppliers are rejected before bootstrap can execute Compose;
+   a fresh private Docker config excludes inherited extra plugin directories.
 2. Acquires the pinned/checksummed upstream archive, applies the existing core
    compiler and builds through the qualified classic builder lane. The actual
    local image ID is derived by code after successful build. Images are not pushed.

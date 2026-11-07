@@ -42,6 +42,35 @@ def command(args):
     return result.stdout
 
 
+def completion(directory, active):
+    path = directory / 'complete.json'; secure(path)
+    raw = path.read_bytes(); value = json.loads(raw)
+    need(set(value) == {'scope', 'bundle_sha256', 'outputs', 'limitation'} and
+         value['scope'] == 'private-azd-install-complete' and value['bundle_sha256'] == active['bundle_sha256'])
+    need(all(value['outputs'][key] == item for key, item in active['target'].items()))
+    return raw, value
+
+
+def record_terminal(context_path, digest):
+    """ExecStopPost: record actual systemd exit only, never infer it from a file."""
+    need(os.geteuid() == 0 and os.environ.get('SERVICE_RESULT') == 'success' and
+         os.environ.get('EXIT_CODE') == 'exited' and os.environ.get('EXIT_STATUS') == '0')
+    invocation = os.environ.get('INVOCATION_ID', '')
+    need(re.fullmatch('[a-f0-9]{32}', invocation))
+    path = Path(context_path); secure(path)
+    raw = path.read_bytes(); need(hashlib.sha256(raw).hexdigest() == digest)
+    active = json.loads(raw); directory = ROOT / 'installers' / active['bundle_sha256']
+    need(path == directory / 'context.json' and active['scope'] == 'private-azd-install-v1')
+    secure(ACTIVE); need(ACTIVE.read_bytes() == raw)
+    secure(directory / 'bundle.json')
+    need(hashlib.sha256((directory / 'bundle.json').read_bytes()).hexdigest() == active['bundle_sha256'])
+    complete_raw, _ = completion(directory, active)
+    proof = dict(scope='private-azd-install-terminal-success', context_sha256=digest,
+                 bundle_sha256=active['bundle_sha256'], completion_sha256=hashlib.sha256(complete_raw).hexdigest(),
+                 invocation=invocation, service_result='success', exit_code='exited', exit_status='0')
+    exclusive(directory / 'terminal-success.json', json.dumps(proof, sort_keys=True).encode())
+
+
 def status(bundle_sha):
     need(ACTIVE.exists())
     secure(ACTIVE); active = json.loads(ACTIVE.read_bytes())
@@ -49,17 +78,32 @@ def status(bundle_sha):
     unit = 'azd-santa-install-' + bundle_sha[:16] + '.service'
     values = dict(line.split('=', 1) for line in command(['systemctl', 'show', unit,
         '--property=LoadState,ActiveState,SubState,Result,ExecMainStatus,InvocationID']).splitlines() if '=' in line)
-    need(values.get('LoadState') == 'loaded')  # Unknown submit never launches again.
+    need(values.get('LoadState') in ('loaded', 'not-found'))
     directory = ROOT / 'installers' / bundle_sha
     complete = directory / 'complete.json'
     result = dict(scope='private-azd-install-observation', bundle_sha256=bundle_sha, unit=unit,
-                  state=values['ActiveState'], substate=values['SubState'], result=values.get('Result'),
+                  state=values.get('ActiveState', 'unknown'), substate=values.get('SubState', 'unknown'), result=values.get('Result'),
                   invocation=values.get('InvocationID'), completion=None)
-    if complete.exists():
-        secure(complete)
-        need(values['SubState'] == 'exited' and values['ExecMainStatus'] == '0' and values['Result'] == 'success')
+    proof_path = directory / 'terminal-success.json'
+    if proof_path.exists():
+        # A currently failed unit always wins over retained completion/proof.
+        if values['LoadState'] == 'loaded':
+            need(values.get('Result') == 'success' and values.get('ExecMainStatus') == '0'
+                 and values.get('ActiveState') != 'failed')
+        secure(proof_path); proof = json.loads(proof_path.read_bytes())
+        secure(directory / 'context.json'); context_raw = (directory / 'context.json').read_bytes()
+        need(context_raw == ACTIVE.read_bytes())
+        complete_raw, value = completion(directory, active)
+        need(set(proof) == {'scope', 'context_sha256', 'bundle_sha256', 'completion_sha256', 'invocation', 'service_result', 'exit_code', 'exit_status'}
+             and proof['scope'] == 'private-azd-install-terminal-success' and proof['context_sha256'] == hashlib.sha256(context_raw).hexdigest()
+             and proof['bundle_sha256'] == bundle_sha and proof['completion_sha256'] == hashlib.sha256(complete_raw).hexdigest()
+             and re.fullmatch('[a-f0-9]{32}', proof['invocation']) and proof['service_result'] == 'success'
+             and proof['exit_code'] == 'exited' and proof['exit_status'] == '0')
+        if values['LoadState'] == 'loaded': need(values.get('InvocationID') == proof['invocation'])
         command(['systemctl', 'is-active', 'azd-santa-runtime.service'])
-        result['completion'] = json.loads(complete.read_bytes())
+        result.update(state='completed', substate='terminal-success', invocation=proof['invocation'], completion=value)
+    else:
+        need(values['LoadState'] == 'loaded')  # Missing proof after reboot stays unknown.
     return result
 
 
@@ -122,7 +166,9 @@ def run(value):
     # Cross-process exclusive durable reservation precedes systemd submission.
     exclusive(ACTIVE, context_raw)
     unit = 'azd-santa-install-' + digest[:16]
-    command(['systemd-run', '--no-block', '--unit=' + unit, '--property=Type=oneshot', '--property=RemainAfterExit=yes',
+    recorder = '/usr/bin/python3 -I ' + str(selected / 'private_install_transport.py') + ' --record-terminal ' + str(selected / 'context.json') + ' ' + hashlib.sha256(context_raw).hexdigest()
+    command(['systemd-run', '--no-block', '--unit=' + unit, '--property=Type=oneshot', '--property=RemainAfterExit=no',
+             '--property=ExecStopPost=' + recorder,
              '--property=Restart=no', '--property=RuntimeMaxSec=6300', '--property=TimeoutStartSec=6300',
              '--property=UMask=0077', '/usr/bin/python3', '-I', str(selected / 'private_install.py'),
              '--context', str(selected / 'context.json'), '--sha256', hashlib.sha256(context_raw).hexdigest()])
@@ -131,7 +177,12 @@ def run(value):
 
 if __name__ == '__main__':
     try:
-        value = json.loads(base64.b64decode(os.environ['AZD_PRIVATE_INSTALL_COMMAND'], validate=True))
-        print('SANTA_PRIVATE_INSTALL_JSON:' + json.dumps(run(value), separators=(',', ':')))
+        import sys
+        if len(sys.argv) == 4 and sys.argv[1] == '--record-terminal':
+            record_terminal(sys.argv[2], sys.argv[3])
+        else:
+            need(len(sys.argv) == 1)
+            value = json.loads(base64.b64decode(os.environ['AZD_PRIVATE_INSTALL_COMMAND'], validate=True))
+            print('SANTA_PRIVATE_INSTALL_JSON:' + json.dumps(run(value), separators=(',', ':')))
     except BaseException:
         raise SystemExit('Private install state requires inspection; same job and data retained. Do not replay initialization.') from None

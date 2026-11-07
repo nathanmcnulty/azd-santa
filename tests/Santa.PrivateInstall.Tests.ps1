@@ -10,7 +10,7 @@ Describe 'Optional private VM azd installation' {
             $script:values = @{ AZURE_ENV_NAME = 'synthetic'; SANTA_PRIVATE_BACKEND_INSTALL = 'true'
                 AZURE_SUBSCRIPTION_ID = '11111111-1111-4111-8111-111111111111'; AZURE_RESOURCE_GROUP = 'rg-azd-santa-vm-synthetic'
                 SANTA_VM_NAME = 'vm-santa-lab'; SANTA_VM_RESOURCE_ID = '/selected/vm'; SANTA_VM_INSTANCE_ID = '33333333-3333-4333-8333-333333333333'
-                SANTA_VM_DEPLOYMENT_ID = '/selected/deployment' }
+                SANTA_VM_DEPLOYMENT_ID = '/subscriptions/11111111-1111-4111-8111-111111111111/providers/Microsoft.Resources/deployments/private-test' }
             $script:target = @{ TenantId = '22222222-2222-4222-8222-222222222222'; SubscriptionId = $script:values.AZURE_SUBSCRIPTION_ID
                 EnvironmentName = 'synthetic'; ResourceGroup = $script:values.AZURE_RESOURCE_GROUP; VmName = 'vm-santa-lab'
                 VmId = $script:values.SANTA_VM_RESOURCE_ID; VmInstanceId = $script:values.SANTA_VM_INSTANCE_ID }
@@ -128,6 +128,19 @@ Describe 'Optional private VM azd installation' {
             Invoke-PrivateVmAzdHook postprovision
             Should -Invoke Send-PrivateInstallCommand -Times 0 -ParameterFilter { $Command.mode -in @('chunk', 'submit') }
             Should -Invoke Complete-SantaBackendInstallation -Times 1
+        }
+        It 'rejects a missing, malformed or differently scoped deployment before any write' -ForEach @(
+            @{ Id = '' }, @{ Id = '/selected/deployment' },
+            @{ Id = '/subscriptions/99999999-9999-4999-8999-999999999999/providers/Microsoft.Resources/deployments/private-test' },
+            @{ Id = '/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/other/providers/Microsoft.Resources/deployments/private-test' }
+        ) {
+            $script:values.SANTA_VM_DEPLOYMENT_ID = $Id
+            Mock Send-PrivateInstallCommand { throw 'Unexpected delivery.' }
+            { Invoke-PrivateVmAzdHook postprovision } | Should -Throw '*canonical deployment*'
+            Should -Invoke Invoke-PrivateAzure -Times 0
+            Should -Invoke Send-PrivateInstallCommand -Times 0
+            Should -Invoke Complete-SantaBackendInstallation -Times 0
+            Should -Invoke Invoke-PrivateAzd -Times 0 -ParameterFilter { $Arguments[0] -eq 'env' -and $Arguments[1] -eq 'set' }
         }
         It 'fails actionable on a failed retained job without resetting data or operators' {
             Mock Invoke-PrivateAzure { @{} }

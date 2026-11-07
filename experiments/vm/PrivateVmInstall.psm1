@@ -119,6 +119,11 @@ function Invoke-PrivateVmAzdHook {
     foreach ($pair in @(@('AZURE_RESOURCE_GROUP', 'ResourceGroup'), @('SANTA_VM_NAME', 'VmName'), @('SANTA_VM_RESOURCE_ID', 'VmId'), @('SANTA_VM_INSTANCE_ID', 'VmInstanceId'))) {
         if (-not $values.ContainsKey($pair[0]) -or $values[$pair[0]] -ine $target[$pair[1]]) { throw 'Authoritative provisioned VM outputs missing/mismatched.' }
     }
+    $subscription = [regex]::Escape($target.SubscriptionId); $group = [regex]::Escape($target.ResourceGroup)
+    if (-not $values.ContainsKey('SANTA_VM_DEPLOYMENT_ID') -or $values.SANTA_VM_DEPLOYMENT_ID -cnotmatch
+        "^/subscriptions/$subscription/(?:resourceGroups/$group/)?providers/Microsoft\.Resources/deployments/[A-Za-z0-9_.()-]{1,64}$") {
+        throw 'Selected canonical deployment output missing/mismatched; no installation submitted.'
+    }
     $shutdown = [DateTimeOffset]::UtcNow.AddHours(2).ToString('HHmm')
     $null = Invoke-PrivateAzure @('vm', 'auto-shutdown', '--subscription', $target.SubscriptionId, '--resource-group', $target.ResourceGroup, '--name', $target.VmName, '--time', $shutdown)
     $bundle = New-PrivateSourceBundle

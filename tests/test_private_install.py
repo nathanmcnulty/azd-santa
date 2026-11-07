@@ -29,6 +29,21 @@ def package():
 
 
 class Relay(unittest.TestCase):
+    def completed(self, root, digest):
+        directory = root / 'installers' / digest; directory.mkdir(parents=True)
+        active = dict(scope='private-azd-install-v1', bundle_sha256=digest, target={'EnvironmentName': 'synthetic'})
+        context = json.dumps(active).encode()
+        (root / 'private-azd-install.json').write_bytes(context)
+        (directory / 'context.json').write_bytes(context)
+        complete = dict(scope='private-azd-install-complete', bundle_sha256=digest,
+                        outputs={'EnvironmentName': 'synthetic'}, limitation='synthetic')
+        raw = json.dumps(complete).encode(); (directory / 'complete.json').write_bytes(raw)
+        proof = dict(scope='private-azd-install-terminal-success', context_sha256=hashlib.sha256(context).hexdigest(),
+                     bundle_sha256=digest, completion_sha256=hashlib.sha256(raw).hexdigest(), invocation='c' * 32,
+                     service_result='success', exit_code='exited', exit_status='0')
+        (directory / 'terminal-success.json').write_text(json.dumps(proof))
+        return directory
+
     def harness(self, root, external):
         def secure(path):
             self.assertTrue(path.is_relative_to(root)); self.assertFalse(path.is_symlink())
@@ -96,8 +111,87 @@ class Relay(unittest.TestCase):
                 with self.assertRaises(ValueError): relay.run(dict(mode='submit', bundle_sha256='b' * 64, target={}))
                 self.assertFalse(any(args[0] == 'systemd-run' for args in calls))
 
+    def test_completed_reboot_observes_durable_terminal_proof_without_resubmission(self):
+        from contextlib import ExitStack
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); digest = 'a' * 64; self.completed(root, digest); calls = []
+            def external(args):
+                calls.append(args)
+                return 'LoadState=not-found\n' if args[:2] == ['systemctl', 'show'] else 'active\n'
+            with ExitStack() as stack:
+                for guard in self.harness(root, external): stack.enter_context(guard)
+                value = relay.run(dict(mode='observe', bundle_sha256=digest))
+                self.assertEqual(value['state'], 'completed'); self.assertIsNotNone(value['completion'])
+                self.assertIn(['systemctl', 'is-active', 'azd-santa-runtime.service'], calls)
+                self.assertFalse(any(args[0] == 'systemd-run' for args in calls))
+
+    def test_missing_or_tampered_terminal_proof_never_accepts_completion_after_reboot(self):
+        from contextlib import ExitStack
+        for missing in (True, False):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder); digest = 'a' * 64; directory = self.completed(root, digest)
+                if missing: (directory / 'terminal-success.json').unlink()
+                else: (directory / 'complete.json').write_text('{}')
+                with ExitStack() as stack:
+                    for guard in self.harness(root, lambda args: 'LoadState=not-found\n'): stack.enter_context(guard)
+                    with self.assertRaises((ValueError, KeyError)): relay.run(dict(mode='observe', bundle_sha256=digest))
+
+    def test_failed_loaded_unit_overrides_even_valid_terminal_proof_and_completion(self):
+        from contextlib import ExitStack
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); digest = 'a' * 64; self.completed(root, digest)
+            def external(args): return 'LoadState=loaded\nActiveState=failed\nResult=exit-code\nExecMainStatus=1\nInvocationID=' + 'c' * 32 + '\n'
+            with ExitStack() as stack:
+                for guard in self.harness(root, external): stack.enter_context(guard)
+                with self.assertRaises(ValueError): relay.run(dict(mode='observe', bundle_sha256=digest))
+
+    def test_terminal_recorder_refuses_inferred_success_without_systemd_exit(self):
+        with patch.object(relay.os, 'geteuid', return_value=0, create=True), patch.dict(os.environ, {}, clear=True), patch.object(relay, 'exclusive') as write:
+            with self.assertRaises(ValueError): relay.record_terminal('/missing', 'a' * 64)
+            write.assert_not_called()
+
+    def test_terminal_recorder_binds_actual_exit_to_exclusive_context_and_completion(self):
+        from contextlib import ExitStack
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); manifest = b'original pinned public source manifest'
+            digest = hashlib.sha256(manifest).hexdigest(); directory = self.completed(root, digest)
+            (directory / 'bundle.json').write_bytes(manifest)
+            proof_path = directory / 'terminal-success.json'; proof_path.unlink()
+            context = directory / 'context.json'; context_sha = hashlib.sha256(context.read_bytes()).hexdigest()
+            with ExitStack() as stack:
+                for guard in self.harness(root, lambda args: self.fail('Recorder must not execute external commands')): stack.enter_context(guard)
+                stack.enter_context(patch.dict(os.environ, dict(SERVICE_RESULT='success', EXIT_CODE='exited', EXIT_STATUS='0', INVOCATION_ID='c' * 32)))
+                relay.record_terminal(str(context), context_sha)
+                proof = json.loads(proof_path.read_bytes())
+                self.assertEqual(proof['context_sha256'], context_sha)
+                self.assertEqual(proof['completion_sha256'], hashlib.sha256((directory / 'complete.json').read_bytes()).hexdigest())
+                with self.assertRaises(FileExistsError): relay.record_terminal(str(context), context_sha)
+
 
 class Installer(unittest.TestCase):
+    def test_override_canary_rejected_before_bootstrap_or_plugin_metadata_execution(self):
+        import io
+        from unittest.mock import MagicMock
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); canary = root / 'untrusted-compose'; canary.write_text('DO NOT EXECUTE')
+            sub = '11111111-1111-4111-8111-111111111111'
+            target = dict(TenantId='22222222-2222-4222-8222-222222222222', SubscriptionId=sub, EnvironmentName='synthetic',
+                ResourceGroup='rg-azd-santa-vm-synthetic', VmName='vm-santa-lab',
+                VmId='/subscriptions/' + sub + '/resourceGroups/rg-azd-santa-vm-synthetic/providers/Microsoft.Compute/virtualMachines/vm-santa-lab',
+                VmInstanceId='33333333-3333-4333-8333-333333333333')
+            metadata = dict(subscriptionId=sub, resourceId=target['VmId'], vmId=target['VmInstanceId'], tagsList=[
+                dict(name=key, value=value) for key, value in {'azd-solution': 'azd-santa', 'purpose': 'synthetic-vm-lab', 'azd-env-name': 'synthetic'}.items()])
+            response = MagicMock(); response.__enter__.return_value = io.BytesIO(json.dumps(metadata).encode())
+            opener = MagicMock(); opener.open.return_value = response
+            with patch.object(installer.os, 'geteuid', return_value=0, create=True), patch.object(installer.os, 'umask'), \
+                 patch.object(installer.platform, 'machine', return_value='x86_64'), patch.object(installer, 'ROOT', root), \
+                 patch.object(installer, 'verified', return_value=(dict(target=target), root)), \
+                 patch.object(installer, 'OVERRIDING_PLUGINS', (str(canary),)), \
+                 patch.object(installer.urllib.request, 'build_opener', return_value=opener), \
+                 patch.object(installer.subprocess, 'run') as external, patch.object(installer, 'write'):
+                with self.assertRaises(ValueError): installer.install('/synthetic/context', 'a' * 64)
+                external.assert_not_called()
+
     def test_wrong_immutable_vm_fails_before_package_or_data_operations(self):
         import io
         from unittest.mock import MagicMock

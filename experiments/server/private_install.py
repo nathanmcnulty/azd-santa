@@ -21,6 +21,9 @@ ROOT = Path('/var/lib/azd-santa-qualification')
 COMPOSE_VERSION = '2.40.3+ds1-0ubuntu1~24.04.1'
 DOCKER_VERSION = '29.1.3-0ubuntu3~24.04.2'
 COMPOSE_SHA = 'd87a11e944c990dc9f2186115b1136c1cbffffc870845caff0cbdcce0780f41d'
+OVERRIDING_PLUGINS = ('/usr/local/lib/docker/cli-plugins/docker-compose',
+    '/usr/local/libexec/docker/cli-plugins/docker-compose', '/usr/lib/docker/cli-plugins/docker-compose',
+    '/root/.docker/cli-plugins/docker-compose')
 
 
 def require(value):
@@ -70,6 +73,13 @@ def load(bundle, name):
     return module
 
 
+def reject_plugin_overrides():
+    # Must precede bootstrap: its diagnostics execute `docker compose version`.
+    for value in OVERRIDING_PLUGINS:
+        path = Path(value)
+        require(not path.exists() and not path.is_symlink())
+
+
 def install(context_path, digest):
     require(os.geteuid() == 0 and platform.machine() == 'x86_64')
     os.umask(0o077)
@@ -92,6 +102,8 @@ def install(context_path, digest):
     environment['DOCKER_BUILDKIT'] = '0'  # Actual qualified builder lane.
     environment['SANTA_COMPOSE_PACKAGE_VERSION'] = COMPOSE_VERSION
     environment['SANTA_DOCKER_PACKAGE_VERSION'] = DOCKER_VERSION
+    docker_config = evidence / 'docker-config'; docker_config.mkdir(mode=0o700)
+    environment['DOCKER_CONFIG'] = str(docker_config)  # No inherited extra plugin dirs.
     def run(label, args, timeout=120, cwd=None):
         nonlocal sequence
         sequence += 1
@@ -100,12 +112,12 @@ def install(context_path, digest):
         require(result.returncode == 0)
         return result.stdout
     try:
+        reject_plugin_overrides()
         run('docker-prerequisites', ['/bin/bash', str(bundle / 'bootstrap-host.sh')], 1000)
         plugin = Path('/usr/libexec/docker/cli-plugins/docker-compose')
         require(hashlib.sha256(plugin.read_bytes()).hexdigest() == COMPOSE_SHA)
         # Local/root plugins override the distro binary: reject hidden suppliers.
-        require(not Path('/usr/local/lib/docker/cli-plugins/docker-compose').exists()
-                and not Path('/root/.docker/cli-plugins/docker-compose').exists())
+        reject_plugin_overrides()
         require(run('compose-package', ['dpkg-query', '-W', '-f=${Version}', 'docker-compose-v2']).strip() == COMPOSE_VERSION)
         require(run('docker-package', ['dpkg-query', '-W', '-f=${Version}', 'docker.io']).strip() == DOCKER_VERSION)
         plugins = json.loads(run('plugin-supplier', ['docker', 'info', '--format', '{{json .ClientInfo.Plugins}}']))
