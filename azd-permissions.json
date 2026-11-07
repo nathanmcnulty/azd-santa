@@ -3,7 +3,7 @@
   "solutionId": "azd-santa",
   "status": "implemented",
   "coverage": "partial",
-  "reviewedOn": "2026-10-22",
+  "reviewedOn": "2026-11-06",
   "requirements": [
     {
       "resource": "Azure Resource Manager",
@@ -50,7 +50,7 @@
       "evidence": [
         {
           "path": "scripts/Invoke-SantaIntunePackage.ps1",
-          "sha256": "07fa1cf846279be1a1bcdde2a5071a6626d00a64245f09339fae1c73a5881089",
+          "sha256": "583a1e2df40eb616b44c401ee86648d9597154a322f601742718bf5cb3b25d6f",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntunePackage.ps1"
         }
       ]
@@ -69,7 +69,7 @@
       "evidence": [
         {
           "path": "scripts/Invoke-SantaIntunePackage.ps1",
-          "sha256": "07fa1cf846279be1a1bcdde2a5071a6626d00a64245f09339fae1c73a5881089",
+          "sha256": "583a1e2df40eb616b44c401ee86648d9597154a322f601742718bf5cb3b25d6f",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntunePackage.ps1"
         }
       ]
@@ -88,7 +88,7 @@
       "evidence": [
         {
           "path": "scripts/Invoke-SantaIntunePackage.ps1",
-          "sha256": "07fa1cf846279be1a1bcdde2a5071a6626d00a64245f09339fae1c73a5881089",
+          "sha256": "583a1e2df40eb616b44c401ee86648d9597154a322f601742718bf5cb3b25d6f",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntunePackage.ps1"
         }
       ]
@@ -107,7 +107,7 @@
       "evidence": [
         {
           "path": "scripts/Invoke-SantaIntunePackage.ps1",
-          "sha256": "07fa1cf846279be1a1bcdde2a5071a6626d00a64245f09339fae1c73a5881089",
+          "sha256": "583a1e2df40eb616b44c401ee86648d9597154a322f601742718bf5cb3b25d6f",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntunePackage.ps1"
         }
       ]
@@ -126,7 +126,7 @@
       "evidence": [
         {
           "path": "scripts/Invoke-SantaIntuneProfiles.ps1",
-          "sha256": "13c7bad5155aec57deba3dcbaaf0bfd24128da172272583685c4ca14c05883a8",
+          "sha256": "55c9ae9d977f4d14dc591c83fedd7ab0c0ff5f4fb10a4a0a4993b5128e10e326",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntuneProfiles.ps1"
         }
       ]
@@ -145,7 +145,7 @@
       "evidence": [
         {
           "path": "scripts/Invoke-SantaIntuneProfiles.ps1",
-          "sha256": "13c7bad5155aec57deba3dcbaaf0bfd24128da172272583685c4ca14c05883a8",
+          "sha256": "55c9ae9d977f4d14dc591c83fedd7ab0c0ff5f4fb10a4a0a4993b5128e10e326",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntuneProfiles.ps1"
         }
       ]
@@ -164,7 +164,7 @@
       "evidence": [
         {
           "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
-          "sha256": "f6a99ad9cb9ea90f31a1f04f6b52df515263a7f27cb6fa53db4a24193ea91282",
+          "sha256": "e9fd134196fb4a6d7e9afe17f2a571c52041d68cbc533c7d102c61bce26faded",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
         }
       ]
@@ -183,7 +183,7 @@
       "evidence": [
         {
           "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
-          "sha256": "f6a99ad9cb9ea90f31a1f04f6b52df515263a7f27cb6fa53db4a24193ea91282",
+          "sha256": "e9fd134196fb4a6d7e9afe17f2a571c52041d68cbc533c7d102c61bce26faded",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
         }
       ]
@@ -202,7 +202,7 @@
       "evidence": [
         {
           "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
-          "sha256": "f6a99ad9cb9ea90f31a1f04f6b52df515263a7f27cb6fa53db4a24193ea91282",
+          "sha256": "e9fd134196fb4a6d7e9afe17f2a571c52041d68cbc533c7d102c61bce26faded",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
         }
       ]
@@ -221,13 +221,14 @@
       "evidence": [
         {
           "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
-          "sha256": "f6a99ad9cb9ea90f31a1f04f6b52df515263a7f27cb6fa53db4a24193ea91282",
+          "sha256": "e9fd134196fb4a6d7e9afe17f2a571c52041d68cbc533c7d102c61bce26faded",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
         }
       ]
     }
   ],
   "gaps": [
+    "Evidence sha256 fields bind current repository file bytes, not historical documentationUrl content. Existing immutable documentationUrl values preserve the earlier source provenance and may refer to different bytes. The 2026-11-06 reconciliation found only the added PowerShell 7.6 requirement header in the three previously stale Graph scripts; their requested delegated scope sets are unchanged. Current hashes and explicit scope declarations do not prove effective tenant grants or permission sufficiency.",
     "Live sub-mvp inventory found an environment-added system-assigned VM identity and AzurePolicyforLinux extension absent from this template. Existing subscription policy appears responsible; a direct principal role lookup returned no entries, but full effective authority and policy ownership are not audited here. Preserve these environment-managed resources rather than removing them as drift.",
     "The optional VM lab inventories deployment and privileged Run Command operations but does not establish a least-privilege custom role. VM restart, deallocate/start and lab-group deletion need their corresponding ARM actions; no grants are created. No real sync server, device credential, operator API, telemetry backend or backup service is deployed.",
     "The optional local SQLite durability spike adds no cloud/API permission and is not a runtime storage selection. Production persistent state, restore anchors, revocation/deletion ledgers and their exact identities/data roles remain unqualified; synthetic fixture labels grant no publication authority.",
