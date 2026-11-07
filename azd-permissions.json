@@ -17,10 +17,10 @@
       "rationale": "Opt-in nested-template hook sets a cost guard, transports bounded pinned sources, submits one durable privileged fresh-install job and observes it before nonmutating finalization. No root Intune hook, network admission, tenant grant or operator reset is added; actual complete ARM/hook/cold-install delivery remains unqualified.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "0b17692e4fb37c2e23347e4045c83a23478c3c5aac1df881964deb99ac865c8d" },
+        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "bbb496d74467f9d9cb68e02128d99f8add76e9b273e77c318a9627fc0f6f89eb" },
         { "path": "experiments/vm/Install-PrivateBackend.ps1", "sha256": "33c620439f5abadef688f4a6f0477e80e4676986beac0cb6d43b975c092320d5" },
-        { "path": "experiments/server/private_install.py", "sha256": "91f773bc65f978f83239a523a49c9d3c9dec87be0622c5e815a9b3a0a25a06e6" },
-        { "path": "experiments/server/private_install_transport.py", "sha256": "1b4d6ae32a2a79013c471548a2e21df555aac9094228495a1a0e802eb7a88064" }
+        { "path": "experiments/server/private_install.py", "sha256": "f4740af537ab1d52ecc77274c160e8b0e317b4f9798eca8a130ff7a564a85019" },
+        { "path": "experiments/server/private_install_transport.py", "sha256": "f1aa3c63f114d3db944a3c51beb63c4c0b49d6b7db70ffdd69738081ab50b107" }
       ]
     },
     {

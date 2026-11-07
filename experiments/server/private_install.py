@@ -85,6 +85,18 @@ def reject_plugin_overrides():
                 and hashlib.sha256(COMPOSE_PLUGIN.read_bytes()).hexdigest() == COMPOSE_SHA)
 
 
+def activate_runtime(bundle, compose, work):
+    load(bundle, 'test_live_zentral')
+    runtime = load(bundle, 'runtime_service')
+    policies = {name: hashlib.sha256((bundle / file).read_bytes().replace(b'\r\n', b'\n')).hexdigest()
+                for name, file in {'policy': 'operator_mfa.py', 'recovery': 'operator_recovery.py',
+                                   'sealed': 'sealed_setup.py', 'admission': 'santa_admission.py'}.items()}
+    manifest = runtime.prepare(compose, work / 'runtime-service', policies)
+    digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    runtime.Runtime(manifest, digest).bind_admission_fresh()
+    runtime.install_unit(manifest, digest, enable_now=True)
+
+
 def install(context_path, digest):
     require(os.geteuid() == 0 and platform.machine() == 'x86_64')
     os.umask(0o077)
@@ -159,12 +171,7 @@ def install(context_path, digest):
         # The supervisor admits existing initialized containers; create the
         # three stopped application containers without starting their listener.
         run('create-app-containers', command + ['create', '--no-build', '--no-recreate', '--pull', 'never', 'web', 'workers', 'celery'])
-        load(bundle, 'test_live_zentral')
-        runtime = load(bundle, 'runtime_service')
-        policies = {name: hashlib.sha256((bundle / file).read_bytes().replace(b'\r\n', b'\n')).hexdigest()
-                    for name, file in {'policy': 'operator_mfa.py', 'recovery': 'operator_recovery.py', 'sealed': 'sealed_setup.py'}.items()}
-        manifest = runtime.prepare(compose, work / 'runtime-service', policies)
-        runtime.install_unit(manifest, hashlib.sha256(manifest.read_bytes()).hexdigest(), enable_now=True)
+        activate_runtime(bundle, compose, work)
         run('runtime-active', ['systemctl', 'is-active', 'azd-santa-runtime.service'])
         facts = {**context['target'], 'ImageId': image, 'ComposePath': str(compose),
                  'ComposeSha256': hashlib.sha256(compose.read_bytes()).hexdigest(), 'Origin': 'https://localhost:8000'}
