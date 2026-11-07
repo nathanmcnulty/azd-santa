@@ -1,9 +1,20 @@
 name: azd-santa-vm-lab
 metadata:
   template: azd-santa-vm-lab@0.1.0
-# Deliberately separate from root Intune hooks. This provisions a test host only.
+# Deliberately separate from root Intune hooks. Backend install is explicit opt-in.
 infra:
   provider: bicep
   path: infra
 requiredVersions:
   azd: ">= 1.23.0"
+hooks:
+  preprovision:
+    shell: pwsh
+    run: ./Install-PrivateBackend.ps1 -Phase preprovision
+    interactive: false
+    continueOnError: false
+  postprovision:
+    shell: pwsh
+    run: ./Install-PrivateBackend.ps1 -Phase postprovision
+    interactive: false
+    continueOnError: false

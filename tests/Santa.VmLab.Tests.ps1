@@ -6,7 +6,8 @@ Describe 'Optional synthetic VM lab boundaries' {
     }
     It 'keeps root deployment compute-free and the experiment free of Intune hooks' {
         Get-Content (Join-Path $root 'infra/main.bicep') -Raw | Should -Not -Match 'Microsoft.Compute/'
-        Get-Content (Join-Path $lab 'azure.yaml') -Raw | Should -Not -Match '(?m)^hooks:'
+        Get-Content (Join-Path $lab 'azure.yaml') -Raw | Should -Match 'Install-PrivateBackend.ps1 -Phase postprovision'
+        Get-Content (Join-Path $lab 'PrivateVmInstall.psm1') -Raw | Should -Match 'SANTA_PRIVATE_BACKEND_INSTALL'
         Get-Content (Join-Path $lab 'azure.yaml') -Raw | Should -Not -Match 'Post-Provision|New-SantaProfiles'
     }
     It 'declares deny-all ingress and explicit outbound rather than an SSH exception' {
