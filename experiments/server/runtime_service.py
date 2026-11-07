@@ -461,7 +461,8 @@ class Runtime:
         if Path('/proc/sys/vm/max_map_count').read_text().strip() != '1048576':
             raise ValueError('Qualified Elasticsearch kernel prerequisite missing')
         self.start_ids('dependencies', DEPENDENCIES)
-        self.wait('database', lambda: self.call('database', self.command + ['exec', '-T', 'db', 'pg_isready', '-U', 'zentral', '-d', 'zentral'], allowed_failure=True).returncode == 0)
+        database = self.rendered['services']['db']['environment']
+        self.wait('database', lambda: self.call('database', self.command + ['exec', '-T', 'db', 'pg_isready', '-U', database['POSTGRES_USER'], '-d', database['POSTGRES_DB']], allowed_failure=True).returncode == 0)
         code = 'from pathlib import Path; import hashlib; '
         for name, file in POLICIES.items():
             code += f"assert hashlib.sha256(Path('/zentral/server/{file}').read_bytes()).hexdigest()=={self.binding['policy_hashes'][name]!r}; "

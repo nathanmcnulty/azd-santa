@@ -210,6 +210,7 @@ class Lifecycle(unittest.TestCase):
 
     def test_security_admission_failure_prevents_worker_and_listener_start(self):
         runtime, _ = self.inspection_fixture()
+        runtime.rendered['services']['db']['environment'].update(POSTGRES_USER='selected-owner', POSTGRES_DB='selected-db')
         runtime.data['volumes'] = {'redis_data': {}}
         runtime.binding['policy_hashes'] = {n: 'a' * 64 for n in service.POLICIES}
         runtime.inspect = Mock(return_value={name: format(i + 1, '064x') for i, name in enumerate(runtime.data['services'])})
@@ -235,6 +236,8 @@ class Lifecycle(unittest.TestCase):
         self.assertLess(labels.index('close-admission'), labels.index('security-store'))
         self.assertNotIn('workers', labels)
         self.assertNotIn('listener', labels)
+        database_call = next(args for label, args in calls if label == 'database')
+        self.assertEqual(database_call[-5:], ['pg_isready', '-U', 'selected-owner', '-d', 'selected-db'])
         text = repr(calls)
         self.assertNotIn(' fresh', text)
         self.assertNotIn('migrate', text)
