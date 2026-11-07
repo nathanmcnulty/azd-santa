@@ -55,14 +55,15 @@ A separate bootstrap/migration owner and restricted runtime role require an
 explicit initialization and ownership/grant design, an entrypoint transition,
 and real PostgreSQL migration/runtime validation. The isolated request harnesses
 also create and drop test databases; their administrative authority must stay
-separate from the production runtime role. The core candidate now implements
-that split offline; it still needs the listed real database acceptance. Renaming the current role or
+separate from the production runtime role. The fresh core candidate now has
+[selected private SQL/application qualification](database-role-separation.md#actual-private-qualification-2026-11-06).
+Renaming the current role or
 merely placing its password in another file would not prove this separation.
 
-Separate database roles, credential rotation of existing volumes and
-restart/restore behavior after such a role change remain unqualified. Earlier
-shared-environment receipts are not evidence for this layout; its later fresh
-startup and actual-container acceptance follow below.
+Fresh role separation and its selected reboot behavior passed independently.
+Credential rotation of existing volumes, upgrades and restoration after a role
+change remain unqualified. Earlier shared-environment receipts are not evidence
+for the new layout; the historical secret-split acceptance follows below.
 
 ## Actual fresh-stack acceptance, 2026-11-06
 
