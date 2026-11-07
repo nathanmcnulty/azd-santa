@@ -189,12 +189,14 @@ class AdmissionTests(unittest.TestCase):
         with patch.object(admission, '_eval', side_effect=RuntimeError('held permit')):
             with self.assertRaises(RuntimeError): admission.check(require_empty=True)
 
-    def test_reconcile_is_never_called_by_middleware_or_normal_startup(self):
+    def test_middleware_never_recovers_and_startup_uses_only_proven_locked_step(self):
         text=(ROOT/'experiments/server/runtime_service.py').read_text()
-        start=text[text.index('    def start(self):'):text.index('    def reconcile_admission(')]
-        self.assertNotIn('reconcile(',start); self.assertIn("'sync-admission'",start)
-        self.assertNotIn('reconcile(',admission.Admission.__call__.__code__.co_names)
-
+        start=text[text.index('    def start(self):'):text.index('    @staticmethod\n    def _admission_json')]
+        self.assertIn('self._recover_admission_locked()',start)
+        self.assertLess(start.index("'close-admission'"),start.index('self._recover_admission_locked()'))
+        self.assertLess(start.index('self._recover_admission_locked()'),start.index("'sync-admission'"))
+        self.assertNotIn('initialize_missing=True',start)
+        self.assertNotIn('reconcile',admission.Admission.__call__.__code__.co_names)
 
     def test_explicit_reconcile_refuses_live_missing_or_replaced_app_processes(self):
         import tempfile
@@ -203,9 +205,9 @@ class AdmissionTests(unittest.TestCase):
             for change in ('running','paused','restarting','pid','replacement','missing'):
                 runtime=lifecycle.Runtime.__new__(lifecycle.Runtime)
                 runtime.manifest_path=root/'manifest.json'; runtime.digest='a'*64; runtime.evidence=root
-                runtime.binding={'policy_hashes':{'admission':'b'*64}}
+                runtime.binding={'policy_hashes':{'admission':'b'*64}};runtime.stopping=False;runtime.supervisor_lock_fd=None
                 ids={name:str(i)*64 for i,name in enumerate(lifecycle.APPS,1)}
-                rows=[{'Id':cid,'State':{'Running':False,'Paused':False,'Restarting':False,'Pid':0}} for cid in ids.values()]
+                rows=[{'Id':cid,'State':{'Status':'exited','Running':False,'Paused':False,'Restarting':False,'Pid':0}} for cid in ids.values()]
                 if change=='replacement': rows[0]['Id']='f'*64
                 elif change=='missing': rows.pop()
                 else: rows[0]['State'][{'running':'Running','paused':'Paused','restarting':'Restarting','pid':'Pid'}[change]]=77 if change=='pid' else True
@@ -215,26 +217,19 @@ class AdmissionTests(unittest.TestCase):
                 fcntl=ModuleType('fcntl'); fcntl.LOCK_EX=1; fcntl.LOCK_NB=2; fcntl.flock=Mock()
                 with patch.dict(sys.modules,{'fcntl':fcntl}),patch.object(lifecycle,'load_manifest') as load:
                     with self.assertRaises(ValueError):runtime.reconcile_admission()
-                runtime.python.assert_not_called(); load.assert_not_called()
+                runtime.python.assert_not_called()
                 self.assertEqual(runtime.call.call_args.args[1][-3:],list(ids.values()))
 
-    def test_explicit_quiesced_reconcile_is_source_bound_and_records_exact_ids(self):
+    def test_explicit_wrapper_reuses_fenced_implementation_under_one_lock(self):
         import tempfile
         with tempfile.TemporaryDirectory() as folder:
-            root=Path(folder); runtime=lifecycle.Runtime.__new__(lifecycle.Runtime)
-            runtime.manifest_path=root/'manifest.json'; runtime.digest='a'*64; runtime.evidence=root
-            runtime.binding={'policy_hashes':{'admission':'b'*64}}
-            ids={name:str(i)*64 for i,name in enumerate(lifecycle.APPS,1)}
-            rows=[{'Id':cid,'State':{'Running':False,'Paused':False,'Restarting':False,'Pid':0}} for cid in ids.values()]
-            runtime.container_generation=Mock(return_value={'generation':'c'*32})
-            runtime.inspect=Mock(return_value=ids); runtime.call=Mock(return_value=SimpleNamespace(stdout=json.dumps(rows)))
-            runtime.python=Mock()
-            fcntl=ModuleType('fcntl'); fcntl.LOCK_EX=1; fcntl.LOCK_NB=2; fcntl.flock=Mock()
-            with patch.dict(sys.modules,{'fcntl':fcntl}),patch.object(lifecycle,'load_manifest'):
-                runtime.reconcile_admission(initialize_missing=True)
-            code=runtime.python.call_args.args[1]
-            self.assertIn('b'*64,code);self.assertIn('initialize_missing=True',code)
-            self.assertEqual(json.loads((root/'admission-reconciled.json').read_text())['app_ids'],list(ids.values()))
+            root=Path(folder);runtime=lifecycle.Runtime.__new__(lifecycle.Runtime)
+            runtime.manifest_path=root/'manifest.json';runtime.supervisor_lock_fd=None
+            runtime._recover_admission_locked=Mock(side_effect=lambda **kw:self.assertIsNotNone(runtime.supervisor_lock_fd))
+            fcntl=ModuleType('fcntl');fcntl.LOCK_EX=1;fcntl.LOCK_NB=2;fcntl.flock=Mock()
+            with patch.dict(sys.modules,{'fcntl':fcntl}):runtime.reconcile_admission(initialize_missing=True)
+            fcntl.flock.assert_called_once();runtime._recover_admission_locked.assert_called_once_with(initialize_missing=True)
+            self.assertIsNone(runtime.supervisor_lock_fd)
 
 
 if __name__=='__main__':unittest.main()

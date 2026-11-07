@@ -33,16 +33,51 @@ DEPENDENCIES = ('db', 'redis', 'rabbitmq', 'elastic')
 POLICIES = {'policy': 'azd_santa_operator.py',
             'recovery': 'azd_santa_operator_recovery.py',
             'sealed': 'azd_santa_sealed_setup.py', 'admission': 'azd_santa_admission.py'}
-HELPERS = ('test_live_zentral.py', 'prepare_zentral_eval.py')
+HELPERS = ('test_live_zentral.py', 'prepare_zentral_eval.py', 'cold_backup.py', 'native_snapshot.py', 'worker_lifecycle.py')
+WORKER_HASHES = {'azd_santa_worker_lifecycle.py': 'e86d20287324eca25ef24c4c405e7d923feafb2d2760c1f22b799f0a02d0a50f',
+                 'base/management/commands/runworkers.py': 'be379c804120c5a0dd3620bab14adbd5f8a0b89f51ed43ee2284d6eb1f0d9515'}
 _HELPER = None
 VOLUMES = {'db': ['postgres_data:/var/lib/postgresql'],
            'redis': ['redis_data:/data'], 'rabbitmq': ['rabbitmq_data:/var/lib/rabbitmq'],
-           'elastic': ['elasticsearch_data:/usr/share/elasticsearch/data'],
+           'elastic': ['elasticsearch_data:/usr/share/elasticsearch/data', 'elasticsearch_snapshots:/mnt/azd-santa-snapshots'],
            **{name: ['./conf:/zentral-eval-conf:ro', 'media_data:/var/zentral'] for name in APPS}}
 
 
 class Cancelled(RuntimeError):
     pass
+
+
+_ADMISSION_KEY = object()
+
+
+class _AdmissionQuiescence:
+    """Process-local authorization under the already-held controller flock."""
+    def __init__(self, runtime, selected, generation, key):
+        if key is not _ADMISSION_KEY or runtime.supervisor_lock_fd is None:
+            raise ValueError('Admission recovery requires the current controller lock')
+        self.runtime=runtime;self.selected=dict(selected);self.generation=generation
+        self.fd=runtime.supervisor_lock_fd;self.pid=os.getpid();self.key=key
+
+    def verify(self):
+        runtime=self.runtime;runtime.ensure_running()
+        if (self.key is not _ADMISSION_KEY or self.pid!=os.getpid()
+                or getattr(runtime,'_admission_capability',None) is not self
+                or runtime.supervisor_lock_fd!=self.fd):
+            raise ValueError('Expired admission quiescence capability')
+        info=os.fstat(self.fd);path=(runtime.manifest_path.parent/'supervisor.lock').stat()
+        if (info.st_dev,info.st_ino)!=(path.st_dev,path.st_ino):
+            raise ValueError('Admission controller lock changed')
+        load_manifest(runtime.manifest_path,runtime.digest)
+        if runtime.inspect(running=False,record=False)!=self.selected or runtime.container_generation(self.selected)!=self.generation:
+            raise ValueError('Original admission generation changed')
+        ids=[self.selected[name] for name in APPS]
+        rows=json.loads(runtime.call('admission-quiescence',DOCKER+['inspect',*ids],record=False).stdout)
+        if (len(rows)!=3 or {r['Id'] for r in rows}!=set(ids) or any(
+                r['State'].get('Status') not in ('created','exited') or r['State'].get('Running') is not False
+                or r['State'].get('Paused') is not False or r['State'].get('Restarting') is not False
+                or type(r['State'].get('Pid')) is not int or r['State']['Pid']!=0 for r in rows)):
+            raise ValueError('All exact old app processes must already be stopped')
+        return rows
 
 
 def sha(raw):
@@ -85,6 +120,8 @@ def trusted_sources():
     controller = checked_path(Path(__file__).absolute())
     for name in HELPERS:
         checked_path(controller.with_name(name))
+    if sha(controller.with_name('worker_lifecycle.py').read_bytes()) != WORKER_HASHES['azd_santa_worker_lifecycle.py']:
+        raise ValueError('Reviewed worker lifecycle helper changed')
     return controller
 
 
@@ -160,9 +197,11 @@ def check_redis_data(root):
 def bundle(compose):
     path, digest = compose_helper().validate_compose(checked_path(compose, private=True))
     data = json.loads(path.read_text())
-    if (data['volumes'] != {name: {} for name in ('postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data')} or
+    if (data['volumes'] != {name: {} for name in ('postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data', 'elasticsearch_snapshots')} or
             any(sorted(data['services'][name].get('volumes', [])) != sorted(expected) for name, expected in VOLUMES.items())):
         raise ValueError('Exact per-service persistent data/configuration mounts required')
+    if data['services']['elastic'].get('environment', {}).get('path.repo') != '/mnt/azd-santa-snapshots':
+        raise ValueError('Fixed native snapshot repository required')
     if data['services']['rabbitmq'].get('hostname') != 'rabbitmq':
         raise ValueError('Pinned broker node identity required')
     if any(s.get('restart') != 'no' for s in data['services'].values()):
@@ -194,7 +233,7 @@ def prepare(compose, destination, policy_hashes):
             destination.parent != path.parent or destination.name != 'runtime-service'):
         raise ValueError('Service control directory must be local to its selected runtime')
     manifest = dict(scope='private-initialized-runtime-service-v1', compose=str(path),
-                    project=data['name'], files=files, policy_hashes=policy_hashes,
+                    project=data['name'], files=files, policy_hashes=policy_hashes, worker_hashes=WORKER_HASHES,
                     source_commit=COMMIT, controller_sha256=sha(Path(__file__).read_bytes()),
                     helpers_sha256={name: sha(Path(__file__).with_name(name).read_bytes()) for name in HELPERS})
     if destination.exists() or destination.is_symlink():
@@ -214,13 +253,15 @@ def load_manifest(path, expected):
     if not re.fullmatch(r'[a-f0-9]{64}', expected) or sha(raw) != expected:
         raise ValueError('Selected service manifest changed')
     manifest = json.loads(raw)
-    keys = {'scope', 'compose', 'project', 'files', 'policy_hashes', 'source_commit', 'controller_sha256', 'helpers_sha256'}
+    keys = {'scope', 'compose', 'project', 'files', 'policy_hashes', 'source_commit', 'controller_sha256', 'helpers_sha256', 'worker_hashes'}
     if set(manifest) != keys or manifest['scope'] != 'private-initialized-runtime-service-v1' or manifest['source_commit'] != COMMIT:
         raise ValueError('Unrecognized runtime service manifest')
     if manifest['controller_sha256'] != sha(Path(__file__).read_bytes()):
         raise ValueError('Selected runtime controller changed')
     if manifest['helpers_sha256'] != {name: sha(Path(__file__).with_name(name).read_bytes()) for name in HELPERS}:
         raise ValueError('Selected runtime validation helpers changed')
+    if manifest['worker_hashes'] != WORKER_HASHES:
+        raise ValueError('Selected worker lifecycle source changed')
     compose, data, files = bundle(manifest['compose'])
     if files != manifest['files'] or data['name'] != manifest['project'] or path.parent != compose.parent / 'runtime-service':
         raise ValueError('Selected runtime/configuration changed')
@@ -244,7 +285,7 @@ Requires=docker.service
 PartOf=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
-StartLimitIntervalSec=600
+StartLimitIntervalSec=1800
 StartLimitBurst=3
 
 [Service]
@@ -254,7 +295,7 @@ ExecStart=/usr/bin/python3 -I {script} run --manifest {manifest} --sha256 {diges
 Restart=on-failure
 RestartSec=30
 TimeoutStartSec=420
-TimeoutStopSec=360
+TimeoutStopSec=3600
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
@@ -307,6 +348,17 @@ class Runtime:
         self.stopping = False
         self.phase = 'prepared'
         self.helpers = set()
+        self.supervisor_lock_fd = None
+        self.backup_ready = False
+        self._admission_capability = None
+
+    def backup_module(self):
+        path = trusted_sources().with_name('cold_backup.py')
+        if sha(path.read_bytes()) != self.binding['helpers_sha256']['cold_backup.py']:
+            raise ValueError('Bound backup source changed')
+        module = types.ModuleType('runtime_backup'); module.__file__ = str(path)
+        exec(compile(path.read_bytes(), str(path), 'exec'), module.__dict__)
+        return module
 
     def ensure_running(self):
         if self.stopping:
@@ -428,8 +480,8 @@ class Runtime:
         finally:
             self.stop_helpers()
 
-    def python(self, label, code):
-        return self.oneoff(label, ['server/manage.py', 'shell', '--no-imports', '-c', code])
+    def python(self, label, code, timeout=60):
+        return self.oneoff(label, ['server/manage.py', 'shell', '--no-imports', '-c', code],timeout=timeout)
 
     def backing_data(self):
         # Check real entrypoint data sentinels before starting dependencies.
@@ -514,6 +566,9 @@ class Runtime:
 
     def start(self):
         self.ensure_running()
+        request = self.manifest_path.parent / 'backup-request.json'
+        if request.exists() or request.is_symlink():
+            self.backup_module().startup_allowed(self)
         selected = self.inspect(running=False)
         generation = self.container_generation(selected)
         self.cleanup_ids = tuple(generation['container_ids'].values())
@@ -529,10 +584,13 @@ class Runtime:
         code = 'from pathlib import Path; import hashlib; '
         for name, file in POLICIES.items():
             code += f"assert hashlib.sha256(Path('/zentral/server/{file}').read_bytes()).hexdigest()=={self.binding['policy_hashes'][name]!r}; "
+        for file, digest in WORKER_HASHES.items():
+            code += f"assert hashlib.sha256(Path('/zentral/server/{file}').read_bytes()).hexdigest()=={digest!r}; "
         code += "from django.db import connection; from django.db.migrations.executor import MigrationExecutor; e=MigrationExecutor(connection); assert not e.migration_plan(e.loader.graph.leaf_nodes()); "
         code += "from zentral.core.stores.models import Store; assert Store.objects.count()==1; s=Store.objects.get(provisioning_uid='elasticsearch'); assert s.backend=='ELASTICSEARCH' and s.admin_console"
         self.python('source-schema-store', code)
         self.oneoff('security-store', ['server/manage.py', 'operator_security_store', 'check'])
+        self._recover_admission_locked()
         self.python('sync-admission', 'from azd_santa_admission import check; check(require_empty=True)')
         self.ensure_running()
         self.python('search', "import json,time,urllib.request; o=urllib.request.build_opener(urllib.request.ProxyHandler({})); deadline=time.monotonic()+45\nwhile True:\n try:\n  r=json.load(o.open('http://elastic:9200/_cluster/health',timeout=3)); assert r['status'] in ('yellow','green'); break\n except Exception:\n  if time.monotonic()>deadline: raise RuntimeError('Search not ready') from None\n  time.sleep(2)")
@@ -559,29 +617,116 @@ class Runtime:
         self.ensure_running()
         print('SANTA_PRIVATE_RUNTIME_READY', flush=True)
 
+    @staticmethod
+    def _admission_json(result):
+        prefix='SANTA_ADMISSION_JSON:'
+        lines=[line[len(prefix):] for line in result.stdout.splitlines() if line.startswith(prefix)]
+        if len(lines)!=1 or len(lines[0])>4096:
+            raise ValueError('Admission recovery readback is incomplete')
+        return json.loads(lines[0])
+
+    def _admission_call(self,label,statement,timeout=15):
+        code='from pathlib import Path;import hashlib,json; '
+        code+=f"assert hashlib.sha256(Path('/zentral/server/azd_santa_admission.py').read_bytes()).hexdigest()=={self.binding['policy_hashes']['admission']!r}; "
+        code+='from azd_santa_admission import state,reconcile; '+statement
+        return self._admission_json(self.python(label,code,timeout=timeout))
+
+    def _runtime_database_quiet(self,timeout):
+        # Same-role activity is visible without pg_monitor or owner credentials.
+        # Never cancel/terminate another backend or assume dead Python cancelled SQL.
+        code='''import json
+from django.db import connection
+from azd_santa_database_roles import check_runtime
+check_runtime()
+with connection.cursor() as cursor:
+ cursor.execute('SELECT pg_backend_pid(),current_user,current_database()')
+ pid,role,database=cursor.fetchone()
+ assert type(pid) is int and pid>0 and role=='zentral_runtime' and database
+ cursor.execute('SELECT pid,usename,datname,state,backend_start FROM pg_stat_activity WHERE pid=pg_backend_pid()')
+ own=cursor.fetchall()
+ assert len(own)==1 and own[0][:4]==(pid,role,database,'active') and own[0][4] is not None
+ cursor.execute('SELECT pid,state,backend_start FROM pg_stat_activity WHERE usename=current_user AND datname=current_database() AND pid<>pg_backend_pid()')
+ other=cursor.fetchall()
+ assert all(type(row[0]) is int and row[0]>0 and row[1] is not None and row[2] is not None for row in other)
+print('SANTA_ADMISSION_JSON:'+json.dumps({'quiet':not other}))
+'''
+        result=self._admission_json(self.python('admission-database-quiescence',code,timeout=timeout))
+        if set(result)!={'quiet'} or type(result['quiet']) is not bool:
+            raise ValueError('Runtime database visibility is unknown')
+        return result['quiet']
+
+    def _recover_admission_locked(self,*,initialize_missing=False):
+        """Automatic existing-state recovery; caller already owns supervisor flock."""
+        if type(initialize_missing) is not bool:
+            raise ValueError('Explicit admission recovery mode required')
+        selected=self.inspect(running=False);generation=self.container_generation(selected)
+        cap=_AdmissionQuiescence(self,selected,generation,_ADMISSION_KEY)
+        self._admission_capability=cap
+        try:
+            rows=cap.verify()
+            deadline=time.monotonic()+60
+            while True:
+                cap.verify()
+                if time.monotonic()>=deadline:raise TimeoutError('Runtime database did not quiesce')
+                if self._runtime_database_quiet(timeout=min(15,max(1,deadline-time.monotonic()))):
+                    if time.monotonic()>=deadline:raise TimeoutError('Runtime database quiescence deadline exceeded')
+                    break
+                if time.monotonic()>=deadline:raise TimeoutError('Runtime database did not quiesce')
+                time.sleep(min(2,max(0,deadline-time.monotonic())))
+            cap.verify()
+            before=self._admission_call('admission-state',f"print('SANTA_ADMISSION_JSON:'+json.dumps(state(allow_missing={initialize_missing!r})))")
+            if (set(before)!={'generation','active'} or type(before['active']) is not int or not 0<=before['active']<=1
+                    or (before['generation'] is None and not initialize_missing)
+                    or (before['generation'] is not None and not re.fullmatch(r'[a-f0-9]{32}',before['generation']))):
+                raise ValueError('Invalid admission recovery state')
+            if initialize_missing and before['generation'] is not None:
+                raise ValueError('Existing admission state is not a missing-state migration')
+            target=secrets.token_hex(16)
+            if target==before['generation']:raise ValueError('A fresh admission recovery fence is required')
+            intent=dict(scope='private-quiesced-admission-recovery-v1',manifest_sha256=self.digest,
+                generation=generation['generation'],container_ids=selected,app_states=rows,
+                expected_generation=before['generation'],target_generation=target,initialize_missing=initialize_missing,
+                runtime_database_no_other_sessions=True)
+            private_write(self.evidence/'admission-recovery-intent.json',intent);sync_directory(self.evidence)
+            cap.verify()
+            unknown=False
+            try:
+                self._admission_call('admission-recovery-submit',
+                    f"print('SANTA_ADMISSION_JSON:'+json.dumps(reconcile(expected_generation={before['generation']!r},generation={target!r},initialize_missing={initialize_missing!r})))")
+            except Exception:
+                self.ensure_running();unknown=True  # Never submit a second EVAL.
+            deadline=time.monotonic()+30
+            while True:
+                cap.verify()
+                # Read-only confirmation of this exact transition; a timed-out
+                # old job cannot clear a later generation or its live permit.
+                after=self._admission_call('admission-recovery-observe',"print('SANTA_ADMISSION_JSON:'+json.dumps(state()))",
+                                           timeout=min(15,max(1,deadline-time.monotonic())))
+                if (set(after)!={'generation','active'} or type(after['active']) is not int or not 0<=after['active']<=1
+                        or after['generation'] not in (before['generation'],target) or time.monotonic()>=deadline
+                        or (after['generation']==target and after['active']!=0)):
+                    raise ValueError('Admission recovery outcome requires inspection')
+                if after=={'generation':target,'active':0}:break
+                time.sleep(min(2,max(0,deadline-time.monotonic())))
+            cap.verify()
+            private_write(self.evidence/'admission-reconciled.json',dict(
+                scope='proven-quiesced-sync-admission',app_ids=[selected[name] for name in APPS],
+                initialize_missing=initialize_missing,manifest_sha256=self.digest,generation=generation['generation'],
+                admission_generation=target,submission_was_unknown=unknown))
+            sync_directory(self.evidence)
+        finally:self._admission_capability=None
+
     def reconcile_admission(self, *, initialize_missing=False):
-        """Explicit host action, NEVER implicit startup or time-based cleanup."""
+        """Explicit wrapper uses the same fenced recovery, with one lock only."""
         import fcntl
-        with (self.manifest_path.parent / 'supervisor.lock').open('a') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            selected = self.inspect(running=False)
-            generation = self.container_generation(selected)
-            ids = [selected[name] for name in APPS]
-            rows = json.loads(self.call('admission-quiescence', DOCKER + ['inspect', *ids]).stdout)
-            if (len(rows) != len(ids) or {r['Id'] for r in rows} != set(ids) or
-                    any(r['State'].get('Running') is not False or r['State'].get('Paused') is not False
-                        or r['State'].get('Restarting') is not False or r['State'].get('Pid') != 0 for r in rows)):
-                raise ValueError('All exact old app processes must already be stopped')
-            # Recheck immutable configuration after establishing actual quiescence.
-            load_manifest(self.manifest_path, self.digest)
-            code = 'from pathlib import Path; import hashlib; '
-            code += f"assert hashlib.sha256(Path('/zentral/server/azd_santa_admission.py').read_bytes()).hexdigest()=={self.binding['policy_hashes']['admission']!r}; "
-            code += f'from azd_santa_admission import reconcile; reconcile(initialize_missing={initialize_missing!r})'
-            self.python('explicit-admission-reconcile', code)
-            private_write(self.evidence / 'admission-reconciled.json', dict(
-                scope='explicit-quiesced-sync-admission', app_ids=ids,
-                initialize_missing=initialize_missing, manifest_sha256=self.digest,
-                generation=generation['generation']))
+        with (self.manifest_path.parent/'supervisor.lock').open('a') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            previous=getattr(self,'supervisor_lock_fd',None);self.supervisor_lock_fd=lock.fileno()
+            try:
+                request=self.manifest_path.parent/'backup-request.json'
+                if request.exists() or request.is_symlink():self.backup_module().startup_allowed(self)
+                self._recover_admission_locked(initialize_missing=initialize_missing)
+            finally:self.supervisor_lock_fd=previous
 
     def stop_helpers(self):
         for name in list(self.helpers):
@@ -605,11 +750,17 @@ class Runtime:
             self.helpers.remove(name)
 
     def stop(self):
+        captured = False
         try:
             self.stop_helpers()
+            if (getattr(self, 'stopping', False) and getattr(self, 'backup_ready', False)
+                    and getattr(self, 'supervisor_lock_fd', None) is not None):
+                request = self.manifest_path.parent / 'backup-request.json'
+                if request.exists() or request.is_symlink():
+                    captured = self.backup_module().stop_capture(self)
         finally:
             authorized = getattr(self, 'cleanup_ids', ())
-            if authorized:
+            if authorized and not captured:
                 current = self.call('cleanup-selection', DOCKER + ['ps', '--all', '--quiet', '--no-trunc'], allow_stopping=True).stdout.split()
                 selected = [cid for cid in authorized if cid in current]
                 if selected:
@@ -619,12 +770,14 @@ class Runtime:
         import fcntl
         with (self.manifest_path.parent / 'supervisor.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.supervisor_lock_fd = lock.fileno()
             def stopping(*_):
                 self.stopping = True
             signal.signal(signal.SIGTERM, stopping)
             signal.signal(signal.SIGINT, stopping)
             try:
                 self.start()
+                self.backup_ready = True
                 self.ensure_running()
                 address = os.environ.get('NOTIFY_SOCKET')
                 if address:
@@ -642,7 +795,8 @@ class Runtime:
                               error_type=type(error).__name__, detail=str(error)))
                 raise
             finally:
-                self.stop()
+                try: self.stop()
+                finally: self.supervisor_lock_fd = None
 
 
 def main():
@@ -653,7 +807,7 @@ def main():
     prepare_parser.add_argument('--destination', required=True)
     for name in POLICIES:
         prepare_parser.add_argument('--' + name + '-sha256', required=True)
-    for name in ('run', 'unit', 'install', 'admission-reconcile', 'admission-bind-fresh'):
+    for name in ('run', 'unit', 'install', 'admission-reconcile', 'admission-bind-fresh', 'backup', 'backup-resume'):
         command = commands.add_parser(name)
         command.add_argument('--manifest', required=True)
         command.add_argument('--sha256', required=True)
@@ -661,6 +815,12 @@ def main():
             command.add_argument('--initialize-missing', action='store_true')
         if name == 'install':
             command.add_argument('--enable-now', action='store_true')
+        if name == 'backup':
+            for field in ('vm-id', 'vm-instance-id', 'recipient-public-der', 'destination'):
+                command.add_argument('--' + field, required=True)
+            command.add_argument('--seconds', type=int, default=1800)
+            command.add_argument('--maximum-bytes', type=int, default=8*1024**3)
+            command.add_argument('--maximum-files', type=int, default=100000)
     args = parser.parse_args()
     if sys.platform != 'linux' or os.geteuid() != 0:
         raise RuntimeError('Privileged Linux runtime management required')
@@ -676,6 +836,17 @@ def main():
         print(Runtime(args.manifest, args.sha256).bind_admission_fresh())
     elif args.operation == 'admission-reconcile':
         Runtime(args.manifest, args.sha256).reconcile_admission(initialize_missing=args.initialize_missing)
+    elif args.operation in ('backup', 'backup-resume'):
+        runtime = Runtime(args.manifest, args.sha256)
+        backup = runtime.backup_module()
+        if args.operation == 'backup':
+            recipient = checked_path(args.recipient_public_der)
+            if recipient.stat().st_size > 1024: raise ValueError('Bounded public recipient required')
+            public = recipient.read_bytes()
+            backup.request_backup(runtime, {'VmId': args.vm_id, 'VmInstanceId': args.vm_instance_id}, public,
+                                  args.destination, seconds=args.seconds, maximum=args.maximum_bytes, maximum_files=args.maximum_files)
+        else:
+            backup.resume_original(runtime)
     else:
         Runtime(args.manifest, args.sha256).supervise()
 

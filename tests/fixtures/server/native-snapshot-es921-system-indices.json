@@ -1,0 +1,57 @@
+{
+  "inventory": [
+    {
+      "index": ".geoip_databases",
+      "status": "open",
+      "pri": "1"
+    },
+    {
+      "index": "santa-events",
+      "status": "open",
+      "pri": "1"
+    }
+  ],
+  "snapshot_response": {
+    "snapshots": [
+      {
+        "snapshot": "backup_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "uuid": "DDDDDDDDDDDDDDDDDDDDDD",
+        "repository": "azd_santa_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "version_id": 9039001,
+        "version": "9.2.0-9.2.1",
+        "indices": [
+          ".geoip_databases",
+          "santa-events"
+        ],
+        "data_streams": [],
+        "include_global_state": true,
+        "metadata": {
+          "azd_santa_binding_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "azd_santa_plan_sha256": "10bb0cf21d6e87a1f8c2d17bd27dbc1ca7754016bb41fc1b706009898eb6ad2f"
+        },
+        "state": "SUCCESS",
+        "start_time": "2026-11-07T00:00:00.000Z",
+        "start_time_in_millis": 1794009600000,
+        "end_time": "2026-11-07T00:00:01.000Z",
+        "end_time_in_millis": 1794009601000,
+        "duration_in_millis": 1000,
+        "failures": [],
+        "shards": {
+          "total": 2,
+          "failed": 0,
+          "successful": 2
+        },
+        "feature_states": [
+          {
+            "feature_name": "geoip",
+            "indices": [
+              ".geoip_databases"
+            ]
+          }
+        ]
+      }
+    ],
+    "total": 1,
+    "remaining": 0
+  }
+}

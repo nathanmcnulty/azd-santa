@@ -85,6 +85,14 @@ def reject_plugin_overrides():
                 and hashlib.sha256(COMPOSE_PLUGIN.read_bytes()).hexdigest() == COMPOSE_SHA)
 
 
+def load_stage(bundle):
+    # Isolated Python does not search the uploaded bundle directory. Register
+    # each verified dependency before stage() imports its worker hash contract.
+    for name in ('prepare_zentral_eval', 'prepare_database_roles', 'runtime_service'):
+        load(bundle, name)
+    return load(bundle, 'stage_runtime')
+
+
 def activate_runtime(bundle, compose, work):
     load(bundle, 'test_live_zentral')
     runtime = load(bundle, 'runtime_service')
@@ -160,8 +168,7 @@ def install(context_path, digest):
         for name, ref in locks.items():
             require(re.fullmatch('[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}', ref))
             run('pull-' + name, ['docker', '--host', 'unix:///var/run/docker.sock', 'pull', ref], 360)
-        load(bundle, 'prepare_zentral_eval'); load(bundle, 'prepare_database_roles')
-        stage = load(bundle, 'stage_runtime')
+        stage = load_stage(bundle)
         stage.stage(source, bundle / 'dependency-images.lock.json', work, image)
         compose = work / 'compose.json'; data = json.loads(compose.read_text())
         command = ['docker', '--host', 'unix:///var/run/docker.sock', 'compose', '--project-name', data['name'], '-f', str(compose)]

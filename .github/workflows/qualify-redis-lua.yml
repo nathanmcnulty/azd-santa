@@ -1,0 +1,54 @@
+name: Qualify disposable Redis Lua
+
+on:
+  pull_request:
+    paths: &qualification_paths
+      - '.github/workflows/qualify-redis-lua.yml'
+      - 'scripts/ci/qualify_redis.py'
+      - 'experiments/server/test_admission_redis_live.py'
+      - 'experiments/server/santa_admission.py'
+      - 'experiments/server/operator_mfa.py'
+      - 'experiments/server/dependency-images.lock.json'
+      - 'tests/test_admission_redis_harness.py'
+      - 'tests/test_redis_ci.py'
+      - 'tests/Santa.RedisCi.Tests.ps1'
+  push:
+    branches: [main]
+    paths: *qualification_paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-redis-lua:
+    name: Disposable Redis Lua (optional)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Qualify one disposable bounded Redis container
+        shell: bash
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+          ARTIFACT_FILE: ${{ runner.temp }}/santa-redis-lua-receipt.json
+        run: |
+          set -euo pipefail
+          set -o noclobber
+          umask 077
+          sudo --non-interactive env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+            /usr/bin/python3 -I "$GITHUB_WORKSPACE/scripts/ci/qualify_redis.py" \
+            --source-root "$GITHUB_WORKSPACE" --source-commit "$SOURCE_COMMIT" > "$ARTIFACT_FILE"
+
+      - name: Publish only the whitelisted nonsecret success receipt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: success()
+        with:
+          name: santa-disposable-redis-lua-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/santa-redis-lua-receipt.json
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 3

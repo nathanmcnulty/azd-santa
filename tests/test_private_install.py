@@ -169,6 +169,34 @@ class Relay(unittest.TestCase):
 
 
 class Installer(unittest.TestCase):
+    def test_real_stage_dependencies_load_under_isolated_python(self):
+        import sys
+        program = '''
+import importlib.util, pathlib, sys
+bundle=pathlib.Path(sys.argv[1]).resolve()
+assert sys.flags.isolated and str(bundle) not in sys.path
+spec=importlib.util.spec_from_file_location('isolated_installer',bundle/'private_install.py')
+installer=importlib.util.module_from_spec(spec);spec.loader.exec_module(installer)
+stage=installer.load_stage(bundle)
+assert pathlib.Path(stage.__file__).parent==bundle
+namespace={};exec('from runtime_service import WORKER_HASHES',namespace)
+assert set(namespace['WORKER_HASHES'])=={'azd_santa_worker_lifecycle.py','base/management/commands/runworkers.py'}
+assert all(pathlib.Path(sys.modules[name].__file__).parent==bundle for name in ('prepare_zentral_eval','prepare_database_roles','runtime_service','stage_runtime'))
+'''
+        result = subprocess.run([sys.executable, '-I', '-c', program, str(ROOT / 'experiments/server')],
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_bundle_covers_runtime_helpers_and_matches_powershell_relay_inventory(self):
+        import re
+        spec = importlib.util.spec_from_file_location('installer_runtime_inventory', ROOT / 'experiments/server/runtime_service.py')
+        runtime = importlib.util.module_from_spec(spec); spec.loader.exec_module(runtime)
+        self.assertTrue(set(runtime.HELPERS) <= relay.FILES)
+        self.assertIn('prepare_worker_lifecycle.py', relay.FILES)
+        script = (ROOT / 'experiments/vm/PrivateVmInstall.psm1').read_text()
+        literal = re.search(r'\$files = @\((.*?)\)', script, re.S).group(1)
+        self.assertEqual(set(re.findall(r"'([^']+)'", literal)), relay.FILES)
+
     def test_activation_binds_fresh_generation_before_install_and_stops_on_binding_failure(self):
         from unittest.mock import MagicMock
         with tempfile.TemporaryDirectory() as folder:

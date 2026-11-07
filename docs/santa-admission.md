@@ -41,8 +41,11 @@ memory amplification. Existing operator username-budget cardinality is unchanged
 Privileged `operator_security_store fresh` initializes the marker and admission
 hash atomically only for an empty authority database. Existing marker/store
 initialization does not silently create admission state. Normal runtime startup
-requires valid empty admission state before opening its listener, and never
-initializes or clears it. Held slots block startup until explicit reconciliation.
+still requires valid empty admission state before opening its listener. It now
+recovers valid abandoned permits automatically only after proving original-process
+and downstream database quiescence under the existing supervisor lock. Missing or
+corrupt state is never initialized or repaired automatically. This source candidate
+needs separate actual Redis and killed-handler/reboot qualification.
 
 For a deliberately stopped, selected runtime, the explicit host command is:
 
@@ -50,18 +53,62 @@ For a deliberately stopped, selected runtime, the explicit host command is:
 python3 -I runtime_service.py admission-reconcile --manifest <exact manifest> --sha256 <exact SHA>
 ```
 
-The optional `--initialize-missing` is for deliberate quiesced feature migration,
-not corrupt-state repair or backup restoration. The host acquires the existing
-supervisor lock, verifies the exact bound old app container IDs all have
-Running/Paused/Restarting false and PID zero, revalidates its manifest and actual
-helper bytes, then launches a job touching only this admission hash. A mismatched,
-missing/replaced or live old process prevents the job. Valid-slot reconciliation
-changes its generation and removes only fixed permit fields; it preserves rate
-budgets. Corrupt state stays closed. This action never stops processes on behalf
-of a caller, never starts the listener, and is never called by worker boot or
-normal supervisor startup. Explicit receipts retain selected app IDs and manifest
-hash. ACA parity requires equivalent termination proof; TTL reclamation is not a
-substitute.
+The optional `--initialize-missing` remains a deliberate quiesced feature
+migration, not corrupt-state repair or backup restoration. It rejects an existing
+hash. The ordinary explicit command and automatic startup use the same fenced
+recovery implementation. The explicit wrapper acquires the supervisor flock once;
+startup calls a private under-lock method without acquiring a second flock.
+
+Before recovery, the controller verifies the persisted exact seven-container
+anchor, current manifest/source/configuration and a process-local capability
+bound to this supervisor PID and its existing lock descriptor/inode. All three
+original apps must have Status created/exited, Running/Paused/Restarting false,
+and a typed PID zero. App exit zero is not required: process death is sufficient
+for this capacity proof, distinct from clean backup shutdown. Identity/source
+or PID drift on reinspection blocks recovery. Pending/unknown backup maintenance
+remains the first startup gate, before any app selection or reclamation.
+
+Dead Python does not prove a dispatched SQL query ended. A bounded read-only
+probe using the normal restricted runtime role verifies its own PostgreSQL
+identity/visibility, excludes only its current backend PID, and waits up to 60
+seconds for zero other same-role/current-database sessions, including idle ones.
+It never cancels or terminates another backend. PostgreSQL documents
+[same-role session visibility](https://www.postgresql.org/docs/18/monitoring-stats.html#MONITORING-STATS-VIEWS);
+the actual selected-role probe still verifies visibility rather than assuming it.
+Unknown visibility/authority or
+a remaining session fails closed before permit mutation; no pg_monitor, owner
+credential or new grant is required.
+
+The controller reads only a valid existing Redis marker/configuration, persistent
+hash and valid global counter, then fsyncs one private attempt intent containing
+expected/target admission generations and original identities. Production Lua
+atomically compares the expected fence, removes only fixed permit fields and
+installs one fresh fence. It advances even an empty hash, preventing a delayed
+older job from clearing newly admitted work. Re-observation of the same target
+is a strict no-op, including when that generation already has a live permit;
+an unrelated generation conflicts without writes. Global/source/credential
+counters and TTLs, security-store identity, MFA replay claims, credentials and
+application data are unchanged. Valid saturated counters still impose 429s.
+
+A timed-out submission is observed read-only for its exact target, never submitted
+again in that attempt. Admission remains closed until valid empty target-state
+readback and repeated process/identity proof succeed. A later bounded systemd
+attempt re-proves quiescence and uses a new fence; old queued recovery mutations
+then conflict or no-op. This does not replay initialization, HTTP requests, data
+jobs or credential changes. Private intent/completion evidence is retained; a
+serialized boolean or elapsed timeout is not a quiescence capability.
+
+The unit's 1,800-second start-limit interval covers three 420-second startup
+attempts plus the unchanged 30-second restart gaps; Burst remains three. This
+corrects the earlier 600-second window, which could let slow failures escape the
+burst limit. The policy is bounded recovery, not a guarantee against host/kernel
+failure. Actual systemd exhaustion/reboot faults remain separate qualification.
+
+Automatic recovery assumes cooperating lifecycle operations honor this same
+lock and original generation. It does not fence an arbitrary privileged Docker
+writer, adopt replacement containers, restore old Redis authority or provide ACA
+parity. Those need their own termination/continuity proof; TTL reclamation is
+not a substitute.
 
 Direct private mode ignores untrusted forwarding/certificate headers and derives
 source identity from REMOTE_ADDR. Proxy mode requires an explicit bounded peer
@@ -80,13 +127,18 @@ those bytes and live admission state. The finalizer's strict readiness schema ad
 `sync_admission` without changing the eleven nonsecret installation output facts.
 Source/schema changes require new receipts rather than acceptance of older ones.
 
-Integration with the separately owned private installer must add
-`santa_admission.py` to BOTH source FILES lists and add
-`'admission': 'santa_admission.py'` to its runtime policy-hash map. Do not deploy the
-old fixed source inventory with the new compiler.
+The private installer includes `santa_admission.py` in both source inventories
+and binds its actual bytes in the runtime policy-hash map. New source needs a
+fresh reviewed image/manifest and installation; old contexts are not upgraded or
+rebound automatically.
 
-Offline tests use a deliberate Python store double; they do not execute Lua or
-prove Redis semantics. Remaining actual gates include concurrent global-first
+Offline recovery tests exercise production script selection/arguments, strict
+readback and an explicit Python CAS transport double; they do not execute Lua or
+prove Redis semantics. The earlier selected 27-observation Redis receipt applies
+to admission source `937ef10433eeb3bf901aaf5b87aaddf37b73b9c4c135a927cb6f9f5e1a0c5235`,
+not this new fence. Its harness pins/expectations require coordinated adaptation
+and new actual Redis execution before accepting these operations. Remaining
+actual gates include concurrent global-first
 key cardinality, invalid and valid credential overload, retained capacity while
 work outlives a proxy deadline, worker death/reconciliation, Redis outage/corrupt
 state/AOF behavior and worst-case memory/broker backlog. Existing 89 decoder

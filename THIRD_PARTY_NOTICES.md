@@ -45,6 +45,10 @@ snapshot used as a hash-bound replacement anchor. Its modified output retains
 upstream terms and adds a modification notice. The separately installed decoder
 and its integration tooling are original Unlicense code; decoder and resulting
 view hashes are recorded in the image build notice.
+The optional worker-lifecycle compiler also derives the pinned Apache/core
+`server/base/management/commands/runworkers.py`, preserving its upstream license
+and adding a modification notice. `worker_lifecycle.py` is original Unlicense
+code. Composition and native shutdown qualification remain separate gates.
 
 Zentral's [licensing scheme](https://github.com/zentralopensource/zentral/blob/88e67b3ce49033aab028029937a6e14f7c489073/LICENSE)
 separately covers `ee/` and explicitly marked files with evaluation terms. Those

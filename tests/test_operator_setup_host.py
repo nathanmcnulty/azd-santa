@@ -128,7 +128,7 @@ class RuntimeGuards(unittest.TestCase):
         services = {}
         names = ('web', 'workers', 'celery', 'db', 'redis', 'rabbitmq', 'elastic')
         volumes = dict(db=['postgres_data:/var/lib/postgresql'], redis=['redis_data:/data'],
-            rabbitmq=['rabbitmq_data:/var/lib/rabbitmq'], elastic=['elasticsearch_data:/usr/share/elasticsearch/data'])
+            rabbitmq=['rabbitmq_data:/var/lib/rabbitmq'], elastic=['elasticsearch_data:/usr/share/elasticsearch/data','elasticsearch_snapshots:/mnt/azd-santa-snapshots'])
         ids, infos, images = {}, {}, {}
         for index, name in enumerate(names):
             app = name in ('web', 'workers', 'celery')
@@ -140,6 +140,7 @@ class RuntimeGuards(unittest.TestCase):
                 declaration['env_file'] = ['./' + envfile]
             if name == 'web': declaration['ports'] = ['127.0.0.1:8000:8000']
             if name == 'redis': declaration['command'] = host.REDIS
+            if name == 'elastic': declaration['environment'] = {'path.repo':'/mnt/azd-santa-snapshots'}
             services[name] = declaration
             ids[name] = str(index + 1) * 64
             mounts = []
@@ -149,6 +150,7 @@ class RuntimeGuards(unittest.TestCase):
                     Source=str(Path(directory) / 'conf') if source == './conf' else 'unused',
                     Name=project + '_' + source, RW=not mode))
             env = ['PATH=/synthetic'] + ([] if name in ('redis', 'elastic') else [key + '=' + item for key, item in environments[envfile].items()])
+            if name == 'elastic': env.append('path.repo=/mnt/azd-santa-snapshots')
             infos[ids[name]] = dict(Config={'Image': image, 'Env': env, 'Labels': {'com.docker.compose.project': project,
                 'com.docker.compose.service': name, 'org.opencontainers.image.revision': b['SourceCommit']}},
                 State={'Running': True}, Image=image_id, Mounts=mounts,

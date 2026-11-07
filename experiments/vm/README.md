@@ -3,9 +3,13 @@
 Optional **private backend installation and host qualification**. Root
 `azure.yaml` remains Intune-only; this nested project runs no root hooks,
 publishes no profiles/rules, installs no Mac package and enrolls no devices.
-The new azd hooks are source/offline tested; their complete ARM/hook/cold-install
-path has not yet been qualified live. Private TLS/native-client/customer MFA
-acceptance remains pending. The backend listener is loopback-only.
+The selected cold invocation provisioned the VM and completed guest installation,
+but failed client finalization. A later unchanged-source azd rerun, standalone
+provision and original-container reboot checks passed. First-attempt cold
+end-to-end acceptance remains open; see [installation results](../../docs/private-vm-installation.md).
+New admission/worker/snapshot candidates need their own image and live tests.
+Trusted reachable TLS, native-client and customer MFA acceptance remain pending.
+The backend listener is loopback-only.
 The user selected VM-first testing followed by a Container Apps comparison.
 
 ## Host and boundaries
@@ -127,13 +131,12 @@ Do not run root `azd down` or delete the existing Intune anchor group.
 
 ## Remaining gates
 
-This is a host acceptance scaffold stacked on the offline durability spike.
-It does not ship a production server, admin UI, enrollment service, certificate
-authority or device-auth ingress. The maintained-server versus custom-backend
-decision and real-Mac Monitor qualification remain in #37/#33. Resolve these
-before exposing a service or changing SyncBaseURL. A second Container Apps
-experiment must use equivalent tests and explicit durable storage; never expose
-the local model as a production server to make the comparison look complete.
+The synthetic host scaffold and private community-server installation have
+separate evidence. The current maintained-server candidate is pinned Zentral
+core; trusted browser/TLS, native Mac Monitor sync, new-image admission and
+backup/restore remain unqualified. See the [current backend status](../../docs/backend-status.md).
+The Container Apps deployment must use equivalent application tests and explicit
+durable storage; synthetic host results cannot substitute for that comparison.
 
 Follow-ups: [server qualification #45](https://github.com/nathanmcnulty/azd-santa/issues/45),
 [Container Apps comparison #46](https://github.com/nathanmcnulty/azd-santa/issues/46).
