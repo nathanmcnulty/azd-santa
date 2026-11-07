@@ -148,9 +148,11 @@ class RuntimeGuards(unittest.TestCase):
             env = ['PATH=/synthetic'] + ([] if name in ('redis', 'elastic') else [key + '=synthetic' for key in host.ENV_KEYS[envfile]])
             infos[ids[name]] = dict(Config={'Image': image, 'Env': env, 'Labels': {'com.docker.compose.project': project,
                 'com.docker.compose.service': name, 'org.opencontainers.image.revision': b['SourceCommit']}},
-                State={'Running': True}, Image=image_id, Mounts=mounts, HostConfig={'Privileged': False},
-                NetworkSettings={'Networks': {project + '_default': {'NetworkID': 'f' * 64}}})
-            images[image] = dict(Id=image_id, Config={'Labels': {'io.azd-santa.variant': 'core-experiment'}})
+                State={'Running': True}, Image=image_id, Mounts=mounts,
+                HostConfig={'Privileged': False, 'PortBindings': {'8000/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '8000'}]} if name == 'web' else {}},
+                NetworkSettings={'Networks': {project + '_default': {'NetworkID': 'f' * 64}},
+                    'Ports': {'8000/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '8000'}]} if name == 'web' else {'5432/tcp': None}})
+            images[image] = dict(Id=image_id, Config={'Labels': {'io.azd-santa.variant': 'core-experiment'}, 'ExposedPorts': {'5432/tcp': {}}})
         data = dict(name=project, services=services, volumes={name: {} for name in host.VOLUMES})
         compose.write_bytes(host.encoded(data)); (Path(directory) / 'conf').mkdir(); (Path(directory) / 'conf/base.json').write_text('{}')
         for filename, keys in host.ENV_KEYS.items():
@@ -186,6 +188,29 @@ class RuntimeGuards(unittest.TestCase):
                 compose = Path(value['context']['binding']['ComposePath']); compose.write_bytes(host.encoded(data))
                 value['context']['binding']['ComposeSha256'] = host.sha(compose.read_bytes())
                 with self.assertRaises(ValueError): host.attest_runtime(value)
+
+    def test_actual_published_ports_reject_wildcard_ipv6_extra_and_dependency_publication(self):
+        def info(bindings, observed=None, publish_all=False):
+            return {'HostConfig': {'PortBindings': bindings, 'PublishAllPorts': publish_all},
+                    'NetworkSettings': {'Ports': bindings if observed is None else observed}}
+        correct = {'8000/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '8000'}]}
+        host.actual_ports(info(correct, dict(correct, **{'9000/tcp': None})), 'web', {'9000/tcp'})
+        host.actual_ports(info({}, {'5432/tcp': None}), 'db', {'5432/tcp'})
+        with self.assertRaises(ValueError): host.actual_ports(info(correct, dict(correct, **{'9000/tcp': None})), 'web')
+        for binding in (
+            {'8000/tcp': [{'HostIp': '0.0.0.0', 'HostPort': '8000'}]},
+            {'8000/tcp': [{'HostIp': '::', 'HostPort': '8000'}]},
+            {'8000/tcp': correct['8000/tcp'] + [{'HostIp': '::1', 'HostPort': '8000'}]},
+            dict(correct, **{'9000/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '9000'}]}),
+            {'8000/tcp': []}, {},
+        ):
+            with self.subTest(binding=binding):
+                with self.assertRaises(ValueError): host.actual_ports(info(binding, correct), 'web')
+                with self.assertRaises(ValueError): host.actual_ports(info(correct, binding), 'web')
+        for service in ('db', 'redis', 'rabbitmq', 'elastic', 'workers', 'celery'):
+            with self.subTest(service=service), self.assertRaises(ValueError):
+                host.actual_ports(info(correct), service)
+        with self.assertRaises(ValueError): host.actual_ports(info(correct, publish_all=True), 'web')
 
 
 class MutationCheckpoint(unittest.TestCase):

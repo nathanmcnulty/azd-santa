@@ -53,7 +53,11 @@ Before mutation it validates the canonical request, exact target/key fingerprint
 root-owned non-link private Compose and runtime-env files under
 `/var/lib/azd-santa-qualification`, exact Compose bytes and private project-local
 volumes. All seven actual containers must match declared images, project, service,
-running state, private mounts and one actual project network. Application image
+running state, private mounts and one actual project network.
+Actual Docker configured and observed port bindings must publish exactly web
+8000/tcp on 127.0.0.1:8000, with no other publication or publish-all setting.
+Null unbound entries are allowed only for ports exposed by the pinned image.
+Application image
 labels and deployed source version must match the expected commit. Inside the
 exact selected web container it verifies actual recovery/sealer file hashes,
 DEBUG disabled, database/security-cache host bindings, configured HTTPS origin,

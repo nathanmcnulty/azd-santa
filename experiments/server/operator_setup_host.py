@@ -155,6 +155,20 @@ def docker(arguments, *, timeout=30, input=None):
     return result.stdout
 
 
+def actual_ports(info, service, exposed=()):
+    expected = {'8000/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '8000'}]} if service == 'web' else {}
+    need(not info['HostConfig'].get('PublishAllPorts'))
+    # Exposed but unpublished image ports appear as null in NetworkSettings.
+    # Ignore only those null entries; empty/extra/list-valued mappings are not
+    # equivalent to the one explicitly allowed loopback publication.
+    declared = info['HostConfig'].get('PortBindings') or {}
+    observed = info['NetworkSettings'].get('Ports') or {}
+    need(type(declared) is dict and type(observed) is dict)
+    need(all(k in exposed for mapping in (declared, observed) for k, v in mapping.items() if v is None))
+    need({k: v for k, v in declared.items() if v is not None} == expected)
+    need({k: v for k, v in observed.items() if v is not None} == expected)
+
+
 def attest_runtime(request):
     b = request['context']['binding']
     compose = private_path(b['ComposePath'])
@@ -203,6 +217,7 @@ def attest_runtime(request):
         need(info['Image'] == image_info['Id'])
         need(not info['HostConfig']['Privileged'] and not info['HostConfig'].get('CapAdd')
              and set(info['NetworkSettings']['Networks']) == {project + '_default'})
+        actual_ports(info, service, image_info['Config'].get('ExposedPorts') or {})
         network = info['NetworkSettings']['Networks'][project + '_default']['NetworkID']
         need(re.fullmatch('[a-f0-9]{64}', network)); networks.add(network)
         actual_mounts = info['Mounts']
