@@ -162,8 +162,8 @@ function New-SantaOperatorDeploymentBinding {
     } finally { if ($document) { $document.Dispose() } }
 }
 
-function ConvertFrom-SantaSetupRunCommandResult {
-    param([object]$Result, [string]$Context, [string]$RecipientDigest, [string]$TargetDigest, [string]$Mode)
+function Read-SantaRunCommandPayload {
+    param([object]$Result, [string]$Context, [string]$Marker, [string]$DoneMarker, [int]$MaximumBytes)
     if ($Context -cnotmatch '^[a-f0-9]{64}$' -or -not $Result.value -or @($Result.value).Count -gt 4) { throw 'Incomplete terminal Run Command result.' }
     foreach ($entry in $Result.value) {
         if ($entry.code -cnotmatch '/succeeded$' -or $entry.level -eq 'Error') { throw 'Run Command did not report terminal success.' }
@@ -171,12 +171,18 @@ function ConvertFrom-SantaSetupRunCommandResult {
     $message = @($Result.value | ForEach-Object { $_.message }) -join "`n"
     if ($message.Length -gt 16384) { throw 'Unexpected Run Command output bound.' }
     $lines = $message -split '\r?\n'
-    $envelopes = @($lines | Where-Object { $_.StartsWith('SANTA_SEALED_SETUP_JSON:', [StringComparison]::Ordinal) })
-    $done = @($lines | Where-Object { $_ -cmatch '^SANTA_SETUP_TRANSPORT_DONE:' })
-    if ($envelopes.Count -ne 1 -or $done.Count -ne 1 -or $done[0] -cne "SANTA_SETUP_TRANSPORT_DONE:$Context") { throw 'Complete unique sealed transport markers absent; inspect outcome without retry.' }
-    $envelope = $envelopes[0].Substring('SANTA_SEALED_SETUP_JSON:'.Length)
-    if ([Text.Encoding]::UTF8.GetByteCount($envelope) -gt 2600 -or
+    $envelopes = @($lines | Where-Object { $_.StartsWith($Marker, [StringComparison]::Ordinal) })
+    $done = @($lines | Where-Object { $_.StartsWith($DoneMarker, [StringComparison]::Ordinal) })
+    if ($envelopes.Count -ne 1 -or $done.Count -ne 1 -or $done[0] -cne ($DoneMarker + $Context)) { throw 'Complete unique transport markers absent; inspect outcome without retry.' }
+    $envelope = $envelopes[0].Substring($Marker.Length)
+    if ([Text.Encoding]::UTF8.GetByteCount($envelope) -gt $MaximumBytes -or
         [Array]::IndexOf($lines, $done[0]) -le [Array]::IndexOf($lines, $envelopes[0])) { throw 'Truncated or out-of-order sealed result.' }
+    $envelope
+}
+
+function ConvertFrom-SantaSetupRunCommandResult {
+    param([object]$Result, [string]$Context, [string]$RecipientDigest, [string]$TargetDigest, [string]$Mode)
+    $envelope = Read-SantaRunCommandPayload $Result $Context 'SANTA_SEALED_SETUP_JSON:' 'SANTA_SETUP_TRANSPORT_DONE:' 2600
     # Reject cleartext/fake marker payloads before returning even an opaque
     # object. Decryption/AAD/expiry/origin checks remain the recipient's gate.
     $document = $null
@@ -205,6 +211,116 @@ function ConvertFrom-SantaSetupRunCommandResult {
     } catch { throw 'Run Command did not return a bounded opaque sealed envelope.' }
     finally { if ($document) { $document.Dispose() } }
     $envelope
+}
+
+function New-SantaInstallationProgram {
+    param([string]$DeploymentId)
+    $attestor = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'operator_setup_host.py'))
+    $producer = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'installation_readback.py'))
+    if ($attestor.Length -gt 24576 -or $producer.Length -gt 8192) { throw 'Pinned installation source exceeded its bound.' }
+    $attestorHash = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData($attestor))
+    $producerHash = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData($producer))
+    $memory = [IO.MemoryStream]::new()
+    try {
+        $zip = [IO.Compression.GZipStream]::new($memory, [IO.Compression.CompressionLevel]::Optimal, $true)
+        try { $zip.Write($attestor) } finally { $zip.Dispose() }
+        $compressed = [Convert]::ToBase64String($memory.ToArray())
+    } finally { $memory.Dispose() }
+    $deployment = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($DeploymentId))
+    $program = "import base64,gzip,hashlib,types`n" + [Text.UTF8Encoding]::new($false, $true).GetString($producer) + @"
+
+try:
+    source=gzip.decompress(base64.b64decode('$compressed',validate=True))
+    if len(source)>24576 or hashlib.sha256(source).hexdigest()!='$attestorHash': raise ValueError('Pinned host source changed')
+    host=types.ModuleType('azd_santa_installer_attestor')
+    exec(compile(source,'<pinned-installer-attestor>','exec'),host.__dict__)
+    produce_installation(host,base64.b64decode('$deployment',validate=True).decode('utf-8'),'$attestorHash','$producerHash')
+except BaseException:
+    raise SystemExit('Deployment is not ready: initialization readback failed; no setup action was submitted.') from None
+"@
+    if ([Text.Encoding]::UTF8.GetByteCount($program) -gt 24576 -or $program -match '(?m)^AZD_SANTA_INSTALL_PY\r?$') { throw 'Composite installation program exceeded its bound.' }
+    [pscustomobject]@{ Program = $program; Sha256 = Get-SantaTransportHash $program
+        AttestorSha256 = $attestorHash; ProducerSha256 = $producerHash }
+}
+
+function Complete-SantaBackendInstallation {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][hashtable]$InstallationOutputs,
+        [Parameter(Mandatory)][string]$DeploymentId,
+        [Parameter(Mandatory)][string]$InstallationReceiptPath,
+        [Parameter(Mandatory)][string]$OperatorBindingPath)
+    $request = $null; $temporary = $null; $document = $null
+    try {
+        Assert-SantaSetupBinding $InstallationOutputs
+        Assert-SantaPrivateDestination $InstallationReceiptPath
+        Assert-SantaPrivateDestination $OperatorBindingPath
+        if ([IO.Path]::GetFullPath($InstallationReceiptPath) -cne $InstallationReceiptPath -or
+            [IO.Path]::GetFullPath($OperatorBindingPath) -cne $OperatorBindingPath -or
+            [IO.Path]::GetDirectoryName($InstallationReceiptPath) -cne [IO.Path]::GetDirectoryName($OperatorBindingPath) -or
+            $InstallationReceiptPath -eq $OperatorBindingPath -or
+            [IO.Path]::GetFileName($InstallationReceiptPath) -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.json$') { throw 'Selected local environment paths required.' }
+        $sub = [regex]::Escape($InstallationOutputs.SubscriptionId); $group = [regex]::Escape($InstallationOutputs.ResourceGroup)
+        if ($DeploymentId -cnotmatch "^/subscriptions/$sub/(?:resourceGroups/$group/)?providers/Microsoft\.Resources/deployments/[A-Za-z0-9_.()-]{1,64}$") { throw 'Selected installation deployment mismatch.' }
+        $source = New-SantaInstallationProgram $DeploymentId
+        $binding = @{}; foreach ($key in $InstallationOutputs.Keys) { $binding[$key] = $InstallationOutputs[$key] }
+        $binding.SourceCommit = (Get-Content (Join-Path $PSScriptRoot 'zentral-source.lock.json') -Raw | ConvertFrom-Json).commit
+        foreach ($pair in @(@('RecoverySha256', 'operator_recovery.py'), @('SealedSha256', 'sealed_setup.py'))) {
+            $text = [IO.File]::ReadAllText((Join-Path $PSScriptRoot $pair[1]), [Text.UTF8Encoding]::new($false, $true)).Replace("`r`n", "`n")
+            $binding[$pair[0]] = Get-SantaTransportHash $text
+        }
+        $binding.RemoteProgramSha256 = $source.Sha256
+        # A structural crypto probe only: these fixed identifiers are never
+        # created as users and the producer never calls the setup mutation path.
+        $request = New-SantaSetupTransportRequest $binding bootstrap 'azd-installation-probe' 'azd-installation-probe@example.invalid' 'Read-only installation readiness'
+        if ($request.PayloadBase64.Length -gt 8192) { throw 'Installation request exceeded its bound.' }
+        Assert-SantaSetupPreparedRequest $request
+        Assert-SantaSetupAzureTarget $request
+        $script = "set -eu`nexport AZD_SANTA_SETUP_REQUEST_B64='$($request.PayloadBase64)'`npython3 -I - <<'AZD_SANTA_INSTALL_PY'`n" +
+            $source.Program + "`nAZD_SANTA_INSTALL_PY`nprintf '%s\n' 'SANTA_INSTALLATION_TRANSPORT_DONE:$($request.Context)'`n"
+        if ([Text.Encoding]::UTF8.GetByteCount($script) -gt 45056) { throw 'Installation transport exceeded 44KiB.' }
+        $temporary = Join-Path ([IO.Path]::GetTempPath()) ('santa-install-' + [guid]::NewGuid() + '.sh')
+        $stream = [IO.FileStream]::new($temporary, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        try { $stream.Write([Text.Encoding]::UTF8.GetBytes($script)) } finally { $stream.Dispose() }
+        $b = $request.Binding
+        $result = Invoke-SantaSetupAzJson @('vm', 'run-command', 'invoke', '--subscription', $b.SubscriptionId,
+            '--resource-group', $b.ResourceGroup, '--name', $b.VmName, '--command-id', 'RunShellScript', '--scripts', "@$temporary")
+        $payload = Read-SantaRunCommandPayload $result $request.Context 'SANTA_INSTALLATION_JSON:' 'SANTA_INSTALLATION_TRANSPORT_DONE:' 3200
+        $document = [Text.Json.JsonDocument]::Parse($payload); $root = $document.RootElement
+        Assert-SantaReceiptFields $root @('scope', 'context_sha256', 'attestor_sha256', 'producer_sha256', 'readiness', 'installation')
+        if ($root.GetProperty('scope').GetString() -cne 'azd-santa-installation-readback' -or
+            $root.GetProperty('context_sha256').GetString() -cne $request.Context -or
+            $root.GetProperty('attestor_sha256').GetString() -cne $source.AttestorSha256 -or
+            $root.GetProperty('producer_sha256').GetString() -cne $source.ProducerSha256) { throw 'Installation readback source/selection mismatch.' }
+        $ready = $root.GetProperty('readiness'); $gates = @('migrations', 'store', 'security_store', 'event_consumers', 'search')
+        Assert-SantaReceiptFields $ready $gates
+        foreach ($gate in $gates) { if (-not $ready.GetProperty($gate).GetBoolean()) { throw 'Runtime initialization is not complete.' } }
+        $receipt = $root.GetProperty('installation')
+        Assert-SantaReceiptFields $receipt @('schemaVersion', 'scope', 'state', 'deploymentId', 'outputs')
+        if ($receipt.GetProperty('schemaVersion').GetInt32() -ne 1 -or $receipt.GetProperty('scope').GetString() -cne 'azd-santa-backend-installation' -or
+            $receipt.GetProperty('state').GetString() -cne 'installed' -or $receipt.GetProperty('deploymentId').GetString() -cne $DeploymentId) { throw 'Selected installation receipt mismatch.' }
+        $outputs = $receipt.GetProperty('outputs'); Assert-SantaReceiptFields $outputs @($InstallationOutputs.Keys)
+        foreach ($key in $InstallationOutputs.Keys) { if ($outputs.GetProperty($key).GetString() -cne $InstallationOutputs[$key]) { throw 'Installed runtime differs from selected installer outputs.' } }
+        # Machine-produced bytes, pinned immediately before passing to the local
+        # consumer. No admin JSON construction or setup-mutation result is used.
+        $receiptBytes = [Text.Encoding]::UTF8.GetBytes($receipt.GetRawText())
+        $file = [IO.FileStream]::new($InstallationReceiptPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        try { $file.Write($receiptBytes); $file.Flush($true) } finally { $file.Dispose() }
+        $completed = New-SantaOperatorDeploymentBinding -InstallationReceiptPath $InstallationReceiptPath `
+            -ExpectedReceiptSha256 ([Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData($receiptBytes))) `
+            -TenantId $InstallationOutputs.TenantId -SubscriptionId $InstallationOutputs.SubscriptionId `
+            -EnvironmentName $InstallationOutputs.EnvironmentName -DeploymentId $DeploymentId -OutputPath $OperatorBindingPath
+        $completed | Add-Member -NotePropertyMembers @{
+            InitializationContextSha256 = $request.Context; AttestorSha256 = $source.AttestorSha256
+            ProducerSha256 = $source.ProducerSha256; ProgramSha256 = $source.Sha256
+            SourceCommit = $binding.SourceCommit; RecoverySha256 = $binding.RecoverySha256; SealedSha256 = $binding.SealedSha256
+            InitializationReadback = 'migrations-store-security-consumers-search'
+        } -PassThru
+    } catch { throw 'Deployment is not ready for operator setup: initialization/source/selection readback or local finalization failed. Preserve any local artifacts; no setup action was submitted.' }
+    finally {
+        if ($request) { $request.Recipient.Key.Dispose() }
+        if ($document) { $document.Dispose() }
+        if ($temporary -and [IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
+    }
 }
 
 function Write-SantaSetupCheckpoint {
@@ -282,4 +398,4 @@ function Send-SantaSetupRunCommand {
     finally { if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) } }
 }
 
-Export-ModuleMember -Function New-SantaSetupTransportRequest, Send-SantaSetupRunCommand, New-SantaOperatorDeploymentBinding
+Export-ModuleMember -Function New-SantaSetupTransportRequest, Send-SantaSetupRunCommand, New-SantaOperatorDeploymentBinding, Complete-SantaBackendInstallation
