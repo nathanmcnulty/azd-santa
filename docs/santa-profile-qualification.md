@@ -4,6 +4,10 @@ Developer qualification only. No product deployment, customer migration,
 automatic service transition or resource-saving claim is made here. The default
 upstream evaluation profile remains unchanged.
 
+Fresh core preparation now defaults to the qualified Santa-only profile. An
+explicit `--app-profile upstream` remains available for controlled comparisons;
+this generator never updates an existing runtime or database in place.
+
 The generator's `santa` app profile omits Jamf, Munki, osquery and Turbo while
 retaining the eight automatically enabled core/inventory/admin apps plus Santa.
 PostgreSQL, Redis, RabbitMQ, Elasticsearch, web, workers and Celery remain; real

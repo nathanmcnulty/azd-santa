@@ -132,7 +132,7 @@ class ZentralEvaluation(unittest.TestCase):
         self.prepare()
         self.assertNotEqual(first, self.read('compose.json')['name'])
 
-    def test_fresh_santa_profile_preserves_dependencies_and_telemetry(self):
+    def test_fresh_core_defaults_to_santa_preserving_dependencies_and_telemetry(self):
         path = self.source / 'conf/start/zentral/base.json'
         config = json.loads(path.read_text())
         for name in (*generator.OPTIONAL_APPS, 'realms', 'zentral.core.compliance_checks',
@@ -146,7 +146,7 @@ class ZentralEvaluation(unittest.TestCase):
         self.destination = self.root / 'santa-fresh'
         with patch.dict(generator.SOURCE_HASHES, self.hashes, clear=True):
             generator.prepare(self.source, self.image, self.lock, self.destination,
-                              'core-experiment', app_profile='santa')
+                              'core-experiment')
         expected = {name: value for name, value in baseline['apps'].items()
                     if name not in generator.OPTIONAL_APPS}
         self.assertEqual(self.read('conf/base.json')['apps'], expected)
@@ -162,8 +162,10 @@ class ZentralEvaluation(unittest.TestCase):
 
     def test_core_variant_is_declared_not_license_clearance(self):
         with patch.dict(generator.SOURCE_HASHES, self.hashes, clear=True):
-            generator.prepare(self.source, self.image, self.lock, self.destination, 'core-experiment')
+            generator.prepare(self.source, self.image, self.lock, self.destination,
+                              'core-experiment', app_profile='upstream')
         self.assertEqual(self.read('provenance.json')['declared_image_variant'], 'core-experiment')
+        self.assertEqual(self.read('provenance.json')['app_profile'], 'upstream')
         self.assertIn('verify actual image contents', (self.destination / 'EVALUATION-ONLY.txt').read_text())
         self.assertNotIn('image includes ee/', (self.destination / 'EVALUATION-ONLY.txt').read_text())
 

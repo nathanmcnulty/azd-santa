@@ -39,9 +39,11 @@ def json_text(value):
     return json.dumps(value, indent=2, sort_keys=True) + '\n'
 
 
-def prepare(source, image, lock, destination, variant='upstream-evaluation', *, app_profile='upstream'):
+def prepare(source, image, lock, destination, variant='upstream-evaluation', *, app_profile=None):
     if variant not in ('upstream-evaluation', 'core-experiment'):
         raise ValueError('Unknown evaluation image variant')
+    if app_profile is None:
+        app_profile = 'santa' if variant == 'core-experiment' else 'upstream'
     if app_profile not in ('upstream', 'santa'):
         raise ValueError('Unknown evaluation app profile')
     source = Path(source).resolve(strict=True)
@@ -174,8 +176,8 @@ def main():
     parser.add_argument('--lock', required=True)
     parser.add_argument('--destination', required=True)
     parser.add_argument('--variant', choices=('upstream-evaluation', 'core-experiment'), default='upstream-evaluation')
-    parser.add_argument('--app-profile', choices=('upstream', 'santa'), default='upstream',
-                        help='Fresh evaluation only; never migrate an existing app population')
+    parser.add_argument('--app-profile', choices=('upstream', 'santa'),
+                        help='Fresh only: defaults to Santa for core, upstream for upstream evaluation')
     args = parser.parse_args()
     with open(args.lock, encoding='utf-8') as stream:
         lock = json.load(stream)
