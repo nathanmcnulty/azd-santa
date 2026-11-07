@@ -15,7 +15,7 @@ INPUTS = {
 OUTPUTS = {
     'server/server/settings.py': '8569481c18962c007698dc4492c2ea402eb49ec2fb1d44249274866642fcfb68',
     'server/accounts/views/auth.py': 'c5b6d224a95c3c0ab89c12b24f1971d18af27548ea67461f3598721a14fc0c5c',
-    'server/accounts/forms.py': '768fa8e8537f8d77ef223334a60454afb538d4b040ad7d746258f7b05ea9ac2a',
+    'server/accounts/forms.py': 'ef4adc2ea64d7f92bb9b1683082baa4f946ab1d21867c5e0ac10496db192bc6a',
     'server/accounts/views/user.py': 'cdf2706180277a9eee695cf1a6aca561b2f941bec0dd7b7d690085590d19440c',
     'server/accounts/middleware.py': '0728dff4626a67bec29895bd1a1037e5c4f720f30c8ef436219be39a25c8885a',
     'server/accounts/api_authentication.py': '736bc55c85d5d836e8bd64f797dafd81c0993826528ba35d3cc6b6acc1e0fadc',
@@ -48,6 +48,8 @@ PATCHES = {
          '        complete_mfa(self.request, proof)\n'),
     ],
     'server/accounts/forms.py': [
+        ('        self.user = User.objects.get(pk=token_data["user_id"])',
+         '        self.user = User.objects.select_for_update().get(pk=token_data["user_id"])  # lock user before factor verification/recovery'),
         ('class AddTOTPForm(forms.Form):',
          'from azd_santa_operator import enrollment_seed, check_seed\n\n\nclass AddTOTPForm(forms.Form):'),
         ('        self.user = kwargs.pop("user")\n        super().__init__(*args, **kwargs)\n        if self.is_bound:\n            # verification code error',

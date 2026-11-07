@@ -52,11 +52,11 @@ The private request suite covers enrollment, malformed/changed seeds, factor
 login, stale/password-reset/deactivated sessions, challenge expiry/budgets/replay,
 simultaneous last-factor removal, human-token rejection, constrained service-token
 access and password-age bootstrap. Device sync is qualified separately.
-Lost-all-factor recovery must become one
-separately authorized, audited management command which invalidates prior
-sessions/tokens and requires secure password recovery; email password reset
-alone must never reset MFA. That command and the customer bootstrap experience
-are not implemented by this first policy layer.
+Lost-all-factor recovery uses a separate privileged management command which
+invalidates prior sessions/tokens and requires secure password setup; email
+password reset alone never resets MFA. Its later private acceptance is recorded
+in [operator recovery](operator-recovery.md). The customer `azd` bootstrap and
+private setup-link delivery flow remain separate implementation work.
 
 ## Actual private request acceptance, 2026-11-06
 
@@ -159,3 +159,12 @@ harness as the non-root app user. That failure remains retained in
 `runtime-fixed/operator-audit-baseline/private-process-output.json`; only that
 source file's read permission was corrected. Private credentials and logs
 remained restricted, and the accepted run used new evidence paths.
+
+The later combined image recorded in [operator recovery](operator-recovery.md)
+also passed all fourteen MFA cases with the same policy-module hash. Its form
+integration now locks the user before factor verification (forms output SHA-256
+`ef4adc2ea64d7f92bb9b1683082baa4f946ab1d21867c5e0ac10496db192bc6a`),
+matching recovery/factor-management ordering. The separate real recovery suite
+confirmed both login/recovery ordering cases through PostgreSQL's actual wait
+graph. This does not add Redis durability, customer transport or native-browser
+acceptance to the original MFA result.

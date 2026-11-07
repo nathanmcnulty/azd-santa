@@ -376,6 +376,8 @@ def render_core_dockerfile(
     *,
     operator_program: str,
     operator_module_sha256: str,
+    request_limits_program: str,
+    request_limits_sha256: str,
     license_sha256: str = UPSTREAM_LICENSE_SHA256,
     registry_sha256: str = UPSTREAM_REGISTRY_SHA256,
     stores_backends_sha256: str = UPSTREAM_STORES_BACKENDS_SHA256,
@@ -490,6 +492,12 @@ def render_core_dockerfile(
         "    && python /tmp/prepare_operator_mfa.py \\\n"
         "    && rm /tmp/prepare_operator_mfa.py\n"
     )
+    limits_b64 = base64.b64encode(request_limits_program.encode('utf-8')).decode('ascii')
+    stores_transform += (
+        "RUN printf '%s' '" + limits_b64 + "' | base64 -d > /tmp/prepare_request_limits.py \\\n"
+        "    && python /tmp/prepare_request_limits.py \\\n"
+        "    && rm /tmp/prepare_request_limits.py\n"
+    )
     rendered = _replace_once(
         rendered,
         "COPY ./zentral /zentral/zentral\n",
@@ -524,9 +532,11 @@ def render_core_dockerfile(
         f"        'Santa sync view input SHA256: {UPSTREAM_SYNC_VIEW_SHA256}' \\\n"
         f"        'Santa sync view output SHA256: {CORE_SYNC_VIEW_SHA256}' \\\n"
         f"        'Original operator MFA module SHA256: {operator_module_sha256}' \\\n"
+        f"        'Original bounded Santa decoder SHA256: {request_limits_sha256}' \\\n"
+        "        'Bounded Santa sync view output SHA256: 205315d6cf592fe53efaebb58fb6843c4f17f842d85b7c74816964385df1ec6a' \\\n"
         "        'Core authentication/settings/forms integrate mandatory local operator MFA; human API tokens are denied.' \\\n"
         "        'An original sync credential guard enforces revocation/expiry without charging enrollment quota.' \\\n"
-        "        'Source transformations are the reviewed registry/store narrowings and sync credential guard; review licensing before production use.' \\\n"
+        "        'Source transformations include reviewed registry/store narrowings, sync credential/request guards and operator MFA; review licensing before production use.' \\\n"
         "        > /usr/share/doc/zentral/CORE_BUILD_NOTICE.txt\n",
         "runtime assertion and build notice anchor",
     )
@@ -552,6 +562,7 @@ def render_core_dockerfile(
         "('/zentral/server/server/settings.py', "
         "'/zentral/server/realms/backends/registry.py', "
         "'/zentral/server/azd_santa_operator.py', "
+        "'/zentral/server/azd_santa_request_limits.py', "
         "'/zentral/zentral/contrib/santa/public_views.py')]\"\n"
     )
     return rendered
@@ -562,7 +573,20 @@ def _operator_layer(source_root):
     spec = importlib.util.spec_from_file_location('prepare_operator_mfa', helper)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.docker_program(source_root, Path(__file__).with_name('operator_mfa.py'))
+    program, digest = module.docker_program(source_root, Path(__file__).with_name('operator_mfa.py'))
+    helper = Path(__file__).with_name('prepare_operator_recovery.py')
+    spec = importlib.util.spec_from_file_location('prepare_operator_recovery', helper)
+    recovery = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(recovery)
+    return program + '\n' + recovery.docker_program(source_root), digest
+
+
+def _request_limits_layer(source_root):
+    helper = Path(__file__).with_name('prepare_request_limits.py')
+    spec = importlib.util.spec_from_file_location('prepare_request_limits', helper)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.docker_program(source_root, Path(__file__).with_name('santa_request_limits.py'))
 
 
 def derive_core_dockerfile(source_root: Path, output_path: Path) -> Path:
@@ -588,6 +612,7 @@ def derive_core_dockerfile(source_root: Path, output_path: Path) -> Path:
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     operator_program, operator_sha = _operator_layer(source_root)
+    limits_program, limits_sha = _request_limits_layer(source_root)
     rendered = render_core_dockerfile(
         (source_root / "Dockerfile").read_text(encoding="utf-8"),
         (source_root / "LICENSE").read_bytes(),
@@ -596,6 +621,8 @@ def derive_core_dockerfile(source_root: Path, output_path: Path) -> Path:
         (source_root / STORES_SERIALIZERS_PATH).read_bytes(),
         operator_program=operator_program,
         operator_module_sha256=operator_sha,
+        request_limits_program=limits_program,
+        request_limits_sha256=limits_sha,
         license_sha256=UPSTREAM_LICENSE_SHA256,
         registry_sha256=UPSTREAM_REGISTRY_SHA256,
         stores_backends_sha256=UPSTREAM_STORES_BACKENDS_SHA256,

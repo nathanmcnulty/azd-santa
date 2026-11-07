@@ -128,6 +128,34 @@ class ZentralEvaluation(unittest.TestCase):
         self.prepare()
         self.assertNotEqual(first, self.read('compose.json')['name'])
 
+    def test_fresh_santa_profile_preserves_dependencies_and_telemetry(self):
+        path = self.source / 'conf/start/zentral/base.json'
+        config = json.loads(path.read_text())
+        for name in (*generator.OPTIONAL_APPS, 'realms', 'zentral.core.compliance_checks',
+                     'zentral.core.incidents', 'zentral.core.terraform', 'zentral.contrib.inventory'):
+            config['apps'][name] = {'test-marker': name}
+        path.write_text(json.dumps(config))
+        self.hashes['conf/start/zentral/base.json'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        self.prepare()
+        baseline = self.read('conf/base.json')
+        baseline_compose = self.read('compose.json')
+        self.destination = self.root / 'santa-fresh'
+        with patch.dict(generator.SOURCE_HASHES, self.hashes, clear=True):
+            generator.prepare(self.source, self.image, self.lock, self.destination,
+                              'core-experiment', app_profile='santa')
+        expected = {name: value for name, value in baseline['apps'].items()
+                    if name not in generator.OPTIONAL_APPS}
+        self.assertEqual(self.read('conf/base.json')['apps'], expected)
+        self.assertTrue(all(name in baseline['apps'] for name in generator.OPTIONAL_APPS))
+        self.assertEqual(set(self.read('compose.json')['services']), set(baseline_compose['services']))
+        self.assertEqual(self.read('provenance.json')['app_profile'], 'santa')
+        self.assertEqual(path.read_text(), json.dumps(config))
+
+    def test_invalid_app_profile_is_rejected_before_output(self):
+        with self.assertRaisesRegex(ValueError, 'Unknown evaluation app profile'):
+            generator.prepare(self.source, self.image, self.lock, self.destination, app_profile='unknown')
+        self.assertFalse(self.destination.exists())
+
     def test_core_variant_is_declared_not_license_clearance(self):
         with patch.dict(generator.SOURCE_HASHES, self.hashes, clear=True):
             generator.prepare(self.source, self.image, self.lock, self.destination, 'core-experiment')

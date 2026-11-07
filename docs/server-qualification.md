@@ -299,3 +299,12 @@ the original synthetic device-sync/indexing regression. See
 bindings, the accepted audit-order regression, and remaining recovery and Redis
 durability gates.
 This adds no real-Mac, browser/TLS or production acceptance.
+
+The subsequent combined image passed eleven real isolated-database
+[operator recovery](operator-recovery.md) cases and 89 real loopback
+[bounded request](server-request-limits.md) checks, retained all fourteen MFA
+cases, and preserved full device HTTP sync with exactly ten indexed Santa
+events. Those pages record exact image/source/Compose/receipt bindings and
+retained failed attempts. Private recovery and decoding acceptance do not close
+the `azd` setup transport, durable replay/restore, ingress/admission, automatic
+startup, fresh Santa-only profile, native Mac or Container Apps gates.
