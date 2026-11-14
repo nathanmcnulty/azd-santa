@@ -75,3 +75,11 @@ omits empty Exec command arrays, so the runtime has no scalar ExecStopPost line.
 The runtime now requires its exact observed 12-field profile and typed D-Bus
 ExecStopPost empty-array proof. The caller still requires its pinned nonempty
 recorder field. Neither failed preflight reserved or retired a request.
+
+The third eligibility-only probe passed on the selected VM with recovery source
+`379ea274ebef9247428d7dc1c53593a4e75746be04aaba6c1b8e032b3d75b2bd`.
+It verified the exact failed invocations, same boot, original seven stopped
+containers and no-native-effect conditions. Its proof digest was
+`f4fc852d1c6ecee2cee05be8697f658bc22a56d3411cfb4ffd18d4c5f5e79787`.
+This was eligibility evidence only: no recovery reservation, request retirement,
+helper rebind or runtime start was performed by that probe.
