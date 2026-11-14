@@ -347,3 +347,5 @@ recovery claims. A copied Redis marker, successful decrypt, old snapshot or
 reboot does **not** prove current authority. Full current-authority restore needs
 a separately designed external continuity/rollback guard, quiescence and
 fail-closed restore admission with actual replay/rollback fault qualification.
+
+The explicit [pre-snapshot recovery](presnapshot-recovery.md) retires only the reviewed failed request after positive no-native-effect evidence; it does not resume a backup. Physical fingerprints are portable across the runtime mount namespace while complete local mount/descriptor guards remain enforced.

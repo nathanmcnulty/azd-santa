@@ -259,6 +259,24 @@ class ColdBackup(unittest.TestCase):
                 else:
                     with self.assertRaises(ValueError): backup.check_descriptor_mount(7,expected)
 
+    def test_cross_namespace_fingerprint_uses_physical_identity_but_local_stream_checks_keep_ids(self):
+        volumes={'data':Path('/var/lib/docker/volumes/original/_data')}
+        original={'data':dict(device=123,inode=456,mount=dict(id=28,parent=1,optional=['shared:1'],
+            device='0:123',root='/',point='/',filesystem='ext4',source='/dev/root',options='rw',super_options='rw'))}
+        private=copy.deepcopy(original);private['data']['mount'].update(id=310,parent=309,optional=[])
+        with patch.object(backup,'volume_paths',return_value=volumes),patch.object(backup,'mount_snapshot',return_value=original):
+            first=backup.storage_fingerprint(object())
+        with patch.object(backup,'volume_paths',return_value=volumes),patch.object(backup,'mount_snapshot',return_value=private):
+            self.assertEqual(backup.storage_fingerprint(object()),first)
+            with self.assertRaises(ValueError):backup.verify_storage_snapshot(object(),volumes,volumes,original)
+        for section,field,value in (('data','device',124),('data','inode',457),
+            ('mount','filesystem','xfs'),('mount','source','/dev/other'),('mount','root','/subtree'),
+            ('mount','point','/var'),('mount','options','ro'),('mount','super_options','ro')):
+            changed=copy.deepcopy(private)
+            (changed['data'] if section=='data' else changed['data']['mount'])[field]=value
+            with patch.object(backup,'volume_paths',return_value=volumes),patch.object(backup,'mount_snapshot',return_value=changed):
+                self.assertNotEqual(backup.storage_fingerprint(object()),first)
+
     def test_final_snapshot_rejects_new_volume_map_or_changed_mount_identity(self):
         volumes={'data':Path('/docker/original/_data')}
         mounts={'data':dict(mount={'id':19},device=123,inode=456)}

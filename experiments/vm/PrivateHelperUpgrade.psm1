@@ -17,8 +17,8 @@ function Invoke-UpgradeAzure([string[]]$Arguments) {
     & $script:installer { param($selectedArguments) Invoke-PrivateAzure -Arguments $selectedArguments } $Arguments
 }
 
-function Send-UpgradeCommand([hashtable]$Target, [hashtable]$Command) {
-    $bytes = [IO.File]::ReadAllBytes($script:programPath)
+function Send-UpgradeCommand([hashtable]$Target, [hashtable]$Command, [string]$ProgramPath = $script:programPath) {
+    $bytes = [IO.File]::ReadAllBytes($ProgramPath)
     if ($bytes.Length -gt 32768) { throw 'Upgrade source exceeded its transport bound.' }
     $hash = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData($bytes))
     $memory = [IO.MemoryStream]::new()
