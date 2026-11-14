@@ -68,13 +68,30 @@ Describe 'Optional private VM azd installation' {
             @(Get-ChildItem $script:privateDirectory).Count | Should -Be 1
             Should -Invoke Invoke-PrivateAzure -Times 0
         }
-        It 'leaves backend/cloud untouched without explicit opt-in' {
+        It 'sets the exact host shutdown guard without installing the opt-in backend' {
             Mock Send-PrivateInstallCommand { throw 'Unexpected installer action.' }
+            $script:shutdownCalls = @()
+            Mock Invoke-PrivateAzure {
+                $script:shutdownCalls += ,@($Arguments)
+                @{ status = 'Enabled' }
+            }
             $script:values.Remove('SANTA_PRIVATE_BACKEND_INSTALL')
             Invoke-PrivateVmAzdHook postprovision
-            Should -Invoke Get-SantaPrivateVmDeploymentTarget -Times 0
-            Should -Invoke Invoke-PrivateAzure -Times 0
+            $script:values.SANTA_PRIVATE_BACKEND_INSTALL = 'false'
+            Invoke-PrivateVmAzdHook postprovision
+            $script:shutdownCalls.Count | Should -Be 2
+            foreach ($call in $script:shutdownCalls) {
+                $call[0] | Should -Be 'vm'
+                $call[1] | Should -Be 'auto-shutdown'
+                $call[3] | Should -Be $script:target.SubscriptionId
+                $call[5] | Should -Be $script:target.ResourceGroup
+                $call[7] | Should -Be $script:target.VmName
+                $call[9] | Should -Match '^\d{4}$'
+            }
+            Should -Invoke Get-SantaPrivateVmDeploymentTarget -Times 2
+            Should -Invoke Invoke-PrivateAzure -Times 2 -ParameterFilter { $Arguments[1] -eq 'auto-shutdown' }
             Should -Invoke Send-PrivateInstallCommand -Times 0
+            Should -Invoke Complete-SantaBackendInstallation -Times 0
         }
         It 'builds deterministic source bundles with bounded chunks and verifies every source hash' {
             $one = New-PrivateSourceBundle; $two = New-PrivateSourceBundle
