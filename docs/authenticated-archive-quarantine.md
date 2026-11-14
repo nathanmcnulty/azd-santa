@@ -58,7 +58,13 @@ receipt, external trust anchor or activation authorization.
 
 The parser follows `cold_backup.archive()` and `_capture_locked()`, and
 `native_snapshot.archive_roots()` from the reviewed integration merged into
-base `960b2a4b9d2a50a7b81429bc03ba98fb20a309b7`. It accepts the
+base `960b2a4b9d2a50a7b81429bc03ba98fb20a309b7`, with the separately reviewed
+network-namespace parser fix merged as
+`513f58c832f599b6e7cc06565619852397108f74`. The backup source pin is
+`790ec1696dc8533ccf85c01947a882b2f6188f3fe5d5a2017f456e8a0b711433`;
+that fix changes host mount parsing, not the sealed/archive format. The earlier
+source pin is not silently admitted; original artifacts must be retained for
+separate compatibility review. It accepts the
 `AZDSANTABACKUP1` RSA-OAEP-SHA256/AES256-GCM sealed envelope and the current
 native-snapshot selection scope, never the earlier raw-Elasticsearch format.
 The controller, backup, native helper and worker source hashes are explicit in

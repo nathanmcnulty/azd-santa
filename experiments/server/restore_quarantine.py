@@ -26,7 +26,7 @@ HEX = r'[a-f0-9]{64}'
 ROOT = '/var/lib/azd-santa-qualification'
 COMMIT = '88e67b3ce49033aab028029937a6e14f7c489073'
 PROGRAMS = {'runtime_service.py': 'f0a8961f64e48471eed71757805ae4e29ee080aef30c6ab9ec040eafaf443099',
-    'cold_backup.py': '7c6f0b25bc090b5c4efa03c47565e5a28e64a3eef2823e667885e951262a539a',
+    'cold_backup.py': '790ec1696dc8533ccf85c01947a882b2f6188f3fe5d5a2017f456e8a0b711433',
     'native_snapshot.py': 'ee657b986e9ac49e4cffab0a3336d000ecfa236994a7dae7941c2604907edca1',
     'worker_lifecycle.py': 'e86d20287324eca25ef24c4c405e7d923feafb2d2760c1f22b799f0a02d0a50f'}
 CONTROL = frozenset(('compose.json', 'base.json', 'db.env', 'rabbitmq.env', 'runtime.env',
