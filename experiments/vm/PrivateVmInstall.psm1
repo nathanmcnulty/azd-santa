@@ -115,8 +115,11 @@ function Invoke-PrivateVmAzdHook {
         Invoke-PrivateAzd @('env', 'set', 'SANTA_VM_SSH_PUBLIC_KEY', $public, '--environment', $environment, '--no-prompt')
         return
     }
-    if (-not $values.ContainsKey('SANTA_PRIVATE_BACKEND_INSTALL') -or $values.SANTA_PRIVATE_BACKEND_INSTALL -eq 'false') { return }
-    if ($values.SANTA_PRIVATE_BACKEND_INSTALL -cne 'true') { throw 'SANTA_PRIVATE_BACKEND_INSTALL must be true or false.' }
+    $installBackend = $false
+    if ($values.ContainsKey('SANTA_PRIVATE_BACKEND_INSTALL')) {
+        if ($values.SANTA_PRIVATE_BACKEND_INSTALL -ceq 'true') { $installBackend = $true }
+        elseif ($values.SANTA_PRIVATE_BACKEND_INSTALL -cne 'false') { throw 'SANTA_PRIVATE_BACKEND_INSTALL must be true or false.' }
+    }
     $target = Get-SantaPrivateVmDeploymentTarget -SubscriptionId $values.AZURE_SUBSCRIPTION_ID -EnvironmentName $environment
     foreach ($pair in @(@('AZURE_RESOURCE_GROUP', 'ResourceGroup'), @('SANTA_VM_NAME', 'VmName'), @('SANTA_VM_RESOURCE_ID', 'VmId'), @('SANTA_VM_INSTANCE_ID', 'VmInstanceId'))) {
         if (-not $values.ContainsKey($pair[0]) -or $values[$pair[0]] -ine $target[$pair[1]]) { throw 'Authoritative provisioned VM outputs missing/mismatched.' }
@@ -128,6 +131,7 @@ function Invoke-PrivateVmAzdHook {
     }
     $shutdown = [DateTimeOffset]::UtcNow.AddHours(2).ToString('HHmm')
     $null = Invoke-PrivateAzure @('vm', 'auto-shutdown', '--subscription', $target.SubscriptionId, '--resource-group', $target.ResourceGroup, '--name', $target.VmName, '--time', $shutdown)
+    if (-not $installBackend) { return }
     $bundle = New-PrivateSourceBundle
     $state = Send-PrivateInstallCommand $target @{ mode = 'observe'; bundle_sha256 = $bundle.Sha256 }
     if ($state.state -ceq 'not-installed') {

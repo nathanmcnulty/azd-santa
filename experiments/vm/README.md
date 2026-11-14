@@ -74,8 +74,10 @@ then verifies source/image/VM identities and initialized readiness, creates the
 receipt/binding and records `SANTA_OPERATOR_BINDING_PATH` in the selected azd
 environment. No image ID, remote script or JSON assembly is required from admins.
 
-A two-hour VM shutdown guard bounds lab cost. Builds use the qualified classic
-builder and current exact Ubuntu package pins. The one-shot installer job is
+A two-hour UTC VM shutdown schedule is set after every nested VM deployment,
+including host-only runs with private-backend installation disabled. The
+installer remains opt-in. When enabled, builds use the qualified classic builder
+and current exact Ubuntu package pins. The one-shot installer job is
 owned by systemd with a 105-minute limit; raw diagnostics remain root-private.
 Source travels in hash-checked chunks no larger than 24 KiB encoded, not a large
 single Run Command packet. Before retrying, the hook observes the same durable

@@ -58,9 +58,11 @@ need their own build and live qualification.
 
 Postprovision verifies authoritative Bicep VM resource/instance/deployment outputs
 against cached selected account/group/VM readback. Every azd command explicitly
-targets this nested project and selected environment. The hook requests a
-two-hour auto-shutdown guard before long work. It creates a content-addressed
-source bundle, gzip-compresses it and transfers bounded 24-KiB encoded chunks,
+targets this nested project and selected environment. Postprovision validates
+the exact VM and configures a two-hour UTC auto-shutdown schedule for both
+host-only and private-backend runs. Private backend installation still requires
+the explicit opt-in. When enabled, installation creates a content-addressed source bundle,
+gzip-compresses it and transfers bounded 24-KiB encoded chunks,
 each acknowledged before submission. Compressed and uncompressed hashes plus
 per-file checks protect assembly; no arbitrary archive paths are extracted.
 Different compression attempts have independent staging directories. The full
