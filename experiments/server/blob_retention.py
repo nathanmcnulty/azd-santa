@@ -53,6 +53,20 @@ def unique(pairs):
     return value
 
 
+def resource_id(value):
+    need(type(value) is str)
+    return value.casefold()
+
+
+def tags_by_key(value):
+    need(type(value) is dict)
+    result = {}
+    for key, item in value.items():
+        need(type(key) is str and key.casefold() not in result)
+        result[key.casefold()] = item
+    return result
+
+
 @dataclass(frozen=True)
 class Blob:
     account_id: str
@@ -96,7 +110,7 @@ class Store:
     def __post_init__(self):
         need(re.fullmatch(GUID, self.ownership_id) and re.fullmatch(r'[a-z0-9]{2,32}', self.region))
         need(type(self.owned_subnets) is tuple and 1 <= len(self.owned_subnets) <= 2
-             and len(set(self.owned_subnets)) == len(self.owned_subnets)
+             and len({resource_id(s) for s in self.owned_subnets}) == len(self.owned_subnets)
              and all(re.fullmatch(SUBNET, s) for s in self.owned_subnets))
 
 
@@ -106,8 +120,8 @@ def validate_store(store, account, container, subnets):
     This validates supplied ARM facts, not their authenticity or caller rights.
     Only owned same-region service-endpoint targets are supported in this layer.
     """
-    need(type(store) is Store and account['id'].lower() == store.blob.account_id.lower())
-    tags = account['tags']; p = account['properties']; acl = p['networkAcls']
+    need(type(store) is Store and resource_id(account['id']) == resource_id(store.blob.account_id))
+    tags = tags_by_key(account['tags']); p = account['properties']; acl = p['networkAcls']
     need(tags.get('azd-santa-backup-owner') == store.ownership_id
          and tags.get('azd-santa-backup-store') == 'independent-v1'
          and 'azd-env-name' not in tags and 'azd-service-name' not in tags)
@@ -122,14 +136,15 @@ def validate_store(store, account, container, subnets):
          and acl.get('resourceAccessRules', []) == [])
     rules = acl['virtualNetworkRules']
     need(len(rules) == len(store.owned_subnets)
-         and {r['id'] for r in rules} == set(store.owned_subnets)
+         and {resource_id(r['id']) for r in rules} == {resource_id(s) for s in store.owned_subnets}
          and all(r['action'] == 'Allow' and r.get('state') == 'Succeeded' for r in rules))
-    need(container['id'].lower() == (store.blob.account_id + '/blobServices/default/containers/' + store.blob.container).lower()
+    need(resource_id(container['id']) == resource_id(store.blob.account_id + '/blobServices/default/containers/' + store.blob.container)
          and container['properties']['publicAccess'] == 'None')
-    need(set(subnets) == set(store.owned_subnets))
+    need(len(subnets) == len(store.owned_subnets)
+         and {resource_id(s) for s in subnets} == {resource_id(s) for s in store.owned_subnets})
     for subnet_id, facts in subnets.items():
         # A future ARM selector must prove the VM->NIC->subnet link and ownership.
-        need(facts['id'] == subnet_id and facts['owned_by_solution'] is True
+        need(resource_id(facts['id']) == resource_id(subnet_id) and facts['owned_by_solution'] is True
              and facts['region'] == store.region and facts['properties']['defaultOutboundAccess'] is False
              and any(e['service'] == 'Microsoft.Storage' and e.get('provisioningState') == 'Succeeded'
                      for e in facts['properties']['serviceEndpoints']))
@@ -172,7 +187,9 @@ def capture_record(blob, complete, source_target, *, maintenance_request, image_
         'recipient_der_base64','recipient_sha256','destination','maximum_bytes','maximum_files','seconds',
         'queue_inventory','backup_program_sha256','storage_sha256','worker_instance'}
          and request['scope']=='azd-santa-backup-maintenance-v1' and request['operation_id']==blob.operation
-         and request['target']=={'VmId':source_target.vm_id,'VmInstanceId':source_target.instance_id}
+         and type(request['target']) is dict and set(request['target']) == {'VmId','VmInstanceId'}
+         and resource_id(request['target']['VmId']) == resource_id(source_target.vm_id)
+         and request['target']['VmInstanceId'] == source_target.instance_id
          and request['generation_sha256']==complete['generation_sha256']
          and request['recipient_sha256']==complete['recipient_sha256'])
     need(re.fullmatch(r'sha256:' + HEX, image_id) and re.fullmatch(HEX, source_bundle_sha256))
@@ -184,12 +201,15 @@ def capture_record(blob, complete, source_target, *, maintenance_request, image_
 
 def selection(record, blob, store, target, permission):
     checked_record(record)
-    need(type(blob) is Blob and type(store) is Store and store.blob == blob and type(target) is SelectedTarget
-         and target.subnet_id in store.owned_subnets and target.region == store.region
+    need(type(blob) is Blob and type(store) is Store
+         and resource_id(store.blob.account_id) == resource_id(blob.account_id)
+         and store.blob.operation == blob.operation and store.blob.container == blob.container
+         and type(target) is SelectedTarget
+         and resource_id(target.subnet_id) in {resource_id(s) for s in store.owned_subnets} and target.region == store.region
          and permission in ('c', 'r') and record['scope'] == 'native-ciphertext-retention-selection-v1'
          and record['blob_uri'] == blob.uri and record['operation_id'] == blob.operation)
-    need((target.vm_id == record['source_vm_id'] and target.instance_id == record['source_instance_id'])
-         if permission == 'c' else target.vm_id != record['source_vm_id'])
+    need((resource_id(target.vm_id) == resource_id(record['source_vm_id']) and target.instance_id == record['source_instance_id'])
+         if permission == 'c' else resource_id(target.vm_id) != resource_id(record['source_vm_id']))
 
 
 def arm_selection(arm_call, store, target):
@@ -201,24 +221,25 @@ def arm_selection(arm_call, store, target):
     subnets={}
     for subnet_id in store.owned_subnets:
         vnet_id=subnet_id.rsplit('/subnets/',1)[0]; vnet=get(vnet_id,'2024-05-01')
-        subnet=get(subnet_id,'2024-05-01'); tags=vnet['tags']; environment=tags.get('azd-env-name','')
+        subnet=get(subnet_id,'2024-05-01'); tags=tags_by_key(vnet['tags']); environment=tags.get('azd-env-name','')
         need(re.fullmatch(r'[a-z0-9-]{2,32}',environment)
              and tags.get('azd-solution')=='azd-santa' and tags.get('purpose')=='synthetic-vm-lab'
-             and vnet_id.endswith('/resourceGroups/rg-azd-santa-vm-'+environment+'/providers/Microsoft.Network/virtualNetworks/vnet-santa-lab'))
+             and resource_id(vnet_id).endswith(resource_id('/resourceGroups/rg-azd-santa-vm-'+environment+'/providers/Microsoft.Network/virtualNetworks/vnet-santa-lab')))
         subnets[subnet_id]=dict(subnet,region=vnet['location'],owned_by_solution=True)
     validate_store(store,account,container,subnets)
-    vm=get(target.vm_id,'2024-11-01'); tags=vm['tags']; environment=tags.get('azd-env-name','')
-    need(vm['id'].lower()==target.vm_id.lower() and vm['properties']['vmId'].lower()==target.instance_id
+    vm=get(target.vm_id,'2024-11-01'); tags=tags_by_key(vm['tags']); environment=tags.get('azd-env-name','')
+    need(resource_id(vm['id'])==resource_id(target.vm_id) and vm['properties']['vmId'].lower()==target.instance_id
          and vm['location']==target.region and tags.get('azd-solution')=='azd-santa'
          and tags.get('purpose')=='synthetic-vm-lab' and re.fullmatch(r'[a-z0-9-]{2,32}',environment))
     group=target.vm_id.split('/providers/')[0]
-    need(group.endswith('/resourceGroups/rg-azd-santa-vm-'+environment)
-         and target.vm_id==group+'/providers/Microsoft.Compute/virtualMachines/vm-santa-lab')
+    need(resource_id(group).endswith(resource_id('/resourceGroups/rg-azd-santa-vm-'+environment))
+         and resource_id(target.vm_id)==resource_id(group+'/providers/Microsoft.Compute/virtualMachines/vm-santa-lab'))
     nics=vm['properties']['networkProfile']['networkInterfaces']; need(len(nics)==1)
-    nic_id=group+'/providers/Microsoft.Network/networkInterfaces/nic-santa-lab'; need(nics[0]['id']==nic_id)
+    nic_id=group+'/providers/Microsoft.Network/networkInterfaces/nic-santa-lab'; need(resource_id(nics[0]['id'])==resource_id(nic_id))
     nic=get(nic_id,'2024-05-01'); ips=nic['properties']['ipConfigurations']; need(len(ips)==1)
-    need(ips[0]['properties']['subnet']['id']==target.subnet_id
-         and subnets[target.subnet_id]['properties']['networkSecurityGroup']['id']==group+'/providers/Microsoft.Network/networkSecurityGroups/nsg-santa-lab')
+    selected_subnet=next(v for k,v in subnets.items() if resource_id(k)==resource_id(target.subnet_id))
+    need(resource_id(ips[0]['properties']['subnet']['id'])==resource_id(target.subnet_id)
+         and resource_id(selected_subnet['properties']['networkSecurityGroup']['id'])==resource_id(group+'/providers/Microsoft.Network/networkSecurityGroups/nsg-santa-lab'))
     nsg=get(group+'/providers/Microsoft.Network/networkSecurityGroups/nsg-santa-lab','2024-05-01')
     rules=[r['properties'] for r in nsg['properties']['securityRules'] if r['properties']['priority']==100]
     need(len(rules)==1 and all(rules[0][key]==value for key,value in dict(direction='Inbound',access='Deny',protocol='*',
@@ -281,7 +302,7 @@ def host_identity(target):
     request = urllib.request.Request('http://169.254.169.254/metadata/instance/compute?api-version=2021-02-01', headers={'Metadata':'true'})
     with opener.open(request, timeout=3) as response: raw = response.read(65537)
     need(len(raw) <= 65536); value = json.loads(raw, object_pairs_hook=unique)
-    need(value['resourceId'].lower() == target.vm_id.lower() and value['vmId'].lower() == target.instance_id
+    need(resource_id(value['resourceId']) == resource_id(target.vm_id) and value['vmId'].lower() == target.instance_id
          and value['location'] == target.region)
 
 
@@ -423,7 +444,7 @@ def upload_file(path, record, capability, attempt_directory, *, apply=False, sec
         need(type(seconds) is int and 1 <= seconds <= 1800)
         if not apply: return dict(scope='native-ciphertext-upload-plan-v1', performs_mutation=False,
                                  blob_uri=record['blob_uri'], ciphertext_bytes=record['complete']['ciphertext_bytes'])
-        valid_capability(capability,record,'c'); need(capability.target.vm_id==record['source_vm_id']
+        valid_capability(capability,record,'c'); need(resource_id(capability.target.vm_id)==resource_id(record['source_vm_id'])
             and capability.target.instance_id==record['source_instance_id']); host_identity(capability.target)
         deadline=time.monotonic()+seconds
         with ExitStack() as stack:
@@ -446,7 +467,7 @@ def verify_download(destination, record, capability, attempt_directory, *, apply
         checked_record(record)
         need(type(seconds) is int and 1 <= seconds <= 1800)
         if not apply: return dict(scope='native-ciphertext-verification-plan-v1',performs_mutation=False,blob_uri=record['blob_uri'])
-        valid_capability(capability,record,'r'); need(capability.target.vm_id!=record['source_vm_id']); host_identity(capability.target)
+        valid_capability(capability,record,'r'); need(resource_id(capability.target.vm_id)!=resource_id(record['source_vm_id'])); host_identity(capability.target)
         deadline=time.monotonic()+seconds
         with ExitStack() as stack:
             journal=Journal(attempt_directory,dict(record,attempt='independent-exact-blob-download',

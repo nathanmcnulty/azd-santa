@@ -28,6 +28,10 @@ calling a raw template directly does not implement that ownership preflight.
 There is no automatic deletion, lifecycle purge or irreversible immutability
 policy. Versioning and seven-day blob/container soft delete provide limited
 accidental-deletion recovery, not protection against account/subscription loss.
+ARM resource-ID equality and tag keys are case-insensitive. Ambiguous duplicate
+tag-key aliases reject; ownership GUIDs and marker values retain strict value
+comparison. Mixed-case AZD lifecycle tags still reject adoption. A differently
+cased source VM ID is the same VM and cannot qualify as an independent verifier.
 
 The selected boundary is an authenticated, firewall-restricted **public Storage
 service endpoint**, with no public application ingress. Service endpoints add no
@@ -151,7 +155,7 @@ private descriptor/journal/no-overwrite behavior separately; Windows cannot prov
 those filesystem boundaries. No tenant, host job or Storage request was performed.
 
 Local qualification used PowerShell7.6.9/Pester6.2.0 and the existing Azure CLI
-Python3.14.6/cryptography48.0.1 interpreter. All16 focused tests passed (14 executed,
+Python3.14.6/cryptography48.0.1 interpreter. All19 focused tests passed (17 executed,
 two Linux filesystem cases explicitly skipped on Windows), followed by all241
 integrated Pester checks. Template validation, canonical permission schema and
 Bicep compilation passed. Actual Linux descriptor cases require hosted Linux

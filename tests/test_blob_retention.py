@@ -34,7 +34,7 @@ class Arm:
     def __init__(self,store,targets):
         self.calls=[]; self.responses={}
         self.responses[store.blob.account_id]=dict(id=store.blob.account_id,location=store.region,kind='StorageV2',sku={'name':'Standard_LRS'},
-            tags={'azd-santa-backup-owner':OWNER,'azd-santa-backup-store':'independent-v1'},properties=dict(
+            tags={'azd-santa-backup-owner':store.ownership_id,'azd-santa-backup-store':'independent-v1'},properties=dict(
             allowBlobPublicAccess=False,allowSharedKeyAccess=True,supportsHttpsTrafficOnly=True,minimumTlsVersion='TLS1_2',
             publicNetworkAccess='Enabled',accessTier='Hot',isHnsEnabled=False,networkAcls=dict(defaultAction='Deny',bypass='None',ipRules=[],
                 virtualNetworkRules=[{'id':s,'action':'Allow','state':'Succeeded'} for s in store.owned_subnets])))
@@ -56,7 +56,9 @@ class Arm:
 
     def __call__(self,method,url,body):
         self.calls.append((method,url,body))
-        if method=='GET':return copy.deepcopy(self.responses[urllib.parse.urlsplit(url).path])
+        if method=='GET':
+            path=urllib.parse.urlsplit(url).path.casefold()
+            return copy.deepcopy(next(v for k,v in self.responses.items() if k.casefold()==path))
         values=dict(sv='2015-04-05',sr=body['signedResource'],sp=body['signedPermission'],spr=body['signedProtocol'],
             st=body['signedStart'],se=body['signedExpiry'],sig=base64.b64encode(b's'*32).decode())
         return {'serviceSasToken':urllib.parse.urlencode(values)}
@@ -180,6 +182,55 @@ class Retention(unittest.TestCase):
         with self.assertRaises(retention.RetentionRejected):retention.mint_capability(self.arm,self.record,self.blob,self.store,bad,'c',apply=True)
         with self.assertRaises(retention.RetentionRejected):retention.SelectedTarget('203.0.113.1',self.source.instance_id,self.source.subnet_id,'westus2')
         self.assertEqual(self.arm.calls,[])
+
+    def test_same_vm_case_alias_is_not_an_independent_verifier_before_any_transfer(self):
+        alias=self.source.vm_id.replace('rg-azd-santa-vm-source','RG-AZD-SANTA-VM-SOURCE').replace('vm-santa-lab','VM-SANTA-LAB')
+        same=retention.SelectedTarget(alias,self.source.instance_id,self.source.subnet_id,self.source.region)
+        with self.assertRaises(retention.RetentionRejected):
+            retention.mint_capability(self.arm,self.record,self.blob,self.store,same,'r',apply=True)
+        self.assertEqual(self.arm.calls,[])
+        # Relay-supplied capabilities must be checked again at the filesystem boundary.
+        cap=retention.Capability(self.blob,same,'r',self.complete['ciphertext_sha256'],
+            dt.datetime.now(dt.timezone.utc)+dt.timedelta(minutes=5),'synthetic-private-relay-capability')
+        transport=Transport(self.raw)
+        with patch.object(retention,'host_identity') as metadata,patch.object(retention,'parent') as filesystem:
+            with self.assertRaises(retention.RetentionRejected):
+                retention.verify_download('unused',self.record,cap,'unused',apply=True,transport=transport)
+        metadata.assert_not_called();filesystem.assert_not_called();self.assertEqual(transport.gets,0)
+        # Case aliases remain the same source for a correctly scoped create operation.
+        cap=retention.mint_capability(self.arm,self.record,self.blob,self.store,same,'c',apply=True)
+        self.assertEqual(cap.permission,'c')
+
+    def test_mixed_case_azd_ownership_tags_and_duplicate_aliases_reject(self):
+        for key in ('AZD-ENV-NAME','AzD-EnV-NaMe','AZD-SERVICE-NAME','AzD-SeRvIcE-NaMe'):
+            arm=Arm(self.store,(self.source,self.verifier));arm.responses[self.blob.account_id]['tags'][key]='source'
+            with self.subTest(key=key),self.assertRaises(retention.RetentionRejected):
+                retention.mint_capability(arm,self.record,self.blob,self.store,self.source,'c',apply=True)
+            self.assertTrue(all(method=='GET' for method,_,_ in arm.calls))
+        for key in ('AZD-SANTA-BACKUP-OWNER','AZD-SANTA-BACKUP-STORE','PURPOSE'):
+            arm=Arm(self.store,(self.source,self.verifier));tags=arm.responses[self.blob.account_id]['tags']
+            tags[key.lower()]=tags.get(key.lower(),'encrypted-native-backup');tags[key]=tags[key.lower()]
+            with self.subTest(duplicate=key),self.assertRaises(retention.RetentionRejected):
+                retention.mint_capability(arm,self.record,self.blob,self.store,self.source,'c',apply=True)
+            self.assertTrue(all(method=='GET' for method,_,_ in arm.calls))
+        # Accepted key casing never changes the case-sensitive marker or ownership value.
+        owner='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+        store=retention.Store(self.blob,self.store.region,self.store.owned_subnets,owner)
+        arm=Arm(store,(self.source,self.verifier));account=arm.responses[self.blob.account_id]
+        account['tags']={key.upper():value for key,value in account['tags'].items()}
+        self.assertEqual(retention.mint_capability(arm,self.record,self.blob,store,self.source,'c',apply=True).permission,'c')
+        for key,value in (('AZD-SANTA-BACKUP-OWNER',owner.upper()),('AZD-SANTA-BACKUP-STORE','INDEPENDENT-V1')):
+            bad=Arm(store,(self.source,self.verifier));bad.responses[self.blob.account_id]['tags'][key.lower()]=value
+            with self.subTest(value_key=key),self.assertRaises(retention.RetentionRejected):
+                retention.mint_capability(bad,self.record,self.blob,store,self.source,'c',apply=True)
+
+    def test_resource_id_case_aliases_match_network_facts_but_duplicate_subnets_reject(self):
+        alias=self.source.subnet_id.replace('rg-azd-santa-vm-source','RG-AZD-SANTA-VM-SOURCE').replace('vnet-santa-lab','VNET-SANTA-LAB')
+        store=retention.Store(self.blob,self.store.region,(alias,self.verifier.subnet_id),OWNER)
+        arm=Arm(store,(self.source,self.verifier))
+        self.assertEqual(retention.mint_capability(arm,self.record,self.blob,store,self.source,'c',apply=True).permission,'c')
+        with self.assertRaises(retention.RetentionRejected):
+            retention.Store(self.blob,self.store.region,(alias,self.source.subnet_id),OWNER)
 
     def test_sas_permission_protocol_ip_expiry_duplicates_and_raw_errors_are_redacted(self):
         base=self.arm

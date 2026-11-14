@@ -33,7 +33,7 @@
       "rationale": "The private protocol component rechecks supplied cached-ARM selection before an exact listServiceSas request and handles short-lived HTTPS create-only/read-only capabilities without account-key retrieval or role assignment. listServiceSas is powerful account-level authority; code blob restriction does not narrow that RBAC action. Cached ARM adapter, confidential selected-VM delivery and job-terminal observation remain integration gates. Blob byte verification does not authenticate the envelope, retain images/portable keys, establish current authority or restore applications.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/blob_retention.py", "sha256": "28a4e80a5702a8014da3aecd661e8a86c466122544c1480ab399310d4d6355b5" }
+        { "path": "experiments/server/blob_retention.py", "sha256": "f5aa619725104fa3a4bbe174a7ea4ceb236d9eab68675b8730d90984cb3e1818" }
       ]
     },
     {
