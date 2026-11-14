@@ -92,6 +92,13 @@ separate inventory of all write paths and coordinated commit behavior.
 
 ## Signing rotation and secret recoverability
 
+The separate [offline secret-rewrap primitive](offline-secret-rewrap.md) now
+checks complete Store/probe Action/StateVersion row projections with real Fernet/noop
+preservation tests. It provides no SQL census, restoration, activation or
+current-authority proof. The future quarantine workflow must still establish
+complete schema/row coverage and every authority gate below. Pinned Fernet/noop
+cannot cryptographically authenticate a token's original context.
+
 Do not rotate `SECRET_KEY` and assume encrypted data survives. The pinned Fernet
 backend at lines10-24 derives keys using PBKDF2 with `settings.SECRET_KEY` as
 salt. Keeping the same configured passwords, or setting `SECRET_KEY_FALLBACKS`,
@@ -108,6 +115,11 @@ Before changing active signing configuration:
 5. Commit transformed rows and configuration binding before allowing apps.
 
 For the nine-app Santa profile, inspected encrypted data surfaces include:
+
+- `probes_action.backend_kwargs`: HTTP POST headers/password and Slack incoming
+  webhook URL, declared by the pinned `probes/action_backends` classes. These
+  share BackendInstance's recursive model/PK/path context and must be collected
+  along with stores; preserving action rows and probe relationships is required.
 
 - `stores_store.backend_kwargs`, recursively traversed by
   `zentral/utils/backend_model.py:35-87`. Context is model, PK and field path;
