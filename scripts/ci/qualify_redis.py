@@ -173,8 +173,8 @@ def public_receipt(value, cid, image, hashes, source_commit, reference):
 
 def safe_harness(value):
     if (type(value) is not dict or set(value) != {'kind', 'operation', 'exit_code'}
-            or value['kind'] not in HARNESS_KINDS
-            or (value['operation'] is not None and value['operation'] not in HARNESS_OPERATIONS)
+            or type(value['kind']) is not str or value['kind'] not in HARNESS_KINDS
+            or (value['operation'] is not None and (type(value['operation']) is not str or value['operation'] not in HARNESS_OPERATIONS))
             or (value['exit_code'] is not None and (type(value['exit_code']) is not int or not -64 <= value['exit_code'] <= 255))):
         return None
     return dict(value)

@@ -46,6 +46,8 @@ class Boundaries(unittest.TestCase):
         public.harness=value['diagnostic']
         self.assertEqual(public.diagnostic()['harness_diagnostic'],value['diagnostic'])
         for bad in ({'kind':'PRIVATE','operation':'EVAL','exit_code':1},
+                    {'kind':[],'operation':'EVAL','exit_code':1},
+                    {'kind':'command_exit','operation':{},'exit_code':1},
                     {'kind':'command_exit','operation':'PRIVATE','exit_code':1},
                     {'kind':'command_exit','operation':'EVAL','exit_code':True},
                     dict(value['diagnostic'],raw='PRIVATE')):
