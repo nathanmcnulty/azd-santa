@@ -29,7 +29,9 @@ There are no user-supplied remote paths or shell commands.
 Before reserving recovery, the guest requires current IMDS identity, the exact
 same boot/request/generation/source bindings, unchanged original installer and
 helper-upgrade terminal history, both exact failed systemd invocations, their
-complete profiles, empty cgroups, exact original stopped container inventory and
+complete profiles, positively attested kernel cgroup-v2 hierarchy and either empty
+unit cgroup events or authoritative terminal empty ControlGroup plus absent exact
+unit path, exact original stopped container inventory and
 exit statuses. It verifies the caller fragment, context and reviewed recorder
 bytes. It requires exactly the two known maintenance failure files, no native
 checkpoint, an empty native repository and absent ciphertext destination. Missing
@@ -62,3 +64,8 @@ A separate read-only VM probe of the exact new source-selected functions passed
 with PrivateTmp, ProtectHome and NoNewPrivileges enabled: six physical bindings
 matched despite mount IDs 28 versus 310 in distinct namespaces. The probe changed
 no installed source or request and establishes namespace portability only.
+
+The first eligibility-only guest probe rejected before reservation because it
+required root cgroup.events. Kernel v2 exposes that file on nonroot cgroups. The
+revised guard requires the attested root/controller set, system.slice domain and
+events, then the exact unit checks above; missing fields still fail closed.

@@ -28,7 +28,11 @@ class Recovery(unittest.TestCase):
         self.target={'EnvironmentName':'synthetic','VmId':'synthetic-vm','VmInstanceId':'synthetic-instance'}
         self.generation_token='d'*32;self.enabled='enabled';self.boot=r.BOOT;self.fs='cgroup2fs';self.actions=[];self.fail=None
         self.data=self.root/'preserved-history';self.data.write_bytes(b'keep every original historical record')
-        self.cg=self.root/'cgroup';(self.cg/'system.slice').mkdir(parents=True);(self.cg/'cgroup.events').write_bytes(b'populated 1\nfrozen 0\n')
+        self.cg=self.root/'cgroup';(self.cg/'system.slice').mkdir(parents=True)
+        for base in (self.cg,self.cg/'system.slice'):
+            (base/'cgroup.controllers').write_bytes(b'cpuset cpu io memory hugetlb pids rdma misc dmem\n')
+        (self.cg/'system.slice/cgroup.events').write_bytes(b'populated 1\nfrozen 0\n')
+        (self.cg/'system.slice/cgroup.type').write_bytes(b'domain\n')
         self.volumes={name:self.root/name for name in ('postgres_data','redis_data','rabbitmq_data','elasticsearch_data','media_data','elasticsearch_snapshots')}
         for path in self.volumes.values():path.mkdir()
         self.local_mounts={name:{'device':123,'inode':i+1,'mount':{'id':28,'parent':1,'point':'/','root':'/','filesystem':'ext4','source':'/dev/root','optional':['shared:1']}} for i,name in enumerate(self.volumes)}
@@ -146,12 +150,21 @@ class Recovery(unittest.TestCase):
     def test_missing_or_non_kernel_cgroup_and_populated_descendants_reject(self):
         self.fs='tmpfs'
         with self.assertRaises(ValueError):r.eligibility(self.h,self.target)
-        self.fs='cgroup2fs';(self.cg/'cgroup.events').unlink()
+        self.fs='cgroup2fs';(self.cg/'cgroup.controllers').unlink()
         with self.assertRaises(FileNotFoundError):r.eligibility(self.h,self.target)
-        (self.cg/'cgroup.events').write_bytes(b'populated 1\n')
+        (self.cg/'cgroup.controllers').write_bytes(b'cpuset cpu io memory hugetlb pids rdma misc dmem\n')
         group=self.cg/'system.slice'/r.CALLER;group.mkdir();(group/'cgroup.events').write_bytes(b'populated 1\n')
         self.caller['ControlGroup']='/system.slice/'+r.CALLER
         with self.assertRaises(ValueError):r.eligibility(self.h,self.target)
+
+    def test_nonroot_hierarchy_attestation_and_empty_unit_group_are_positive_proof(self):
+        self.assertFalse((self.cg/'cgroup.events').exists())
+        group=self.cg/'system.slice'/r.CALLER;group.mkdir()
+        (group/'cgroup.events').write_bytes(b'populated 0\nfrozen 0\n')
+        self.caller['ControlGroup']='/system.slice/'+r.CALLER
+        r.failed_unit(self.h,r.CALLER,r.CALLER_INVOCATION,'no')
+        (self.cg/'system.slice/cgroup.type').write_bytes(b'threaded\n')
+        with self.assertRaises(ValueError):r.failed_unit(self.h,r.CALLER,r.CALLER_INVOCATION,'no')
 
     def test_boot_request_fingerprint_or_unknown_process_state_rejects(self):
         self.boot='different-boot'

@@ -118,8 +118,14 @@ def failed_unit(h,name,invocation,restart):
     # kernel cgroup must positively prove no descendant processes remain.
     h.checked(CGROUP,directory=True);h.checked(CGROUP/'system.slice',directory=True)
     need(h.command(['/usr/bin/stat','--file-system','--format=%T',str(CGROUP)]).strip()=='cgroup2fs')
-    root_events=dict(line.split() for line in h.read(CGROUP/'cgroup.events',4096).decode().splitlines())
-    need('populated' in root_events and root_events['populated'] in ('0','1'))
+    # Kernel cgroup v2 exposes events on NONROOT cgroups, not the root.
+    # Positively attest this exact host hierarchy; absence alone proves nothing.
+    controllers='cpuset cpu io memory hugetlb pids rdma misc dmem'.split()
+    need(h.read(CGROUP/'cgroup.controllers',4096).decode().split()==controllers
+        and h.read(CGROUP/'system.slice/cgroup.controllers',4096).decode().split()==controllers
+        and h.read(CGROUP/'system.slice/cgroup.type',4096).strip()==b'domain')
+    slice_events=dict(line.split() for line in h.read(CGROUP/'system.slice/cgroup.events',4096).decode().splitlines())
+    need('populated' in slice_events and slice_events['populated'] in ('0','1'))
     group=CGROUP/'system.slice'/name
     need(state['ControlGroup'] in ('','/system.slice/'+name) and not group.is_symlink())
     if group.exists():
