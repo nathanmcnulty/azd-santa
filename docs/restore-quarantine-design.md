@@ -12,8 +12,11 @@ tag and digest verification. It creates no plaintext file, parses no archive and
 never restores or admits a service. Eight synthetic crypto tests cover producer
 roundtrip, tampering, truncation, recipient/digest/header/size/deadline failures.
 The Linux root/private-file descriptor guard still needs actual Linux filesystem
-qualification. Archive validation/extraction, key management, compatibility and
-the full quarantine/reissue workflow below remain unimplemented. A successful
+qualification. The separate [authenticated archive quarantine primitive](authenticated-archive-quarantine.md)
+now adds bounded private extraction with producer-format/control checks and inert
+ownership/mode metadata. Its Linux descriptor/crash behavior still requires
+separate qualification. Key management, application compatibility and the full
+quarantine/reissue workflow below remain unimplemented. A successful
 ciphertext check does not establish current authority; the caller must obtain
 the expected digest from trusted external evidence and bound blocking I/O with
 an outer process deadline.
