@@ -3,6 +3,18 @@
 Issue #54 remains open. `experiments/server/cold_backup.py` implements the first
 offline-tested capture mechanism for the selected initialized private VM stack.
 It has not captured a live stack, restored one, or established current authority.
+
+On 2026-11-14 the fresh six-volume private VM passed crypto API, original-runtime,
+worker-instance and queue preflight, then stopped before reservation at mount
+parsing. Docker exposes unrelated `nsfs` mount roots such as `net:[4026532166]`;
+the original parser incorrectly required every root to be a filesystem path.
+The source fix recognizes only this kernel network-namespace form for `nsfs`,
+retains those mounts in the inventory and still rejects any covering or nested
+mount in a protected data tree. Tests cover unrelated namespaces, protected
+exact/parent/child mounts, malformed roots and filesystem/type mismatches.
+The installed immutable bundle remains unchanged. No backup request was
+reserved and no service stopped; source tests do not qualify live capture.
+
 The earlier frozen `656f851`/`698ec2a` raw Elasticsearch directory capture is
 experimental byte preservation, **not** a supported Elasticsearch backup. Elastic
 explicitly says filesystem copies are unsupported even with nodes stopped;

@@ -202,7 +202,16 @@ def parse_mountinfo(raw):
         need(separator >= 6 and len(fields) == separator + 4)
         need(all(re.fullmatch(r'[0-9]+', fields[i]) for i in (0, 1)) and re.fullmatch(r'[0-9]+:[0-9]+', fields[2]))
         root, point = (unescape(fields[i]) for i in (3, 4))
-        need(all(PurePosixPath(p).is_absolute() and PurePosixPath(p).as_posix() == p and '..' not in PurePosixPath(p).parts for p in (root, point)))
+        def canonical_path(value):
+            path = PurePosixPath(value)
+            return path.is_absolute() and path.as_posix() == value and '..' not in path.parts
+        # Docker's unrelated network namespace mounts have an opaque kernel
+        # root, e.g. net:[4026532166], rather than a filesystem path. Retain
+        # them in the inventory: mount_bindings must still reject an nsfs
+        # mount covering or nested beneath any protected data tree.
+        namespace_root = (fields[separator+1] == 'nsfs'
+                          and re.fullmatch(r'net:\[[1-9][0-9]{0,19}\]', root))
+        need(canonical_path(point) and (canonical_path(root) or namespace_root))
         result.append(dict(id=int(fields[0]), parent=int(fields[1]), device=fields[2], root=root, point=point,
             options=fields[5], optional=fields[6:separator], filesystem=fields[separator+1],
             source=unescape(fields[separator+2]), super_options=fields[separator+3]))
