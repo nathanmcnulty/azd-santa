@@ -24,7 +24,7 @@ def row(running=True):
         user='999:999',running=running,state_pid=123 if running else 0,oom_killed=False,
         ports={'6379/tcp':None},mounts=[dict(Type='tmpfs',Destination='/data',RW=True)],
         host=dict(ReadonlyRootfs=True,NetworkMode='none',PortBindings={},PublishAllPorts=False,
-            Memory=ci.MEMORY,MemorySwap=ci.MEMORY,NanoCpus=500000000,PidsLimit=32,RestartPolicy={'Name':'no'},
+            Memory=ci.MEMORY,MemorySwap=ci.MEMORY,NanoCpus=500000000,PidsLimit=ci.PIDS,RestartPolicy={'Name':'no'},
             CapDrop=['ALL'],CapAdd=None,Privileged=False,PidMode='',Devices=[],SecurityOpt=['no-new-privileges:true'],
             LogConfig={'Type':'none'},Tmpfs={'/data':ci.TMPFS}))
 
@@ -68,9 +68,10 @@ class Boundaries(unittest.TestCase):
             with self.subTest(key=key),self.assertRaises(ValueError):ci.image_identity([dict(image,**{key:value})],REFERENCE)
 
     def test_all_actual_container_bounds_fail_closed_on_drift(self):
+        self.assertEqual(ci.PIDS,64)
         ci.isolated(row(),CID,IMAGE,TOKEN)
         edits=[('NetworkMode','bridge'),('ReadonlyRootfs',False),('PortBindings',{'6379/tcp':[{}]}),
-            ('Memory',0),('MemorySwap',0),('NanoCpus',0),('PidsLimit',0),('CapDrop',[]),
+            ('Memory',0),('MemorySwap',0),('NanoCpus',0),('PidsLimit',0),('PidsLimit',128),('CapDrop',[]),
             ('CapAdd',['SYS_ADMIN']),('Privileged',True),('PidMode','host'),('Devices',[{}]),
             ('SecurityOpt',[]),('Tmpfs',{}),('LogConfig',{'Type':'json-file'}),('RestartPolicy',{'Name':'always'})]
         for key,value in edits:

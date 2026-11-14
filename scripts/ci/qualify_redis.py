@@ -22,6 +22,10 @@ LABEL = 'santa-admission-lua-v1'
 RECEIPT_SCOPES = {'disposable-redis-admission-lua-v1': 27,
                   'disposable-redis-admission-fenced-lua-v2': 37}
 MEMORY = 64 * 1024 * 1024
+# Eight concurrent docker-exec clients also consume transient OCI init tasks.
+# The 32-task test ceiling rejected execs on a measured hosted run (exit128,
+# pids.events max=6, no OOM). This is CI headroom, not a backend setting.
+PIDS = 64
 TMPFS = 'rw,nosuid,nodev,noexec,size=67108864,uid=999,gid=999,mode=0700'
 DOCKER = ['/usr/bin/docker', '--host', 'unix:///var/run/docker.sock']
 INSPECT = ('{"id":{{json .Id}},"image":{{json .Image}},"labels":{{json .Config.Labels}},'
@@ -132,7 +136,7 @@ def isolated(row, cid, image, token):
     need(row['user'] == '999:999' and host['ReadonlyRootfs'] is True
          and host['NetworkMode'] == 'none' and not host['PortBindings'] and not host['PublishAllPorts']
          and host['Memory'] == MEMORY and host['MemorySwap'] == MEMORY
-         and host['NanoCpus'] == 500000000 and host['PidsLimit'] == 32
+         and host['NanoCpus'] == 500000000 and host['PidsLimit'] == PIDS
          and host['RestartPolicy']['Name'] == 'no' and host['CapDrop'] == ['ALL']
          and not host['CapAdd'] and not host['Privileged'] and not host['PidMode']
          and not host['Devices'] and host['SecurityOpt'] == ['no-new-privileges:true']
@@ -323,7 +327,7 @@ def run(source_root, source_commit):
         cid = runner.call('create', DOCKER + ['create', '--pull', 'never', '--platform', 'linux/amd64',
             '--label', 'io.azd-santa.qualification=' + LABEL, '--label', 'io.azd-santa.ci-owner=' + token,
             '--user', '999:999', '--read-only', '--network', 'none', '--tmpfs', '/data:' + TMPFS,
-            '--memory', '64m', '--memory-swap', '64m', '--cpus', '0.5', '--pids-limit', '32',
+            '--memory', '64m', '--memory-swap', '64m', '--cpus', '0.5', '--pids-limit', str(PIDS),
             '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--log-driver', 'none',
             '--restart', 'no', image, 'redis-server', '--bind', '127.0.0.1', '--port', '6379',
             '--save', '', '--appendonly', 'no', '--maxmemory', '32mb', '--maxmemory-policy', 'noeviction']).strip()

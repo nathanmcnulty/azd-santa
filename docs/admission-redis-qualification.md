@@ -76,6 +76,15 @@ No container limits or protocol assertions were relaxed. Earlier runs
 after26 families; their cause remains unconfirmed. This later selected pass
 does not explain those failures or establish sustained reliability.
 
+The later run43638257966 at head3f63079 captured a concurrency-block failure
+with Docker-exec exit128, `pids.events max=6`, memory peak21,475,328 bytes and
+zero OOM/oom-kill events. The CI-only PID ceiling was raised from32 to64 to
+accommodate transient OCI exec tasks for all eight clients. Memory/CPU limits,
+eight-client concurrency, production Lua and all37 assertions remain unchanged;
+backend resource settings are unaffected. A new hosted run must qualify this
+orchestration change. Those counters support a test-harness resource-limit
+diagnosis; they are not application overload measurements.
+
 This proves the selected production Lua/guard cases, including generation CAS
 and replay preservation. It does not prove Django/client persistence settings,
 live application overload, host/PG quiescence, restart recovery or native sync.
@@ -150,7 +159,7 @@ Linux amd64, verifies the returned RepoDigest, and binds the actual image ID. It
 creates exactly one labeled container with a separate random owner label. The
 container runs as UID/GID999, has a read-only root filesystem, no network or
 published ports, only a64MiB tmpfs at `/data`,64MiB memory with no extra swap,
-half a CPU,32PIDs, all capabilities dropped, no-new-privileges, no restart policy
+half a CPU,64PIDs, all capabilities dropped, no-new-privileges, no restart policy
 and no Docker log storage. Actual container metadata must match these bounds.
 
 Exactly the harness and its two product sources are copied into an absent

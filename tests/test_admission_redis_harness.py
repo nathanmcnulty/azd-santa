@@ -160,11 +160,11 @@ class Guards(unittest.TestCase):
         case.read_state(); case.script.assert_called_with('read', ('sync-global',), (300,100))
         case.read_state(allow_missing=True); case.script.assert_called_with('read-missing', ('sync-global',), (300,100))
 
-    def test_historical_receipt_is_distinct_from_unexecuted_fenced_scope(self):
+    def test_historical_receipt_is_distinct_from_fenced_scope(self):
         doc=(ROOT/'docs/admission-redis-qualification.md').read_text()
         self.assertIn('33a2fd00f8e2c7bee5fb7989325605499e3d181c198ed216c7571d73f55a233b', doc)
         self.assertIn('937ef10433eeb3bf901aaf5b87aaddf37b73b9c4c135a927cb6f9f5e1a0c5235', doc)
-        self.assertIn('actual Redis execution pending', doc)
+        self.assertIn('ebe2abef0cb9786f677a08dacf96b27acd944fcdd4e1465afa5c74701249629b', doc)
         self.assertIn('disposable-redis-admission-fenced-lua-v2', PATH.read_text())
 
     def test_receipt_has_exactly_37_unique_nonsecret_observation_families(self):
