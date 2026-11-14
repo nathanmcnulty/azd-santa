@@ -3,11 +3,13 @@
 Optional **private backend installation and host qualification**. Root
 `azure.yaml` remains Intune-only; this nested project runs no root hooks,
 publishes no profiles/rules, installs no Mac package and enrolls no devices.
-The selected cold invocation provisioned the VM and completed guest installation,
-but failed client finalization. A later unchanged-source azd rerun, standalone
-provision and original-container reboot checks passed. First-attempt cold
-end-to-end acceptance remains open; see [installation results](../../docs/private-vm-installation.md).
-New admission/worker/snapshot candidates need their own image and live tests.
+The selected 2026-11-14 cold invocation completed provisioning, fresh six-volume
+guest installation and client finalization on its first attempt. Earlier rerun,
+standalone provision and reboot evidence remains bound to its older image; see
+[installation results](../../docs/private-vm-installation.md). The new image also
+passed an unchanged-source rerun, original-container/data reboot checks and24
+post-reboot synthetic HTTP requests. Recovery faults and native
+snapshot/capture/resume still need qualification.
 Trusted reachable TLS, native-client and customer MFA acceptance remain pending.
 The backend listener is loopback-only.
 The user selected VM-first testing followed by a Container Apps comparison.

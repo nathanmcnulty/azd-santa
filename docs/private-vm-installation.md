@@ -5,8 +5,9 @@ path. With a selected fresh azd environment and `SANTA_PRIVATE_BACKEND_INSTALL`
 set to `true`, `azd up` invokes the installation pipeline without manual source
 builds, container commands, image IDs or JSON. Root Intune hooks, Monitor mode
 and device/profile assignments are unchanged. No public ingress, tunnel, managed
-identity or grant is added. Selected private live deployment results are below;
-first-attempt cold end-to-end acceptance remains open.
+identity or grant is added. The selected 2026-11-14 private candidate passed
+first-attempt cold installation and client finalization. Backup, recovery faults,
+trusted browser access and native-device acceptance remain separate gates.
 
 Preprovision automatically supplies Azure Linux's public provisioning key. It
 generates RSA-3072 in memory, exports only the OpenSSH public portion and disposes
@@ -31,6 +32,66 @@ Source inspection and compiled-template checks are separate from the actual
 CLI results below.
 
 ## Selected private deployment results
+
+### Fresh six-volume candidate, 2026-11-14
+
+The first `azd up --environment privatehook3-20261107 --no-prompt` completed
+successfully in25m28s using azd1.34.1 in sub-patriot-lab / West US2. No manual
+guest task, finalizer retry or initialization replay was needed. The normal hook
+created the installation receipt and recorded its operator-binding path after
+all seven initialized readiness gates passed.
+
+An unchanged-source `azd up` rerun then passed in1m39s with no infrastructure
+changes. Its normal hook observed the completed installer and produced another
+readback/binding without replaying initialization. This rerun still used the
+same content-addressed source bundle; later offline restore additions do not
+change that bundle.
+
+- Source bundle: `b6331a08e5352f8c5d962cda0e2c36d62e22187ff641aaddb3f3dbb2cd7f0741`.
+- Actual private image: `sha256:8321d09e6b0904e39e282cf07e809fdfe7c8baeb3638d77e44ba51bf4d0ce43a`.
+- Compose SHA256: `8fb3b5a5f21be74ac6ca7942c9ec5c9b8689adf18eac4ed18efb1275e753f1fc`.
+- VM instance: `597dbfce-436e-4e15-a987-e53d78b4d283` in
+  `rg-azd-santa-vm-privatehook3-20261107`.
+
+Independent readonly guest inspection found the active source-bound runtime,
+seven running original containers, six local volumes including the dedicated
+snapshot repository, no OOM kills and no container restarts. Manifest SHA256 was
+`f98de5c3f99fed4e8bad869aa099a796d57d28d61c1fa2f665d37759792229c8`;
+the original generation file SHA256 was
+`c323d9018309b52d858246f4540b91009529c061448e7b4e06828520db826659`.
+Host cryptography41.0.7 was available, with approximately20.8GB free. Its presence
+is a selected-host observation, not an installer dependency guarantee or backup
+crypto preflight. The NSG denied all inbound traffic; automatic shutdown was
+enabled. This proves private cold installation, not native snapshot/capture,
+restore, reachable HTTPS, operator enrollment or real-Mac behavior.
+
+The new image then passed24 synthetic loopback sync HTTP requests, including
+exact six-rule receipt/commit for two synthetic Monitor machines and two event
+counter increments. A controlled Azure restart changed boot ID from
+`a71b1764-e942-4f54-9f0d-815fc40941dc` to
+`21f522fe-937b-41fa-ae22-e09a3ddbc84f`. The original seven container IDs, image
+and generation were preserved. Before new HTTP traffic, the selected database
+projection matched SHA256
+`b846eedb21749ab9d08351eccf6ad01e4a7eaacba27ca804a2b9e9db1f654b3f`.
+Another24 requests passed after reboot, raising the synthetic event counter
+from2 to4; both sessions needed no rate-limit retries. This is selected
+PostgreSQL/client-reported state, not a full database comparison, indexed-event
+search, held-handler fault, native Mac or application backup proof.
+
+The initial qualification invocation failed before fixture creation or ORM
+execution because isolated Python had not loaded the helper's compiler module.
+The failure was reproduced readonly and retained; loading the exact verified
+dependency bytes allowed qualification without changing the deployed source.
+Retained guest receipts are under
+`/var/lib/azd-santa-qualification/http-cold3-20261114-verified-loader`:
+initial HTTP receipt SHA256
+`9e3948359a165e67a581cc0d7c04696e424d8ed059c2b4a96ca6b198ae1b4cde`,
+post-reboot HTTP receipt SHA256
+`3a93d56b56faf820cfef9e5656c00b04c4854eaf70a4640d0beb710ade598f30`,
+and `reboot-after.json` SHA256
+`b0258ad15008f6b393f321dfa4375954ced704dac8533a01aff9d4b190aa641b`.
+
+### Historical five-volume candidate, 2026-11-07
 
 On 2026-11-07, a genuine cold `azd up` in
 `rg-azd-santa-vm-privatehook2-20261107` provisioned the selected VM and completed
@@ -141,7 +202,8 @@ This remains a private lab: the configured HTTPS origin is bound to
 `https://localhost:8000`, while the actual listener is loopback HTTP. It does not
 establish reachable trusted admin TLS, native Santa enrollment or customer
 password/MFA completion. Do not open that placeholder as a qualified browser URL.
-Those remaining gates and first-attempt cold finalization must be qualified
-independently before promotion. `azd down` retains its normal
+Those remaining gates must be qualified independently before promotion. The
+selected private cold-finalization result above does not qualify them.
+`azd down` retains its normal
 destructive infrastructure semantics; stopping/restarting the runtime is not a
 backup or restore qualification.
