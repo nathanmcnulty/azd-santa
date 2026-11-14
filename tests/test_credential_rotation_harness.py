@@ -131,7 +131,7 @@ class Harness(unittest.TestCase):
             self.assertEqual(state.call_count, 5)
             self.assertEqual(post.call_args_list[1].args[2], {'cursor': 'cursor'})
             self.assertEqual(len(post.call_args_list[2].args[2]['events']), 1)
-        for mutation, status in ((True, 403), (False, 200)):
+        for mutation, status in ((True, 403), (False, 200), (False, 429)):
             with self.subTest(mutation=mutation, status=status), \
                  patch.object(rotation, 'state', side_effect=[{'x': 1}, {'x': 2 if mutation else 1}]), \
                  patch.object(rotation, 'post', return_value=(status, None)) as post:
@@ -198,13 +198,12 @@ class Harness(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError): rotation.partial_projection(bad, data, 0, replay)
 
     def test_fixed_loopback_legacy_header_shape_and_bounded_no_redirect_response(self):
-        fake = SimpleNamespace(UUID_PATTERN=re.compile('00000000-0000-4000-8000-[a-f0-9]{12}'),
-                               BASE_URL='http://127.0.0.1:8000/public/santa/sync/', NoRedirect=type('NoRedirect', (rotation.urllib.request.HTTPRedirectHandler,), {}))
-        response = MagicMock(); response.status = 200; response.read.return_value = b'{}'
-        opener = MagicMock(); opener.open.return_value = response
-        with patch.object(rotation, 'live', fake), patch.object(rotation.urllib.request, 'build_opener', return_value=opener):
+        helper=ROOT/'experiments/server'
+        fake,_=rotation.load_helpers(hashlib.sha256((helper/'test_live_zentral.py').read_bytes()).hexdigest(),
+                                     hashlib.sha256((helper/'prepare_zentral_eval.py').read_bytes()).hexdigest())
+        with patch.object(rotation, 'live', fake), patch.object(fake,'http_send',return_value=(200,b'{}')) as send:
             status, _ = rotation.post('eventupload', fixture()['devices'][0], {'events': []}, 'Bearer replacement', 's' * 64)
-            request = opener.open.call_args.args[0]
+            request = send.call_args.args[0]
             self.assertTrue(request.full_url.startswith(fake.BASE_URL + 's' * 64 + '/eventupload/'))
             self.assertEqual(request.get_header('Zentral-authorization'), 'Bearer replacement')
             self.assertEqual(json.loads(zlib.decompress(request.data)), {'events': []})
@@ -218,8 +217,40 @@ class Harness(unittest.TestCase):
             fake = MagicMock(); fake.validate_compose.return_value = (compose, 'b' * 64)
             with patch.object(rotation, 'load_helpers', return_value=(fake, {})), \
                  patch.object(rotation.sys, 'platform', 'linux'), patch.object(rotation.os, 'geteuid', return_value=0, create=True):
-                with self.assertRaises(ValueError): rotation.run(compose, root, 'sha256:' + 'a' * 64, 'c' * 64, 'd' * 64)
+                with self.assertRaises(ValueError): rotation.run(compose, root, 'sha256:' + 'a' * 64, 'c' * 64, 'd' * 64, rotation.VIEW_SHA256)
                 fake.orm.assert_not_called(); fake.initialize_fixture.assert_not_called()
+
+    def test_unknown_view_rejects_before_helpers_paths_or_fixtures(self):
+        with patch.object(rotation,'load_helpers') as helpers,patch.object(rotation,'attest_web') as web:
+            with self.assertRaises(ValueError):rotation.run('/absent','/absent','sha256:'+'a'*64,'b'*64,'c'*64,'0'*64)
+            helpers.assert_not_called();web.assert_not_called()
+
+    def test_only_known_selected_views_reach_readonly_attestation_before_fixture(self):
+        for selected in rotation.REVIEWED_VIEW_SHA256:
+            with self.subTest(view=selected),tempfile.TemporaryDirectory() as folder:
+                root=Path(folder).resolve();compose=root/'compose.json'
+                compose.write_text(json.dumps(dict(name='selected',services={name:{'image':'sha256:'+'a'*64}
+                    for name in ('web','workers','celery')})))
+                fake=MagicMock();fake.validate_compose.return_value=(compose,'b'*64)
+                fake.reset_http_transport.return_value.receipt.return_value={}
+                fake.orm.return_value={'view_sha256':'unknown-installed-view'}
+                original_stat=Path.stat
+                def root_stat(path,*args,**kwargs):
+                    info=original_stat(path,*args,**kwargs)
+                    # This boundary test simulates a root-owned guest directory.
+                    # Linux CI creates its real private temp directory as the
+                    # runner user; production's root ownership check stays on.
+                    return SimpleNamespace(st_uid=0,st_mode=info.st_mode) if path==root else info
+                with patch.object(rotation,'load_helpers',return_value=(fake,{})),patch.object(rotation.sys,'platform','linux'), \
+                     patch.object(rotation.os,'geteuid',return_value=0,create=True),patch.object(rotation,'attest_web',return_value='c'*64), \
+                     patch.object(Path,'stat',autospec=True,side_effect=root_stat):
+                    with self.assertRaises(ValueError):rotation.run(compose,root/'absent','sha256:'+'a'*64,'d'*64,'e'*64,selected)
+                    fake.initialize_fixture.assert_not_called()
+                    fake.orm.return_value={'view_sha256':selected}
+                    fake.initialize_fixture.side_effect=ValueError('Fixture boundary canary; no mutation')
+                    with self.assertRaisesRegex(ValueError,'Fixture boundary canary'):
+                        rotation.run(compose,root/'new-absent','sha256:'+'a'*64,'d'*64,'e'*64,selected)
+                    fake.initialize_fixture.assert_called_once()
 
     def test_private_receipts_refuse_overwrite(self):
         with tempfile.TemporaryDirectory() as folder:

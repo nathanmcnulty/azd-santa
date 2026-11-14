@@ -50,19 +50,13 @@ def post_raw(stage, device, payload, encoding, credential):
     if encoding is not None:
         headers['Content-Encoding'] = encoding
     request = urllib.request.Request(live.BASE_URL + stage + '/' + device, payload, headers, method='POST')
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), live.NoRedirect())
-    try:
-        response = opener.open(request, timeout=15)
-    except urllib.error.HTTPError as error:
-        response = error
-    with response:
-        content = response.read(65537)
-        live.require(len(content) <= 65536, 'Response exceeded bound')
-        return response.status
+    status, _ = live.http_send(request)
+    return status
 
 
 def run(compose, fixture_path):
     compose, compose_hash = live.validate_compose(compose)
+    transport = live.reset_http_transport()
     fixture_path = Path(fixture_path).absolute()
     fixture = live.load_fixture(fixture_path, compose_hash)
     before = live.snapshot(compose, fixture)
@@ -99,12 +93,14 @@ print(''' + repr(live.MARKER) + ''' + json.dumps(dict(
                      'Valid empty event upload encoding failed')
         results.append(dict(stage='eventupload', case=encoding or 'none', status=200))
     after = live.snapshot(compose, fixture)
+    live.require(len(results) == 89, 'Incomplete request-limit semantic case inventory')
     live.require(after == before, 'Rejected/empty requests changed selected fixture state')
     receipt = fixture_path.with_name(fixture_path.stem + '.request-limits-' + uuid.uuid4().hex + '.json')
     data = dict(scope='synthetic-loopback-request-limits', compose_sha256=compose_hash,
                 helper_sha256=expected, view_sha256=package.ADMISSION_OUTPUT_SHA256,
                 harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                 results=results, selected_database_projection_unchanged=True,
+                http_transport=transport.receipt(),
                 limitation='Real loopback HTTP only; no native Mac, public TLS, load/rate or full-database proof')
     descriptor = os.open(receipt, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, 'w') as output:

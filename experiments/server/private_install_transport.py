@@ -14,7 +14,9 @@ FILES = {'private_install.py', 'private_install_transport.py', 'bootstrap-host.s
     'prepare_core_build.py', 'prepare_operator_mfa.py', 'operator_mfa.py', 'prepare_operator_recovery.py',
     'operator_recovery.py', 'sealed_setup.py', 'prepare_request_limits.py', 'santa_request_limits.py',
     'prepare_database_roles.py', 'database_roles.py', 'prepare_zentral_eval.py', 'stage_runtime.py',
-    'runtime_service.py', 'santa_admission.py', 'test_live_zentral.py', 'zentral-source.lock.json', 'dependency-images.lock.json'}
+    'runtime_service.py', 'santa_admission.py', 'cold_backup.py', 'native_snapshot.py',
+    'worker_lifecycle.py', 'prepare_worker_lifecycle.py', 'test_live_zentral.py',
+    'zentral-source.lock.json', 'dependency-images.lock.json'}
 
 
 def need(value):

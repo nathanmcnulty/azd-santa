@@ -12,7 +12,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import zlib
 
 PATH = Path(__file__).resolve().parents[1] / 'experiments/server/test_live_zentral.py'
@@ -40,6 +40,7 @@ class Response:
 
 class Harness(unittest.TestCase):
     def setUp(self):
+        live.reset_http_transport()
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
@@ -202,6 +203,90 @@ class Harness(unittest.TestCase):
                 open=lambda request, timeout: Response(b'x' * 65537))):
             with self.assertRaises(ValueError):
                 live.post('preflight', self.fixture['devices'][0]['uuid'], {})
+        for payload in (b'null',b'[]',b'true'):
+            with patch.object(live.urllib.request,'build_opener',return_value=SimpleNamespace(
+                    open=lambda request,timeout:Response(payload))):
+                with self.assertRaises(ValueError):live.post('preflight',self.fixture['devices'][0]['uuid'],{})
+
+    def rate_response(self, status, values=None, body=b'{}'):
+        result = Response(body); result.status = status
+        result.headers = SimpleNamespace(get_all=lambda name: values)
+        return result
+
+    def test_429_waits_are_separate_and_retry_exact_request_until_real_denial(self):
+        opener = SimpleNamespace(open=Mock(side_effect=[self.rate_response(429,['2']),self.rate_response(403)]))
+        clock=[0.0]
+        def sleep(seconds):clock[0]+=seconds
+        with patch.object(live.urllib.request,'build_opener',return_value=opener), \
+             patch.object(live.time,'monotonic',side_effect=lambda:clock[0]),patch.object(live.time,'sleep',side_effect=sleep):
+            self.assertEqual(live.post('eventupload',self.fixture['devices'][0]['uuid'],{'events':[]},'invalid'),(403,None))
+        requests=[call.args[0] for call in opener.open.call_args_list]
+        self.assertIs(requests[0],requests[1])
+        self.assertEqual(json.loads(zlib.decompress(requests[1].data)),{'events':[]})
+        receipt=live.http_transport().receipt()
+        self.assertEqual((receipt['http_attempts'],receipt['semantic_requests'],receipt['completed_requests']),(2,1,1))
+        self.assertEqual(receipt['rate_limit_waits'],[dict(request=1,attempt=1,status=429,
+            retry_after_seconds=2,wait_completed=True,wait_seconds=2.0)])
+        self.assertNotIn('invalid',json.dumps(receipt))
+
+    def test_429_invalid_missing_duplicate_or_oversized_retry_after_never_sleeps(self):
+        for values in (None,[],['1','2'],['0'],['01'],['61'],['999999'],['1.5'],['-1'],['Thu, 1 Jan'],[' 1']):
+            with self.subTest(values=values):
+                live.reset_http_transport()
+                opener=Mock();opener.open.return_value=self.rate_response(429,values)
+                with patch.object(live.urllib.request,'build_opener',return_value=opener),patch.object(live.time,'sleep') as sleep:
+                    with self.assertRaises(ValueError):live.post('preflight',self.fixture['devices'][0]['uuid'],{})
+                    sleep.assert_not_called();self.assertEqual(opener.open.call_count,1)
+
+    def test_real_urllib_http_error_429_path_is_closed_then_reaches_final_401(self):
+        body=io.BytesIO(b'limited')
+        error=live.urllib.error.HTTPError(live.BASE_URL,429,'limited',
+            SimpleNamespace(get_all=lambda key:['1']),body)
+        opener=Mock();opener.open.side_effect=[error,self.rate_response(401)]
+        with patch.object(live.urllib.request,'build_opener',return_value=opener), \
+             patch.object(live.time,'sleep') as sleep:
+            self.assertEqual(live.post('preflight',self.fixture['devices'][0]['uuid'],{}),(401,None))
+        self.assertTrue(body.closed);sleep.assert_called_once_with(1)
+        self.assertEqual(opener.open.call_count,2)
+
+    def test_429_attempt_deadline_and_aggregate_wait_limits_fail_without_semantic_result(self):
+        clock=[0.0]
+        opener=Mock();opener.open.side_effect=lambda *a,**kw:self.rate_response(429,['1'])
+        with patch.object(live.urllib.request,'build_opener',return_value=opener), \
+             patch.object(live.time,'monotonic',side_effect=lambda:clock[0]), \
+             patch.object(live.time,'sleep',side_effect=lambda delay:clock.__setitem__(0,clock[0]+delay)):
+            with self.assertRaises(ValueError):live.post('preflight',self.fixture['devices'][0]['uuid'],{})
+        self.assertEqual(opener.open.call_count,4)
+        self.assertEqual(live.http_transport().receipt()['completed_requests'],0)
+        self.assertEqual(sum(row['wait_completed'] for row in live.http_transport().waits),3)
+        for state in ('deadline','waits','attempts'):
+            live.reset_http_transport();transport=live.http_transport()
+            if state=='deadline':transport.started=-1199
+            if state=='waits':transport.waits=[dict(retry_after_seconds=600)]
+            if state=='attempts':transport.attempts=512
+            opener=Mock();opener.open.return_value=self.rate_response(429,['2'])
+            with self.subTest(state=state),patch.object(live.urllib.request,'build_opener',return_value=opener), \
+                 patch.object(live.time,'monotonic',return_value=0),patch.object(live.time,'sleep') as sleep:
+                with self.assertRaises(ValueError):live.post('preflight',self.fixture['devices'][0]['uuid'],{})
+                sleep.assert_not_called()
+
+    def test_ambiguous_transport_failure_and_other_statuses_never_replay(self):
+        for outcome in (live.urllib.error.URLError('unknown mutation'),self.rate_response(503)):
+            live.reset_http_transport();opener=Mock()
+            opener.open.side_effect=outcome if isinstance(outcome,Exception) else None
+            opener.open.return_value=outcome
+            with patch.object(live.urllib.request,'build_opener',return_value=opener),patch.object(live.time,'sleep') as sleep:
+                if isinstance(outcome,Exception):
+                    with self.assertRaises(live.urllib.error.URLError):live.post('postflight',self.fixture['devices'][0]['uuid'],{})
+                else:self.assertEqual(live.post('postflight',self.fixture['devices'][0]['uuid'],{}),(503,None))
+                self.assertEqual(opener.open.call_count,1);sleep.assert_not_called()
+
+    def test_transport_refuses_external_legacy_prefix_or_method_before_network(self):
+        for url,method in [('https://outside.invalid', 'POST'),(live.BASE_URL+'invalid/preflight/'+self.fixture['devices'][0]['uuid'],'POST'),
+                           (live.BASE_URL+'preflight/'+self.fixture['devices'][0]['uuid'],'GET')]:
+            with self.subTest(url=url,method=method),patch.object(live.urllib.request,'build_opener') as opener:
+                with self.assertRaises(ValueError):live.http_send(live.urllib.request.Request(url,method=method))
+                opener.assert_not_called()
 
     def test_reopen_checks_database_before_any_http_and_does_not_reset(self):
         self.write_fixture()

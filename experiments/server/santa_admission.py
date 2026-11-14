@@ -104,10 +104,26 @@ if v and (not string.match(v,'^%d+$') or #v>5 or tonumber(v)<1 or tostring(tonum
 '''
 CHECK = VALIDATE + GLOBAL_COUNTER + 'return 1'
 EMPTY = VALIDATE + GLOBAL_COUNTER + "if redis.call('HLEN',KEYS[2])~=2 then return redis.error_reply('ADMISSION_QUIESCENCE_REQUIRED') end; return 1"
-RECONCILE = VALIDATE + '''
-for i=0,tonumber(ARGV[3])-1 do redis.call('HDEL',KEYS[2],tostring(i)) end
-redis.call('HSET',KEYS[2],'generation',ARGV[4]); return 1
+READ_STATE = VALIDATE + GLOBAL_COUNTER + "return {generation,redis.call('HLEN',KEYS[2])-2}"
+READ_OR_MISSING = "if redis.call('TYPE',KEYS[2]).ok=='none' then " + GLOBAL_COUNTER + "return {'missing',0} end; " + READ_STATE
+RECOVERY_FENCE = '''
+local expected=ARGV[6];local target=ARGV[7]
+if type(expected)~='string' or type(target)~='string' or #target~=32 or not string.match(target,'^[0-9a-f]+$') or target==expected then return redis.error_reply('ADMISSION_INVALID_FENCE') end
 '''
+RECONCILE = VALIDATE + GLOBAL_COUNTER + RECOVERY_FENCE + '''
+if #expected~=32 or not string.match(expected,'^[0-9a-f]+$') then return redis.error_reply('ADMISSION_INVALID_FENCE') end
+-- Compare-and-set fences delayed jobs. Re-observing the target is a NO-OP,
+-- even if a later live request already owns a permit in that generation.
+if generation==ARGV[7] then return {0,generation} end
+if generation~=ARGV[6] then return redis.error_reply('ADMISSION_GENERATION_CONFLICT') end
+for i=0,tonumber(ARGV[3])-1 do redis.call('HDEL',KEYS[2],tostring(i)) end
+redis.call('HSET',KEYS[2],'generation',ARGV[7]); return {1,ARGV[7]}
+'''
+INITIALIZE_QUIESCED = "if redis.call('TYPE',KEYS[2]).ok~='none' then return redis.error_reply('ADMISSION_ALREADY_EXISTS') end; " + GLOBAL_COUNTER + RECOVERY_FENCE + '''
+if expected~='' then return redis.error_reply('ADMISSION_INVALID_FENCE') end
+redis.call('HSET',KEYS[2],'config',ARGV[2],'generation',ARGV[7]);return {1,ARGV[7]}
+'''
+
 
 
 def _eval(script, extra_keys=(), arguments=()):
@@ -130,17 +146,40 @@ redis.call('HSET',KEYS[2],'config',ARGV[3],'generation',ARGV[4]);return 1
                        expected_id, delay, CONFIG.fingerprint, secrets.token_hex(16))
 
 
-def reconcile(*, initialize_missing=False):
-    # Host controller must establish quiescence BEFORE this explicit job.
-    if initialize_missing:
-        script = '''
-if redis.call('EXISTS',KEYS[2])~=0 then return redis.error_reply('ADMISSION_ALREADY_EXISTS') end
-redis.call('HSET',KEYS[2],'config',ARGV[2],'generation',ARGV[4]);return 1
-'''
-    else:
-        script = RECONCILE
-    if _eval(script, arguments=(secrets.token_hex(16),)) != 1:
-        raise ValueError('Admission reconciliation failed')
+def state(*, allow_missing=False):
+    """Read-only validated fence/occupancy; never expose permit tokens."""
+    if type(allow_missing) is not bool: raise ValueError('Explicit state mode required')
+    result = _eval(READ_OR_MISSING if allow_missing else READ_STATE, ('sync-global',),
+                   (CONFIG.window, CONFIG.global_max))
+    if not isinstance(result,(list,tuple)) or len(result)!=2: raise ValueError('Invalid admission state readback')
+    generation=result[0].decode() if isinstance(result[0],bytes) else result[0]
+    missing=allow_missing and generation=='missing'
+    if missing:generation=None
+    if ((not missing and (not isinstance(generation,str) or not re.fullmatch(r'[a-f0-9]{32}',generation)))
+            or type(result[1]) is not int or not 0<=result[1]<=CONFIG.capacity or (missing and result[1]!=0)):
+        raise ValueError('Invalid admission state readback')
+    return dict(generation=generation,active=result[1])
+
+
+def reconcile(*, expected_generation, generation, initialize_missing=False):
+    """Trusted host must prove original-process/DB quiescence under its lock.
+
+    One reserved transition only. Timeout is observed via state(), never blind
+    retry. Existing target generation is idempotent and must not clear slots.
+    """
+    if (type(initialize_missing) is not bool or not isinstance(generation,str)
+            or not re.fullmatch(r'[a-f0-9]{32}',generation) or expected_generation==generation
+            or (expected_generation is None and not initialize_missing)
+            or (initialize_missing and expected_generation is not None)
+            or (expected_generation is not None and (not isinstance(expected_generation,str)
+                or not re.fullmatch(r'[a-f0-9]{32}',expected_generation)))):
+        raise ValueError('Explicit existing admission fence required')
+    script=INITIALIZE_QUIESCED if expected_generation is None else RECONCILE
+    result=_eval(script,('sync-global',),(CONFIG.window,CONFIG.global_max,expected_generation or '',generation))
+    if (not isinstance(result,(list,tuple)) or len(result)!=2 or type(result[0]) is not int or result[0] not in (0,1)
+            or (result[1].decode() if isinstance(result[1],bytes) else result[1])!=generation):
+        raise ValueError('Admission reconciliation outcome unknown')
+    return dict(generation=generation,changed=result[0]==1)
 
 
 def check(*, require_empty=False):

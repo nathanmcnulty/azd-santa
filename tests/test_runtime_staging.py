@@ -36,9 +36,33 @@ class Staging(unittest.TestCase):
         with patch.object(runtime, 'require_host'), \
                 patch.object(runtime, 'private_directory'), \
                 patch.object(runtime, 'private_file', side_effect=lambda path: Path(path)), \
+                patch.object(runtime, 'initialize_snapshot_volume') as snapshot_volume, \
                 patch.object(runtime, 'prepare', side_effect=prepare), \
                 patch.object(runtime.subprocess, 'run', side_effect=self.docker):
             return runtime.stage(self.generated.source, self.lock, self.destination, self.image)
+
+    def test_native_repository_ownership_only_touches_fresh_verified_empty_volume(self):
+        from types import SimpleNamespace
+        import stat
+        root=self.generated.root.resolve()/'docker';data=root/'volumes/project_elasticsearch_snapshots/_data';data.mkdir(parents=True)
+        configured={'services':{'elastic':{'image':'elastic@sha256:'+'f'*64}}}
+        owner=[0];user=['1000:0']
+        def run(label,args):
+            if label=='snapshot-image':value=json.dumps([{'Config':{'User':user[0]}}])
+            elif label=='snapshot-docker-root':value=str(root)
+            else:value=json.dumps([dict(Name='project_elasticsearch_snapshots',Driver='local',Options={},Labels={'com.docker.compose.project':'project'},Mountpoint=str(data))])
+            return SimpleNamespace(stdout=value)
+        def chown(path,uid,gid):self.assertEqual(path,data);self.assertEqual((uid,gid),(1000,0));owner[0]=uid
+        with patch.object(runtime.os,'chown',side_effect=chown,create=True) as mutate, \
+             patch.object(Path,'stat',side_effect=lambda *a,**kw:SimpleNamespace(st_uid=owner[0],st_gid=0,st_mode=stat.S_IFDIR|0o700)):
+            runtime.initialize_snapshot_volume('project',configured,run);mutate.assert_called_once()
+            owner[0]=0;(data/'retained').write_text('never overwrite')
+            mutate.reset_mock()
+            with self.assertRaises(ValueError):runtime.initialize_snapshot_volume('project',configured,run)
+            mutate.assert_not_called();self.assertEqual((data/'retained').read_text(),'never overwrite')
+            user[0]='0:0'
+            with self.assertRaises(ValueError):runtime.initialize_snapshot_volume('project',configured,run)
+            mutate.assert_not_called()
 
     def docker(self, args, **kwargs):
         self.calls.append(args)

@@ -21,15 +21,17 @@ The deployment-only path must work without Azure compute, a sync server, GitHub,
 
 Santa’s native sync protocol is the correct central path for event upload, settings, and rule download. Offer profiles rather than forcing one server:
 
-1. **Workshop integration** — official managed service; recommended production option when an external service is acceptable.
-2. **Existing compatible server** — document integration with mature servers such as Zentral after version/protocol validation.
-3. **Azure-native sync service** — an advanced project profile, implemented only after a protocol compatibility and security spike.
+1. **Self-hosted Azure backend** — the current development focus: a pinned community Zentral core backend on a VM, followed by an equivalent Container Apps test deployment and cost comparison.
+2. **Existing compatible server** — integrate after version/protocol validation.
+3. **Workshop integration** — the official managed-service option when an external service is appropriate.
 
 For Git-backed operation, normalized Santa events produce deterministic candidate rule manifests. GitHub or Azure DevOps pull requests carry the proposed rule changes. Human approval gates publication to the selected sync server. Telemetry or AI output must never become an allow rule directly.
 
-VM-first Azure testing is available as an isolated opt-in
-[host qualification lab](experiments/vm/README.md). It provisions no public sync
-service and does not change the default Intune deployment or enroll a Mac.
+The optional [private VM installation](experiments/vm/README.md) automates host
+provisioning and backend setup through azd. Its selected private server tests
+are separate from native Mac and production acceptance. Start with the
+[backend status and remaining gates](docs/backend-status.md); the default
+Intune path still needs no backend or Azure compute.
 
 The next stage is [real-server qualification](docs/server-qualification.md),
 including a private core-only Zentral build experiment. This is development

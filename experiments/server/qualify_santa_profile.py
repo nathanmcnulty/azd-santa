@@ -18,7 +18,7 @@ APPS = ('accounts', 'realms', 'zentral.core.compliance_checks',
         'zentral.core.terraform', 'zentral.contrib.inventory', 'zentral.contrib.santa')
 SERVICES = {'postgres': 'db', 'redis': 'redis', 'rabbitmq': 'rabbitmq', 'elasticsearch': 'elastic'}
 VOLUMES = {'postgres_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data'}
-OPTIONAL_VOLUMES = {'redis_data'}
+OPTIONAL_VOLUMES = {'redis_data', 'elasticsearch_snapshots'}
 GATES = ('image_and_source_binding', 'new_docker_namespace_absent_before_start',
          'old_database_receipt_before_authorized_pause', 'migration_provision_and_profile_readback',
          'required_queue_consumers_and_stable_workers', 'operator_mfa_requests',

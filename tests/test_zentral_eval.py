@@ -72,7 +72,10 @@ class ZentralEvaluation(unittest.TestCase):
             self.assertEqual(service['logging']['options']['max-file'], '3')
             self.assertNotIn('docker.sock', json.dumps(service))
             self.assertNotIn('runserver', json.dumps(service))
-        self.assertEqual(set(compose['volumes']), {'postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data'})
+        self.assertEqual(set(compose['volumes']), {'postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data', 'elasticsearch_snapshots'})
+        self.assertEqual(services['elastic']['environment']['path.repo'], '/mnt/azd-santa-snapshots')
+        self.assertEqual(services['elastic']['volumes'], ['elasticsearch_data:/usr/share/elasticsearch/data', 'elasticsearch_snapshots:/mnt/azd-santa-snapshots'])
+        self.assertTrue(all('elasticsearch_snapshots' not in str(services[name]) for name in ('db','redis','rabbitmq','web','workers','celery')))
         self.assertEqual(services['redis']['volumes'], ['redis_data:/data'])
         self.assertEqual(services['redis']['command'], generator.REDIS_COMMAND)
 
