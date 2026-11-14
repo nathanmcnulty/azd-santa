@@ -285,7 +285,7 @@ Requires=docker.service
 PartOf=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
-StartLimitIntervalSec=1800
+StartLimitIntervalSec=14400
 StartLimitBurst=3
 
 [Service]

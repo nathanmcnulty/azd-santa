@@ -98,7 +98,10 @@ credential change or MFA replay-state reset is performed. A timeout cannot clear
 live work. Intent and exact-target confirmation remain private; unknown outcomes
 block listener admission. A later supervisor retry re-proves all preconditions
 and fences old delayed jobs. The unit keeps Burst3 and Restart30, with a corrected
-1,800-second window covering three maximum 420-second starts.
+14,400-second window covering three failed start/stop/restart cycles, including
+each 420-second startup, the 3,600-second backup-safe stop allowance and the
+30-second restart gap. A slow failed start therefore cannot age the earlier
+attempts out of the window before the burst limit is reached.
 
 This is offline source acceptance only. The earlier reboot/clean restart
 receipts below do not qualify the new permit recovery, PostgreSQL drain, delayed

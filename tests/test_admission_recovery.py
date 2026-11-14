@@ -311,12 +311,14 @@ class Controller(unittest.TestCase):
         with self.assertRaises(ValueError):self.r.start()
         self.r.inspect.assert_not_called();self.r.python.assert_not_called();self.r.call.assert_not_called()
 
-    def test_supervisor_interval_bounds_three_worst_case_starts(self):
+    def test_supervisor_interval_bounds_three_failed_start_stop_restart_cycles(self):
         unit=service.unit_text(service.PurePosixPath('/var/lib/azd-santa-qualification/runtime_service.py'),
             service.PurePosixPath('/var/lib/azd-santa-qualification/runtime-service/manifest.json'),'a'*64)
         values=dict(line.split('=',1) for line in unit.splitlines() if '=' in line)
         self.assertEqual(values['StartLimitBurst'],'3');self.assertEqual(values['RestartSec'],'30')
-        self.assertGreaterEqual(int(values['StartLimitIntervalSec']),3*(int(values['TimeoutStartSec'])+int(values['RestartSec'])))
+        self.assertEqual(values['TimeoutStopSec'],'3600')
+        cycle=int(values['TimeoutStartSec'])+int(values['TimeoutStopSec'])+int(values['RestartSec'])
+        self.assertGreater(int(values['StartLimitIntervalSec']),int(values['StartLimitBurst'])*cycle)
 
 
 if __name__=='__main__':unittest.main()

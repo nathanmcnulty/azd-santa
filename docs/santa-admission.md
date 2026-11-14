@@ -98,11 +98,13 @@ then conflict or no-op. This does not replay initialization, HTTP requests, data
 jobs or credential changes. Private intent/completion evidence is retained; a
 serialized boolean or elapsed timeout is not a quiescence capability.
 
-The unit's 1,800-second start-limit interval covers three 420-second startup
-attempts plus the unchanged 30-second restart gaps; Burst remains three. This
-corrects the earlier 600-second window, which could let slow failures escape the
-burst limit. The policy is bounded recovery, not a guarantee against host/kernel
-failure. Actual systemd exhaustion/reboot faults remain separate qualification.
+The unit's 14,400-second start-limit interval covers three complete failed
+start/stop/restart cycles: 420 seconds for startup, the preserved 3,600-second
+backup stop allowance and a 30-second restart gap per cycle. Burst remains
+three. Counting startup alone let slow termination age earlier attempts out of
+the burst window. The policy is bounded recovery, not a guarantee against
+host/kernel failure. Actual systemd exhaustion/reboot faults remain separate
+qualification.
 
 Automatic recovery assumes cooperating lifecycle operations honor this same
 lock and original generation. It does not fence an arbitrary privileged Docker
