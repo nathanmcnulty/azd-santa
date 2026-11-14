@@ -288,7 +288,16 @@ def verify_storage_snapshot(runtime, roots, volumes, mounts):
 
 def storage_fingerprint(runtime):
     volumes=volume_paths(runtime)
-    return digest(encoded({'volumes':{k:str(v) for k,v in volumes.items()},'mounts':mount_snapshot(volumes)}))
+    # A PrivateTmp mount namespace clones mount IDs/parents/propagation fields.
+    # These are process-local continuity facts, not physical storage identity.
+    # Still run the complete local topology guard before projecting; archive
+    # snapshots/FD checks continue to retain and compare their full local IDs.
+    snapshot=mount_snapshot(volumes)
+    physical={name:dict(device=value['device'],inode=value['inode'],
+        mount={key:item for key,item in value['mount'].items() if key not in ('id','parent','optional')})
+        for name,value in snapshot.items()}
+    return digest(encoded(dict(scope='physical-storage-binding-v2',
+        volumes={k:str(v) for k,v in volumes.items()},physical=physical)))
 
 
 def recipient_key(public_der):

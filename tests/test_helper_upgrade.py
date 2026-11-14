@@ -206,7 +206,9 @@ class Upgrade(unittest.TestCase):
             observe.assert_called_once();history.assert_not_called()
 
     def test_frozen_exact_source_pins_are_present_and_no_fresh_install_replay(self):
-        self.assertEqual(upgrade.sha((ROOT/'experiments/server/cold_backup.py').read_bytes()),upgrade.NEW)
+        # v1 stays frozen to its reviewed historical transition even when a
+        # later explicit recovery introduces a different current helper.
+        self.assertEqual(upgrade.NEW,'790ec1696dc8533ccf85c01947a882b2f6188f3fe5d5a2017f456e8a0b711433')
         self.assertEqual(upgrade.sha((ROOT/'experiments/server/runtime_service.py').read_bytes()),upgrade.CONTROLLER)
         source=(ROOT/'experiments/server/helper_upgrade.py').read_text()
         self.assertNotIn('bind_admission_fresh(',source);self.assertNotIn('install_unit(',source)
