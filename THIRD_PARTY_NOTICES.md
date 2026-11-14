@@ -45,6 +45,13 @@ snapshot used as a hash-bound replacement anchor. Its modified output retains
 upstream terms and adds a modification notice. The separately installed decoder
 and its integration tooling are original Unlicense code; decoder and resulting
 view hashes are recorded in the image build notice.
+The offline secret-rewrap tests retain exact class/method excerpts from the
+pinned Apache/core secret engines, recursive backend helper and Terraform model
+in `tests/fixtures/server/secret-rewrap-upstream.json`. These test-only excerpts
+remain Apache-2.0 and are identified by full upstream source hashes in
+`experiments/server/secret-rewrap-source.lock.json`; they do not import or start
+Zentral. The surrounding rewrap primitive is original Unlicense code.
+
 The optional worker-lifecycle compiler also derives the pinned Apache/core
 `server/base/management/commands/runworkers.py`, preserving its upstream license
 and adding a modification notice. `worker_lifecycle.py` is original Unlicense
