@@ -26,7 +26,7 @@ the older admission source SHA-256
 `937ef10433eeb3bf901aaf5b87aaddf37b73b9c4c135a927cb6f9f5e1a0c5235`;
 it is not acceptance of the newer fenced protocol.
 
-## Fenced follow-up: source prepared, actual Redis execution pending
+## Fenced follow-up
 
 The current harness binds admission SHA-256
 `ebe2abef0cb9786f677a08dacf96b27acd944fcdd4e1465afa5c74701249629b`
@@ -49,10 +49,36 @@ timestamps. Successful CAS and retry must preserve counter values and exact
 expiration timestamps. A simulated lost reply means the actual first Lua
 response is deliberately not interpreted; no fake success is substituted.
 
-This is source/offline harness preparation only. It does not establish actual
-Lua execution, host PID/container/PostgreSQL quiescence, supervisor locking,
-host timeout handling or safe production recovery. The coordinator must first
-verify exact source bytes and the independently selected disposable target.
+Source/offline checks alone do not establish actual Lua execution. They also do
+not prove host PID/container/PostgreSQL quiescence, supervisor locking, timeout
+handling or safe production recovery. Actual selected Lua evidence follows.
+
+### Selected hosted Redis result, 2026-11-14
+
+[Run 43637751447](https://github.com/nathanmcnulty/azd-santa/actions/runs/43637751447)
+passed all37 observation families on an isolated hosted Linux runner. The
+downloaded success receipt was independently checked against all three current
+source files. Harness SHA-256 was
+`9e727cb39593e36e529c76e2f722ddf4e1971c3acd8368966274656ce493b00c`;
+admission/operator hashes are the pins above. The checked-out merge commit was
+`30830ad4dbcd91ad9ba251e1d405757a21217550` for PR head
+`4641b052d7ca0799c8f274c493a4f363649794db`.
+
+The immutable Redis reference remained
+`redis@sha256:5b816bb37d9707a70f10ef5002ecf8ee431750d397010fc4314c93dca887962f`;
+the runner's actual image ID was
+`sha256:a0d24678e92d89456dd5e332aae0b4b63d4b7556b166e6893e35de24cc1deaf6`.
+The sanitized artifact `santa-disposable-redis-lua-43637751447-1` contains the
+receipt; its JSON SHA-256 is
+`cf126af0d5adace257c54969b934a14ffd2b04003693acfc1918488eed17b0bb`.
+No container limits or protocol assertions were relaxed. Earlier runs
+42358605804 and42359057260 failed before completing the next concurrency block
+after26 families; their cause remains unconfirmed. This later selected pass
+does not explain those failures or establish sustained reliability.
+
+This proves the selected production Lua/guard cases, including generation CAS
+and replay preservation. It does not prove Django/client persistence settings,
+live application overload, host/PG quiescence, restart recovery or native sync.
 
 Failure receipts additionally carry one fixed `diagnostic` object with only
 `kind`, `operation` and `exit_code`. Kinds distinguish an unconsumed Redis error,
