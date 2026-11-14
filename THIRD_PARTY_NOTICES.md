@@ -50,7 +50,10 @@ pinned Apache/core secret engines, recursive backend helper and Terraform model
 in `tests/fixtures/server/secret-rewrap-upstream.json`. These test-only excerpts
 remain Apache-2.0 and are identified by full upstream source hashes in
 `experiments/server/secret-rewrap-source.lock.json`; they do not import or start
-Zentral. The surrounding rewrap primitive is original Unlicense code.
+Zentral. Selected source bytes are unchanged; the Terraform method block is
+executed under a separately labelled synthetic `class StateVersion` wrapper.
+The fixture records the source byte offset/length/hash and wrapper hash
+separately. The surrounding rewrap primitive is original Unlicense code.
 
 The optional worker-lifecycle compiler also derives the pinned Apache/core
 `server/base/management/commands/runworkers.py`, preserving its upstream license

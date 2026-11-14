@@ -73,7 +73,8 @@ a supported new engine. Historical Fernet passwords retain upstream MultiFernet
 fallback order. PBKDF2-SHA256 uses 100,000 iterations, 32 derived bytes and the
 exact signing salt, matching pinned Zentral. Different signing salts are tested.
 Fernet-to-Fernet rewrap encrypts with the first new password and verifies recovered
-bytes. Explicit `noop` maps only to `noop` and preserves the original canonical
+bytes. Identical old/target material is permitted for preservation; success does
+not prove key rotation or fresh authority. Explicit `noop` maps only to `noop` and preserves the original canonical
 base64 token exactly, including empty values. Noop is cleartext encoding and
 must remain confidential. No Fernet-to-noop downgrade or noop-to-Fernet policy
 change is inferred. Unknown/KMS engines and inaccessible material remain gates.
@@ -109,6 +110,12 @@ Fernet/noop implementations, recursive Backend methods and StateVersion methods
 in `tests/fixtures/server/secret-rewrap-upstream.json`; see
 [third-party notices](../THIRD_PARTY_NOTICES.md). The new production module is
 original Unlicense code and does not import Django or execute upstream services.
+The fixture separates selected source bytes from test scaffolding. The Terraform
+selection is the unchanged original lines50-78, including four-space indentation,
+blank lines and comments, under a synthetic `class StateVersion` wrapper.
+Every selection records its raw-file byte offset, length and SHA-256; the wrapper
+prefix and its hash are recorded separately. The lock and tests check source
+and combined harness hashes independently.
 
 Tests use real cryptography and pinned engine/recursive traversal/get_data method
 excerpts. They cover all six backends, nested headers, null/noop preservation,
@@ -119,7 +126,7 @@ They do not execute Django ORM, SQL quarantine, a real restored database,
 administrator reissue, KMS, current-authority reconciliation, native devices or
 the full backup/restore lifecycle. No cloud permission is added.
 
-On 2026-11-14, all13 focused Python tests passed with Python3.14.6 and
+On 2026-11-14, all14 focused Python tests passed with Python3.14.6 and
 cryptography48.0.1 from the existing Azure CLI interpreter. The template
 validation passed and the complete Pester6.2.0 suite passed231 tests under
 PowerShell7.6.9. No dependency installation or live operation was performed.

@@ -172,6 +172,15 @@ class Rewrap(unittest.TestCase):
         self.assertEqual(result.state_versions, [row])
         self.assertEqual(result.receipt['noop_preserved'], 1)
 
+    def test_identical_fernet_material_preserves_values_without_authority_claim(self):
+        row = store(kwargs={'password': token(self.old, b'preserve without rotating material')})
+        result = self.run_projection([row], contexts=[self.ctx(row, 'password')],
+            new_material=self.kw['old_material'], targets={'fernet': 'fernet', 'noop': 'noop'})
+        payload = result.stores[0]['backend_kwargs']['password'].split('$')[1]
+        self.assertEqual(self.old.decrypt(payload), b'preserve without rotating material')
+        self.assertFalse(result.receipt['restore_accepted'])
+        self.assertFalse(result.receipt['current_authority_established'])
+
     def test_unknown_apps_fields_backends_duplicates_or_incomplete_rows_reject(self):
         row = store()
         bad_rows = [{**row, 'new_secret': 'unhandled'}, {k: v for k, v in row.items() if k != 'description'},
@@ -250,6 +259,15 @@ class Rewrap(unittest.TestCase):
             self.assertEqual(LOCK['files'][item['path']], item['sha256'])
         for name, item in FIXTURE['snippets'].items():
             self.assertEqual(hashlib.sha256(item['code'].encode()).hexdigest(), LOCK['test_excerpt_sha256'][name])
+            source = item['source_code'].encode()
+            wrapper = item['wrapper_prefix'].encode()
+            self.assertEqual(item['code'].encode(), wrapper + source)
+            self.assertEqual(len(source), item['source_byte_length'])
+            self.assertEqual(hashlib.sha256(source).hexdigest(), item['source_sha256'])
+            self.assertEqual(item['source_sha256'], LOCK['test_source_excerpt_sha256'][name])
+            self.assertEqual(hashlib.sha256(wrapper).hexdigest(), item['wrapper_sha256'])
+            self.assertEqual(item['wrapper_prefix'], 'class StateVersion:\n' if name == 'terraform' else '')
+            self.assertGreaterEqual(item['source_byte_offset'], 0)
         self.assertEqual(LOCK['files']['zentral/core/secret_engines/backends/fernet.py'],
                          '0429f8298bbb382260f76c8448e061988d5633cb727dad36484e396794712cf4')
 
