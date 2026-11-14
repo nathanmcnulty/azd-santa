@@ -232,6 +232,25 @@ class ColdBackup(unittest.TestCase):
         escaped=backup.parse_mountinfo(root+b'2 1 8:2 / /space\\040mount rw - xfs /dev/sdb rw\n')
         self.assertEqual(escaped[-1]['point'],'/space mount')
 
+    def test_unrelated_docker_network_namespaces_preserve_protected_mount_checks(self):
+        path='/var/lib/docker/volumes/selected/_data'
+        root=b'1 0 8:1 / / rw shared:1 - ext4 /dev/root rw\n'
+        namespace=b'425 1 0:4 net:[4026532166] /run/docker/netns/4dd37f58529a rw - nsfs nsfs rw\n'
+        mounts=backup.parse_mountinfo(root+namespace)
+        self.assertEqual(mounts[-1]['root'],'net:[4026532166]')
+        self.assertEqual(backup.mount_bindings({'data':path},mounts)['data']['id'],1)
+        for point in (path,path+'/hidden','/var/lib/docker/volumes/selected'):
+            raw=root+namespace.replace(b'/run/docker/netns/4dd37f58529a',point.encode())
+            with self.subTest(point=point),self.assertRaises(ValueError):
+                backup.mount_bindings({'data':path},backup.parse_mountinfo(raw))
+        for invalid in (namespace.replace(b'net:[4026532166]',b'net:[0]'),
+                        namespace.replace(b'net:[4026532166]',b'net:[bad]'),
+                        namespace.replace(b'net:[4026532166]',b'net:[4026532166]/../escape'),
+                        namespace.replace(b'- nsfs nsfs',b'- ext4 /dev/root'),
+                        namespace.replace(b'/run/docker/netns/4dd37f58529a',b'/run/../escape')):
+            with self.subTest(raw=invalid),self.assertRaises(ValueError):
+                backup.parse_mountinfo(root+invalid)
+
     def test_descriptor_mount_id_detects_same_device_bind_alias(self):
         expected=dict(mount={'id':19},device=123)
         for actual in (19,20):

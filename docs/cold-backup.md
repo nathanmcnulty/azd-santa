@@ -3,6 +3,35 @@
 Issue #54 remains open. `experiments/server/cold_backup.py` implements the first
 offline-tested capture mechanism for the selected initialized private VM stack.
 It has not captured a live stack, restored one, or established current authority.
+
+On 2026-11-14 the fresh six-volume private VM passed crypto API, original-runtime,
+worker-instance and queue preflight, then stopped before reservation at mount
+parsing. Docker exposes unrelated `nsfs` mount roots such as `net:[4026532166]`;
+the original parser incorrectly required every root to be a filesystem path.
+The source fix recognizes only this kernel network-namespace form for `nsfs`,
+retains those mounts in the inventory and still rejects any covering or nested
+mount in a protected data tree. Tests cover unrelated namespaces, protected
+exact/parent/child mounts, malformed roots and filesystem/type mismatches.
+The installed immutable bundle remains unchanged. No backup request was
+reserved and no service stopped; source tests do not qualify live capture.
+
+The exact changed parser functions were separately executed readonly against
+the selected VM's actual mount table: six data volumes bound to ext4, seven
+unrelated Docker network-namespace mounts remained visible, and a simulated
+nested namespace mount was rejected. The full candidate helper SHA256 is
+`790ec1696dc8533ccf85c01947a882b2f6188f3fe5d5a2017f456e8a0b711433`;
+selected-function SHA256 is
+`762e4595d09a0ecb6feafa4c1778c0dc64a8cb39b98dca46c29754f565669137`.
+Receipt `backup-preflight-cold3/candidate-mount-proof.json` under the qualification
+root has SHA256
+`22e27c7003f87eabef2887b38153966c53a9fffc4f0014f3cab281658510183d`.
+Readonly Elasticsearch inspection found version9.2.1, one index/primary shard
+and150,191 primary-store bytes. This is not snapshot or event-search acceptance.
+All16 focused backup tests and231 integrated Pester tests passed. Delivering the
+host-only helper change must preserve the old bundle/installer history and
+explicitly rebind runtime manifest, original-generation manifest reference and
+unit; rerunning fresh initialization or editing the immutable bundle is unsafe.
+
 The earlier frozen `656f851`/`698ec2a` raw Elasticsearch directory capture is
 experimental byte preservation, **not** a supported Elasticsearch backup. Elastic
 explicitly says filesystem copies are unsupported even with nodes stopped;
