@@ -69,3 +69,9 @@ The first eligibility-only guest probe rejected before reservation because it
 required root cgroup.events. Kernel v2 exposes that file on nonroot cgroups. The
 revised guard requires the attested root/controller set, system.slice domain and
 events, then the exact unit checks above; missing fields still fail closed.
+
+A second eligibility-only probe also rejected before reservation: systemctl
+omits empty Exec command arrays, so the runtime has no scalar ExecStopPost line.
+The runtime now requires its exact observed 12-field profile and typed D-Bus
+ExecStopPost empty-array proof. The caller still requires its pinned nonempty
+recorder field. Neither failed preflight reserved or retired a request.

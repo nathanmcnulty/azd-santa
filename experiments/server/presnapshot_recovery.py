@@ -34,6 +34,7 @@ BOOT='21f522fe-937b-41fa-ae22-e09a3ddbc84f'
 CALLER='azd-santa-native-backup-cold3-20261114.service'
 CALLER_INVOCATION='343b579ab63b477ba711784d3e2de546'
 RUNTIME_INVOCATION='98a67049adc245ca823fb74435322a4a'
+RUNTIME_PROFILE='1d640d4a557f163fa232af8e10f2d6f5befccb8477ec9975d592420bdeb346e1'
 CALLER_PROFILE='9eb522c0d949165d1711d40cf28b20bc14de586907198d505f95fbfb2797e5e9'
 CALLER_FRAGMENT='b04ce18340a6e2574010a199209fa334bbc045b7158780df165ae28a8cffa7ca'
 CALLER_CONTEXT='9f9eb0a8b27446246647fad0f7606b930b2d927ac9fceb6935b3be002596a960'
@@ -42,6 +43,7 @@ FAILED_FILES={'maintenance-failed.json':'3ed854c95967fa85c45df4792276c9a64a3ab07
     'maintenance-intent.json':'c0575ac8e165ce844ab776e2197b4c21b50ea26a7d7ae4912429252dc5c8041e'}
 PROFILE_FIELDS=('MainPID','Result','ExecMainCode','ExecMainStatus','ExecStart','ExecStopPost',
     'LoadState','ActiveState','SubState','FragmentPath','DropInPaths','Job','InvocationID')
+RUNTIME_FIELDS=tuple(k for k in PROFILE_FIELDS if k!='ExecStopPost')
 
 
 def need(ok):
@@ -107,8 +109,17 @@ def historical_upgrade(h,target):
 
 
 def failed_unit(h,name,invocation,restart):
-    fields=PROFILE_FIELDS+('ControlGroup','Slice','KillMode','Delegate','Restart','Type')
+    runtime=name=='azd-santa-runtime.service'
+    profile=RUNTIME_FIELDS if runtime else PROFILE_FIELDS
+    fields=profile+('ControlGroup','Slice','KillMode','Delegate','Restart','Type')
     state=unit(h,name,fields)
+    if runtime:
+        need(sha(encoded({k:state[k] for k in profile}))==RUNTIME_PROFILE)
+        # systemctl omits empty Exec arrays: obtain typed positive manager proof,
+        # never synthesize a missing scalar or infer no hook from omission.
+        need(h.command(['/usr/bin/busctl','--system','get-property','org.freedesktop.systemd1',
+            '/org/freedesktop/systemd1/unit/azd_2dsanta_2druntime_2eservice',
+            'org.freedesktop.systemd1.Service','ExecStopPost']).strip()=='a(sasbttttuii) 0')
     need(state['LoadState']=='loaded' and state['ActiveState']=='failed' and state['SubState']=='failed'
         and state['Result']=='exit-code' and state['ExecMainStatus']=='1' and state['ExecMainCode']=='1'
         and state['MainPID']=='0' and state['Job']=='' and state['InvocationID']==invocation

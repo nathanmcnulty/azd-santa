@@ -26,7 +26,7 @@ class Recovery(unittest.TestCase):
         self.manifest=self.control/'manifest.json';self.unitfile=self.root/'runtime.service';self.unitfile.write_bytes(b'old unit')
         self.ids={name:format(i+1,'064x') for i,name in enumerate(('web','workers','celery','db','redis','rabbitmq','elastic'))}
         self.target={'EnvironmentName':'synthetic','VmId':'synthetic-vm','VmInstanceId':'synthetic-instance'}
-        self.generation_token='d'*32;self.enabled='enabled';self.boot=r.BOOT;self.fs='cgroup2fs';self.actions=[];self.fail=None
+        self.generation_token='d'*32;self.enabled='enabled';self.boot=r.BOOT;self.fs='cgroup2fs';self.hook='a(sasbttttuii) 0';self.actions=[];self.fail=None
         self.data=self.root/'preserved-history';self.data.write_bytes(b'keep every original historical record')
         self.cg=self.root/'cgroup';(self.cg/'system.slice').mkdir(parents=True)
         for base in (self.cg,self.cg/'system.slice'):
@@ -65,6 +65,7 @@ class Recovery(unittest.TestCase):
             InvocationID=r.CALLER_INVOCATION,ControlGroup='',Slice='system.slice',KillMode='control-group',Delegate='no',Restart='no',Type='oneshot')
         self.caller=base.copy();self.runtime_state={**base,'FragmentPath':str(self.unitfile),'InvocationID':r.RUNTIME_INVOCATION,
             'Restart':'on-failure','Type':'notify','NoNewPrivileges':'yes','PrivateTmp':'yes','ProtectHome':'yes'}
+        self.runtime_state.pop('ExecStopPost')
         self.rows=[dict(Id=cid,State=dict(Status='exited',Running=False,Paused=False,Restarting=False,OOMKilled=False,Error='',Pid=0,
             ExitCode=1 if name=='workers' else 143 if name=='elastic' else 0,StartedAt='original-start',FinishedAt='original-stop')) for name,cid in self.ids.items()]
         files=module('private_install_transport').FILES
@@ -90,6 +91,7 @@ class Recovery(unittest.TestCase):
             patch.object(r,'REQUEST',reqhash),patch.object(r,'FAILED_FILES',self.failed_files),patch.object(r,'CALLER_FRAGMENT',r.sha(self.fragment)),
             patch.object(r,'CALLER_CONTEXT',r.sha(self.context_path.read_bytes())),patch.object(r,'RECORDER',r.sha(self.recorder.read_bytes())),
             patch.object(r,'CALLER_PROFILE',r.sha(r.encoded({k:self.caller[k] for k in r.PROFILE_FIELDS}))),
+            patch.object(r,'RUNTIME_PROFILE',r.sha(r.encoded({k:self.runtime_state[k] for k in r.RUNTIME_FIELDS}))),
             patch.object(r,'library',return_value=self.h),patch.object(r,'historical_upgrade',return_value=(self.old_upgrade,self.oldfolder,self.package)),
             patch.object(self.h,'ROOT',self.root),patch.object(self.h,'checked',side_effect=lambda p,**k:Path(p)),patch.object(self.h,'sync'),
             patch.object(self.h,'read',side_effect=self.read),patch.object(self.h,'load',side_effect=lambda folder,name:self.backup if name=='cold_backup' else self.controller),
@@ -115,6 +117,7 @@ class Recovery(unittest.TestCase):
         return self.original_read(path,maximum)
     def command(self,args,timeout=30):
         if args[0]=='/usr/bin/stat':return self.fs+'\n'
+        if args[0]=='/usr/bin/busctl':return self.hook+'\n'
         if args[0]=='docker':
             if 'ps' in args:return '\n'.join(self.ids.values())
             if 'inspect' in args:return json.dumps(self.rows)
@@ -156,6 +159,17 @@ class Recovery(unittest.TestCase):
         group=self.cg/'system.slice'/r.CALLER;group.mkdir();(group/'cgroup.events').write_bytes(b'populated 1\n')
         self.caller['ControlGroup']='/system.slice/'+r.CALLER
         with self.assertRaises(ValueError):r.eligibility(self.h,self.target)
+
+    def test_runtime_missing_exec_array_requires_typed_empty_hook_and_exact_loaded_profile(self):
+        self.assertNotIn('ExecStopPost',self.runtime_state)
+        r.eligibility(self.h,self.target)
+        for value in ('','a(sasbttttuii) 1','s 0'):
+            self.hook=value
+            with self.assertRaises(ValueError):r.eligibility(self.h,self.target)
+        self.hook='a(sasbttttuii) 0'
+        self.runtime_state['ExecStart']='different cached command'
+        with self.assertRaises(ValueError):r.eligibility(self.h,self.target)
+        self.assertEqual(self.actions,[]);self.assertTrue(self.request_path.exists())
 
     def test_nonroot_hierarchy_attestation_and_empty_unit_group_are_positive_proof(self):
         self.assertFalse((self.cg/'cgroup.events').exists())
