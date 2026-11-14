@@ -36,6 +36,25 @@ def private_receipt(hashes):
 
 
 class Boundaries(unittest.TestCase):
+    def test_harness_failure_exports_only_fixed_classification_after_source_binding(self):
+        hashes={name:'f'*64 for name in ci.FILES}
+        value=private_receipt(hashes);value.pop('observations');value.pop('limitation')
+        value.update(passed=False,completed=['case_1'],action='PRIVATE MUST NOT EXPORT',
+                     diagnostic={'kind':'command_exit','operation':'EVAL','exit_code':137})
+        self.assertEqual(ci.completed_count(value,CID,IMAGE,hashes),1)
+        public=ci.CiFailure('harness','command_exit',1)
+        public.harness=value['diagnostic']
+        self.assertEqual(public.diagnostic()['harness_diagnostic'],value['diagnostic'])
+        for bad in ({'kind':'PRIVATE','operation':'EVAL','exit_code':1},
+                    {'kind':'command_exit','operation':'PRIVATE','exit_code':1},
+                    {'kind':'command_exit','operation':'EVAL','exit_code':True},
+                    dict(value['diagnostic'],raw='PRIVATE')):
+            public.harness=bad
+            self.assertIsNone(public.diagnostic()['harness_diagnostic'])
+            self.assertNotIn('PRIVATE',json.dumps(public.diagnostic()))
+        value['sources']['santa_admission.py']='e'*64
+        with self.assertRaises(ValueError):ci.completed_count(value,CID,IMAGE,hashes)
+
     def test_lock_requires_exact_redis_repository_and_digest(self):
         self.assertEqual(ci.redis_reference(json.dumps({'redis':REFERENCE})),REFERENCE)
         for value in ('redis:latest','foreign@sha256:'+'c'*64,'redis@sha256:short',None):

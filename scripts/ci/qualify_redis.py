@@ -30,6 +30,8 @@ INSPECT = ('{"id":{{json .Id}},"image":{{json .Image}},"labels":{{json .Config.L
            '"oom_killed":{{json .State.OOMKilled}},"ports":{{json .NetworkSettings.Ports}}}')
 CGROUP_ROOT = Path('/sys/fs/cgroup')
 RESOURCE_KEYS = ('oom_killed', 'memory_oom', 'memory_oom_kill', 'pids_max', 'memory_peak_bytes')
+HARNESS_KINDS = {'redis_rejection', 'command_exit', 'malformed_json', 'output_limit', 'invariant', 'timeout', 'internal_error'}
+HARNESS_OPERATIONS = {'EVAL', 'EXISTS', 'TTL', 'GET', 'HGET', 'SET', 'DEL', 'LPUSH', 'HSET', 'EXPIRE', 'TIME', 'KEYS', 'PING', 'INSPECT'}
 PHASES = {'preflight', 'source_staging', 'docker_pull', 'image_readback', 'docker_create',
           'created_inspection', 'docker_start', 'started_inspection', 'redis_readiness',
           'harness', 'harness_marker', 'receipt_validation', 'cleanup_owner', 'cleanup_stop',
@@ -55,12 +57,13 @@ class CiFailure(Exception):
         self.exit_code = exit_code if type(exit_code) is int and -64 <= exit_code <= 255 else None
         self.completed = completed if type(completed) is int and 0 <= completed <= 37 else None
         self.resources = None
+        self.harness = None
         super().__init__('Disposable Redis CI failed')
 
     def diagnostic(self):
         return dict(scope='disposable-redis-ci-failure-v1', phase=self.phase, kind=self.kind,
                     exit_code=self.exit_code, completed_observations=self.completed,
-                    resource_metrics=safe_metrics(self.resources), automatic_replay=False)
+                    resource_metrics=safe_metrics(self.resources), harness_diagnostic=safe_harness(self.harness), automatic_replay=False)
 
 
 def failure(error):
@@ -164,9 +167,18 @@ def public_receipt(value, cid, image, hashes, source_commit, reference):
                 limitation='Disposable Redis Lua only; no Azure, HTTP, Django, durability, native or application acceptance')
 
 
+def safe_harness(value):
+    if (type(value) is not dict or set(value) != {'kind', 'operation', 'exit_code'}
+            or value['kind'] not in HARNESS_KINDS
+            or (value['operation'] is not None and value['operation'] not in HARNESS_OPERATIONS)
+            or (value['exit_code'] is not None and (type(value['exit_code']) is not int or not -64 <= value['exit_code'] <= 255))):
+        return None
+    return dict(value)
+
+
 def completed_count(value, cid, image, hashes):
-    need(type(value) is dict and set(value) == {'scope', 'container_id', 'image_id', 'sources',
-        'harness_sha256', 'passed', 'completed', 'action'} and value['scope'] in RECEIPT_SCOPES
+    keys = {'scope', 'container_id', 'image_id', 'sources', 'harness_sha256', 'passed', 'completed', 'action'}
+    need(type(value) is dict and set(value) in (keys, keys | {'diagnostic'}) and value['scope'] in RECEIPT_SCOPES
         and value['passed'] is False and value['container_id'] == cid and value['image_id'] == image
         and value['harness_sha256'] == hashes[FILES[0]]
         and value['sources'] == {name: hashes[name] for name in FILES[1:]})
@@ -177,13 +189,18 @@ def completed_count(value, cid, image, hashes):
     return len(rows)
 
 
-def failed_count(path, cid, image, hashes):
+def failed_summary(path, cid, image, hashes):
     try:
         info = path.lstat()
         need(info.st_uid == 0 and not info.st_mode & 0o077 and info.st_nlink == 1)
-        return completed_count(json.loads(read_source(path)), cid, image, hashes)
+        value = json.loads(read_source(path))
+        return completed_count(value, cid, image, hashes), safe_harness(value.get('diagnostic'))
     except BaseException:
-        return None  # Missing/untrusted diagnostic is never success or count zero.
+        return None, None  # Unknown is never success or count zero.
+
+
+def failed_count(path, cid, image, hashes):
+    return failed_summary(path, cid, image, hashes)[0]
 
 
 def safe_metrics(value):
@@ -334,7 +351,7 @@ def run(source_root, source_commit):
     except BaseException as error:
         original = failure(error)
         if original.phase == 'harness':
-            original.completed = failed_count(ROOT / 'evidence/failed.json', cid, image, hashes)
+            original.completed, original.harness = failed_summary(ROOT / 'evidence/failed.json', cid, image, hashes)
         original.resources = resource_metrics(runner, cid, image, token)
         raise original from None
     finally:
