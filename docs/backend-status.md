@@ -12,17 +12,17 @@ Administrators should not assemble containers, receipt JSON or remote scripts.
 
 ## Evidence and remaining work
 
-As of 2026-11-07 UTC, these are separate gates:
+As of 2026-11-14 UTC, these are separate gates:
 
 | Gate | Current evidence | Still required |
 | --- | --- | --- |
-| Automated installation | Actual ARM provisioning and guest initialization; successful same-source azd rerun and standalone provision | First-attempt cold finalization and fresh candidate image/layout qualification |
-| Reboot persistence | Original seven containers and selected credential/rule state survived controlled reboot; post-reboot HTTP checks passed | Recovery under held requests, failed dependencies and the new admission/worker image |
+| Automated installation | Fresh six-volume private candidate passed first-attempt cold azd deployment/finalization and unchanged-source rerun; seven running containers verified | Recovery faults and supported upgrade lifecycle |
+| Reboot persistence | New six-volume admission/worker image preserved all seven container IDs and selected synthetic database state across reboot;24 post-reboot HTTP requests passed | Held requests, database tails, failed dependencies, delayed jobs and retry exhaustion |
 | Credential rotation | Earlier selected private server passed all76 observations | Repeat on the new candidate; supported admin lifecycle and Intune/native delivery |
-| Admission and proxy | Isolated actual Redis passed27 Lua cases; held-closed proxy source exists | Integrated HTTP overload/failure/recovery, proxy limits, native retries and public TLS |
+| Admission and proxy | Source-bound hosted Redis passed37 fenced Lua families; held-closed proxy source exists | Integrated HTTP overload/failure/recovery, proxy limits, native retries and public TLS |
 | Worker shutdown | Actual standalone Linux TERM/forkserver idle, held and forced-deadline cases passed | Real Kombu/broker callback and acknowledgement behavior in the selected image |
 | Backup | Native snapshot/drain/encryption/controller source and offline guards | Actual application snapshot, encrypted capture, resume, failures and off-host retention |
-| Restore | Authority/encryption inventory; ciphertext authentication primitive with synthetic crypto tests | Strict extraction, isolated application restoration, current-authority reconciliation and complete fault testing |
+| Restore | Authority/encryption inventory; ciphertext authentication and bounded offline secret-rewrap primitives with actual synthetic crypto tests | Strict extraction, complete schema/row census, isolated application restoration, current-authority reconciliation and complete fault testing |
 | Operator access | Private application-level MFA and recovery tests on earlier selected images | Trusted browser flow, customer enrollment and controlled recovery |
 | Native Mac | Intune baseline and one-device pilot are separate from server tests | Actual sync, rules, events, rotation and recovery on the selected Mac in Monitor mode |
 | Container Apps | Tracked comparison requirements | Equivalent full backend deployment, persistence/failure tests and measured cost comparison |
