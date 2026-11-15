@@ -3,6 +3,15 @@ param location string
 param sshPublicKey string
 param tags object
 param adminUsername string = 'santalab'
+param enableBackupStorageEndpoint bool = false
+param existingHostServiceEndpoints array = []
+
+// New canonical networks only unless a current existing-network plan is reviewed.
+// This template is create-or-update, not an ETag-conditional network updater.
+var endpointServices = [for endpoint in existingHostServiceEndpoints: toLower(endpoint.service)]
+var hostServiceEndpoints = enableBackupStorageEndpoint && !contains(endpointServices, 'microsoft.storage')
+  ? concat(existingHostServiceEndpoints, [{ service: 'Microsoft.Storage', locations: [location] }])
+  : existingHostServiceEndpoints
 
 resource nsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
   name: 'nsg-santa-lab'
@@ -40,6 +49,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
           addressPrefix: '10.247.0.0/27'
           defaultOutboundAccess: false
           networkSecurityGroup: { id: nsg.id }
+          serviceEndpoints: hostServiceEndpoints
         }
       }
     ]

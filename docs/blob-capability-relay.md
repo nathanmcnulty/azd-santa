@@ -121,10 +121,26 @@ The selector test exercises real hash/header checks with controlled installed
 metadata; it is not an actual VM/source attestation. A Linux-only private-file
 case checks exclusive modes/symlinks and skips on Windows.
 
-Actual Ubuntu cryptography41, root descriptors, installed capture/bundle mapping,
-current IMDS/systemd/Run Command interruption behavior, confidential cached ARM
-mint/delivery orchestration, Storage PUT and independent download remain live
-gates. Offline crypto uses the existing test interpreter, not VM qualification.
-Off-host recoverability, portable backup key/image/source retention and isolated
-full application restoration remain open. No new dependency, tenant access,
-network request or guest operation is performed by these offline tests.
+On 2026-11-15 UTC the selected synthetic private VM ran all 27 protocol tests
+with zero failures, errors or skips using Python 3.12.3 and its existing
+cryptography 41.0.7. This exercised actual Linux descriptor-relative permissions;
+the suite's identity, service-manager and HTTP adapters remained controlled.
+The five-file test bundle SHA-256 was
+`f12ebd7644097714188f938f490ba57cfe6e4d4870272b626e36f71ef1fec5fd`;
+the relay program SHA-256 was
+`eb6a5eee83ededf08e78c6203aeb7babc8e36129cf836f2af7ef80be0f6a9a1c`.
+
+A separate bounded read-only invocation exercised the actual installed 25-file
+bundle/controller, current IMDS/boot, completed native2 request/receipts and
+generation through the real capture selector. It fingerprinted the retained
+80,159,434-byte ciphertext and passed the real unified-cgroup hierarchy and
+fixed absent-job-path checks. The capture bindings are recorded in the
+[native capture qualification](private-native-capture-qualification.md).
+This preflight used an undeployed Blob descriptor solely to exercise selection;
+it created no offer, SAS, Storage object or service and changed no runtime.
+
+Actual upload job/terminal and Run Command interruption behavior, confidential
+cached ARM mint/delivery orchestration, Storage PUT and independent download
+remain live gates. Off-host recoverability, portable backup key/image/source
+retention and isolated full application restoration remain open. No new dependency
+was installed for these checks; the source runtime and network were preserved.

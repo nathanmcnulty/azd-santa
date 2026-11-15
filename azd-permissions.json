@@ -8,6 +8,36 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/virtualNetworks/write; Microsoft.Network/virtualNetworks/subnets/write",
+      "principal": "Explicit selected optional VM deployment operator using existing cached authority; no runtime identity grant",
+      "phase": "deployment",
+      "feature": "optional-private-vm-storage-endpoint",
+      "defaultEnabled": false,
+      "scope": "Exact solution-owned canonical VM network and selected VM instance only; never an unrelated operator subnet or default Intune path",
+      "rationale": "Default-off creation-time Bicep wiring can add regional Microsoft.Storage and retain supplied endpoint entries. GET-only existing-network producer validates current ownership, VM/NIC/subnet links, supported properties, deny-all inbound, ETags and complete before/after reads, returning a subnet-only preservation proposal. It does not deploy or enforce atomic If-Match. Existing-resource authorization, fresh revalidation, provider concurrency and live mutation remain separate gates; metadata authorizes no grant.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "experiments/vm/infra/main.bicep",
+          "sha256": "9d439be79c295a27a74949859ff429841373aaefbcb4b160c3b27c0f069e3e61"
+        },
+        {
+          "path": "experiments/vm/infra/host.bicep",
+          "sha256": "40ffa81ef7d62d22cf28ff8fe538777059a7ee402c5a410e289a2fa28d5a6ce8"
+        },
+        {
+          "path": "experiments/vm/infra/main.parameters.json",
+          "sha256": "be4f6fcd052cde0d775d0ffa57610b2068fbc9c68793acc22394eda71878483b"
+        },
+        {
+          "path": "experiments/vm/PrivateStorageEndpoint.psm1",
+          "sha256": "34db373583a7ace65a63b76f5d6e01fde4c8d2580537b75075d4189553b25242"
+        }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
       "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
       "principal": "Explicit selected cached ARM operator, existing privileged guest Run Command authority only",
       "phase": "runtime",
@@ -119,7 +149,7 @@
         },
         {
           "path": "experiments/vm/infra/host.bicep",
-          "sha256": "9653a305d1ca2474c91404bccc024dfd326436aebd56ef5a97180d05cc7e6987"
+          "sha256": "40ffa81ef7d62d22cf28ff8fe538777059a7ee402c5a410e289a2fa28d5a6ce8"
         }
       ]
     },
@@ -216,8 +246,8 @@
       "rationale": "Optional nested azd project provisions a synthetic-only test host, disk and isolated network. This inventories operations, not consent or authorization to grant Contributor. A minimal custom deployment role has not been established.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/vm/infra/main.bicep", "sha256": "8b4017538627d919748b6722dac4b0223e14aaaa810d742c0af3c4844702420b" },
-        { "path": "experiments/vm/infra/host.bicep", "sha256": "9653a305d1ca2474c91404bccc024dfd326436aebd56ef5a97180d05cc7e6987" }
+        { "path": "experiments/vm/infra/main.bicep", "sha256": "9d439be79c295a27a74949859ff429841373aaefbcb4b160c3b27c0f069e3e61" },
+        { "path": "experiments/vm/infra/host.bicep", "sha256": "40ffa81ef7d62d22cf28ff8fe538777059a7ee402c5a410e289a2fa28d5a6ce8" }
       ]
     },
     {
@@ -427,7 +457,8 @@
     }
   ],
   "gaps": [
-    "The confidential exact-capture source-VM Blob relay adds local recipient crypto and a once-only guest upload journal only. It requires fresh existing cached ARM ownership/target selection and exact create-only SAS minting outside the envelope. No ARM token, backup private key, new grant, policy change or Azure orchestration is supplied. Actual VM cryptography41/source/IMDS/systemd/Run Command delivery, create-only PUT and separate verifier download remain unqualified; envelopes and receipts are not authority. See docs/blob-capability-relay.md.",
+    "The confidential exact-capture source-VM Blob relay adds local recipient crypto and a once-only guest upload journal only. It requires fresh existing cached ARM ownership/target selection and exact create-only SAS minting outside the envelope. No ARM token, backup private key, new grant, policy change or Azure orchestration is supplied. Actual selected-VM cryptography41/Linux descriptor tests and a read-only installed-capture/IMDS/cgroup preflight passed; actual upload service/Run Command delivery, create-only PUT and separate verifier download remain unqualified; envelopes and receipts are not authority. See docs/blob-capability-relay.md.",
+    "Issue #90 supplies default-off new canonical VM network Storage endpoint wiring and a GET-only ownership/ETag/preservation-aware existing-network plan. No existing subnet/VNet write, automatic azd adoption, provider-enforced conditional mutation, endpoint delivery or retention/restore acceptance is qualified. A raw Bicep deployment is create-or-update and can erase unprovided endpoint arrays; existing changes require current independently selected authority and fresh plan consumption/revalidation. Source subnet disappearance still requires explicit restricted-firewall reconciliation; no operator-network modification, public-IP fallback or grant is added.",
     "The restore-census primitive observes an already-open isolated PostgreSQL connection and reviewed Django registry only. It adds no Azure/Graph grant, connection/authentication, restore, row transformation or activation. Controlled SQL/registry adapters do not prove real Django/PostgreSQL18 catalog compatibility, isolated database coverage, sequence quiescence, trusted source/image/authority or native restoration. See docs/restore-census.md.",
     "The first exact pre-snapshot recovery failed after disabling runtime boot start; original ACTIVE/intent/failure and old request/source tuple were retained. A separately explicit, source-bound disable-only continuation now requires fresh selected authority, pinned predecessor artifacts, reviewed reload-cleared profiles, typed loaded path/argv/ignore definitions and positive terminal cgroups. No live continuation, runtime start, native backup, portable key/image retention, full-stack restore or complete application/schema census is established by this code. No new grant, automatic replay or permission sufficiency claim is added.",
     "The explicit one-case pre-snapshot failed-request retirement uses existing selected cached ARM read/Run Command rights only. It requires positive current IMDS/same-boot, terminal-unit/cgroup, original stopped-ID and no-native-effect evidence; preserves original request/source/history; stages one cold-helper replacement and starts the original runtime once. No grants or generic recovery/resume are added. Offline tests and the separate read-only namespace probe do not establish live recovery or native backup/restore acceptance. See docs/presnapshot-recovery.md.",
