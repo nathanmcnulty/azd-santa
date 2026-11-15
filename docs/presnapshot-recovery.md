@@ -142,3 +142,9 @@ Synthetic tests cover reload-cleared runtime/caller and predecessor histories,
 changed typed commands/hooks, terminal cgroups, unknown markers, under-lock drift,
 retirement/start unknown outcomes and byte preservation. They establish no live
 continuation, runtime restart, native backup or full-stack restore acceptance.
+The continuation's read-only guest preflight passed with exact program bytes
+`c27dd335c6a49b7ecf9215180d9f3e7294c162e742ba86d18babdda998430e10`.
+It verified all sixteen preserved predecessor files and returned predecessor
+proof digest `1a7ea1ee69a0cb6e4307ddac7f5019db25b95ce20d91d54ce8694e041f06d879`.
+The probe created no continuation reservation or application mutation. Applying
+and observing the continuation remain separate live gates.
