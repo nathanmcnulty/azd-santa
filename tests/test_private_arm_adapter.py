@@ -440,15 +440,55 @@ class WireTests(unittest.TestCase):
     def test_watchdog_interrupts_slow_header_wait_without_network(self):
         connection = self.connection()
         ended = threading.Event()
+        clock = [100.0]
+        timer = Mock()
+        deadline = 100.05
         connection.sock.shutdown.side_effect = lambda _: ended.set()
+        def register_timer(delay, interrupt):
+            self.assertAlmostEqual(delay, deadline - clock[0])
+            timer.fire = interrupt
+            return timer
         def waiting_headers():
-            if ended.wait(2):
-                raise OSError('private header failure')
-            self.fail('watchdog did not interrupt bounded wait')
+            # Positive phase proof: this case must exercise the armed watchdog,
+            # not an earlier expiry during platform CA/context initialization.
+            timer.start.assert_called_once_with()
+            connection.request.assert_called_once()
+            self.assertFalse(ended.is_set())
+            clock[0] = deadline
+            timer.fire()
+            self.assertTrue(ended.is_set(), 'deadline callback must shut down the captured socket')
+            raise OSError('private header failure')
         connection.getresponse.side_effect = waiting_headers
-        with patch.object(arm.http.client, 'HTTPSConnection', return_value=connection), self.assertRaises(arm.ArmRejected):
-            arm.https('GET', arm.RESOURCE+'exact', None, 'private', time.monotonic()+.05)
+        with patch.object(arm.ssl, 'create_default_context', return_value=object()), \
+             patch.object(arm.http.client, 'HTTPSConnection', return_value=connection), \
+             patch.object(arm.time, 'monotonic', side_effect=lambda: clock[0]), \
+             patch.object(arm.threading, 'Timer', side_effect=register_timer) as factory, \
+             self.assertRaises(arm.ArmRejected):
+            arm.https('GET', arm.RESOURCE+'exact', None, 'private', deadline)
+        factory.assert_called_once()
+        self.assertIs(timer.daemon, True)
+        timer.cancel.assert_called_once_with()
+        connection.getresponse.assert_called_once_with()
         connection.sock.shutdown.assert_called_once_with(arm.socket.SHUT_RDWR)
+        connection.close.assert_called_once_with()
+
+    def test_context_setup_expiring_deadline_rejects_before_request_or_watchdog(self):
+        connection = self.connection()
+        clock = [100.0]
+        def slow_context():
+            clock[0] = 101.0
+            return object()
+        with patch.object(arm.ssl, 'create_default_context', side_effect=slow_context), \
+             patch.object(arm.http.client, 'HTTPSConnection', return_value=connection), \
+             patch.object(arm.time, 'monotonic', side_effect=lambda: clock[0]), \
+             patch.object(arm.threading, 'Timer') as factory, self.assertRaises(arm.ArmRejected):
+            arm.https('GET', arm.RESOURCE+'exact', None, 'private', 100.05)
+        connection.connect.assert_not_called()
+        connection.request.assert_not_called()
+        connection.getresponse.assert_not_called()
+        connection.sock.shutdown.assert_not_called()
+        factory.assert_not_called()
+        connection.close.assert_called_once_with()
 
 
 if __name__ == '__main__':

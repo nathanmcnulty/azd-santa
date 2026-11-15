@@ -98,11 +98,16 @@ observation remain unimplemented integration gates. No cloud/guest/auth calls
 were performed for this change; existing source Linux relay qualification is
 separate evidence. No acceptance or permission grant is inferred.
 
-The focused 22-case suite also launches a real owned temporary fake `az.cmd`
+The focused 23-case suite also launches a real owned temporary fake `az.cmd`
 (or POSIX `az`) under a restricted PATH using the existing interpreter. It checks
 fixed argv, changed-launcher rejection and actual fixture-child termination on
 timeout; it never invokes the installed Azure CLI. HTTP slow-header interruption
-uses a controlled socket adapter with no network. PowerShell 7.6.9/Pester 6.2.0
+uses controlled SSL/socket/clock/timer adapters with positive header-wait entry,
+deadline registration, shutdown and cancellation assertions. A separate case
+proves expiry during SSL setup rejects before connection/request/watchdog.
+The earlier 50 ms wall-clock test could expire during hosted Windows CA loading;
+such safe early rejection does not exercise the intended watchdog phase. No
+network or real TLS is exercised by these cases. PowerShell 7.6.9/Pester 6.2.0
 full suite passed 302 tests, 1 skipped, 0 failed before the final launcher and
 watchdog adjustments; the final focused callback, evidence and permission-schema
 checks passed afterward. Actual CLI/cache/API/TLS compatibility remains a
