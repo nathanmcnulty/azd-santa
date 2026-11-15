@@ -77,6 +77,7 @@ class ActualHeaders(unittest.TestCase):
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             try:
                 ctx = ssl.create_default_context(cafile=str(state / 'cert.pem'))
+                ctx.minimum_version = ssl.TLSVersion.TLSv1_2
                 deadline = time.monotonic() + 10
                 while True:
                     try:
