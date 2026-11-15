@@ -3,6 +3,7 @@
 Set-StrictMode -Version Latest
 $server = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../server'))
 Import-Module (Join-Path $server 'SetupTransport.psm1') -Force
+Import-Module (Join-Path $server 'HttpsEndpoint.psm1') -Force
 $files = @('private_install.py', 'private_install_transport.py', 'bootstrap-host.sh', 'prepare_source.py',
     'prepare_core_build.py', 'prepare_operator_mfa.py', 'operator_mfa.py', 'prepare_operator_recovery.py',
     'operator_recovery.py', 'sealed_setup.py', 'prepare_request_limits.py', 'santa_request_limits.py',
@@ -129,6 +130,16 @@ function Invoke-PrivateVmAzdHook {
         "^/subscriptions/$subscription/(?:resourceGroups/$group/)?providers/Microsoft\.Resources/deployments/[A-Za-z0-9_.()-]{1,64}$") {
         throw 'Selected canonical deployment output missing/mismatched; no installation submitted.'
     }
+    $origin = 'https://localhost:8000'
+    if ($values.ContainsKey('SANTA_PRIVATE_HTTPS_ORIGIN')) {
+        if ($values.SANTA_PRIVATE_HTTPS_ORIGIN -isnot [string]) { throw 'SANTA_PRIVATE_HTTPS_ORIGIN must be true or false.' }
+        if ($values.SANTA_PRIVATE_HTTPS_ORIGIN -ceq 'true') {
+            if (-not $installBackend) { throw 'Fresh HTTPS origin requires SANTA_PRIVATE_BACKEND_INSTALL=true.' }
+            $endpoint = Get-SantaHttpsEndpointFacts -TenantId $target.TenantId -SubscriptionId $target.SubscriptionId `
+                -VmInstanceId $target.VmInstanceId -EnvironmentName $environment
+            $origin = 'https://' + $endpoint.Fqdn
+        } elseif ($values.SANTA_PRIVATE_HTTPS_ORIGIN -cne 'false') { throw 'SANTA_PRIVATE_HTTPS_ORIGIN must be true or false.' }
+    }
     $shutdown = [DateTimeOffset]::UtcNow.AddHours(2).ToString('HHmm')
     $null = Invoke-PrivateAzure @('vm', 'auto-shutdown', '--subscription', $target.SubscriptionId, '--resource-group', $target.ResourceGroup, '--name', $target.VmName, '--time', $shutdown)
     if (-not $installBackend) { return }
@@ -139,7 +150,11 @@ function Invoke-PrivateVmAzdHook {
             $receipt = Send-PrivateInstallCommand $target @{ mode = 'chunk'; bundle_sha256 = $bundle.Sha256; archive_sha256 = $bundle.ArchiveSha256; index = $index; count = $bundle.Chunks.Count; data = $bundle.Chunks[$index] }
             if ($receipt.scope -cne 'private-azd-install-chunk' -or $receipt.index -ne $index -or $receipt.count -ne $bundle.Chunks.Count) { throw 'Source chunk delivery not confirmed; initialization not submitted.' }
         }
-        try { $state = Send-PrivateInstallCommand $target @{ mode = 'submit'; bundle_sha256 = $bundle.Sha256; archive_sha256 = $bundle.ArchiveSha256; count = $bundle.Chunks.Count; target = $target } }
+        try {
+            $submission = @{ mode = 'submit'; bundle_sha256 = $bundle.Sha256; archive_sha256 = $bundle.ArchiveSha256; count = $bundle.Chunks.Count; target = $target }
+            if ($origin -cne 'https://localhost:8000') { $submission.https_origin = $origin }
+            $state = Send-PrivateInstallCommand $target $submission
+        }
         catch {
             # Submission outcome is unknown: inspect only; never submit/init again.
             $state = Send-PrivateInstallCommand $target @{ mode = 'observe'; bundle_sha256 = $bundle.Sha256 }
@@ -155,6 +170,7 @@ function Invoke-PrivateVmAzdHook {
     if ($state.scope -cne 'private-azd-install-observation' -or $state.unit -cne ('azd-santa-install-' + $bundle.Sha256.Substring(0,16) + '.service') -or
         $state.completion.scope -cne 'private-azd-install-complete' -or $state.completion.bundle_sha256 -cne $bundle.Sha256) { throw 'Installer completion binding invalid.' }
     $outputs = $state.completion.outputs
+    if ($outputs.Origin -cne $origin) { throw 'Installer origin differs from selected fresh profile.' }
     foreach ($key in $target.Keys) { if ($outputs[$key] -cne $target[$key]) { throw 'Installer completed on another target.' } }
     $suffix = [guid]::NewGuid().ToString('N')
     $binding = Complete-SantaBackendInstallation -InstallationOutputs $outputs -DeploymentId $values.SANTA_VM_DEPLOYMENT_ID `

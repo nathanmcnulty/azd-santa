@@ -30,9 +30,9 @@ class Staging(unittest.TestCase):
         self.search_attempts = 0
 
     def run_stage(self):
-        def prepare(*args):
+        def prepare(*args, **kwargs):
             with patch.dict(generated.generator.SOURCE_HASHES, self.generated.hashes, clear=True):
-                generated.generator.prepare(*args)
+                generated.generator.prepare(*args, **kwargs)
         with patch.object(runtime, 'require_host'), \
                 patch.object(runtime, 'private_directory'), \
                 patch.object(runtime, 'private_file', side_effect=lambda path: Path(path)), \

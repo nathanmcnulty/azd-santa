@@ -44,6 +44,20 @@ def validate_target(target):
     require(target['VmId'] == '/subscriptions/' + target['SubscriptionId'] + '/resourceGroups/' + target['ResourceGroup'] + '/providers/Microsoft.Compute/virtualMachines/vm-santa-lab')
 
 
+def selected_origin(context, metadata):
+    """Optional fresh-only public hostname, never an arbitrary caller URL."""
+    if 'https_origin' not in context:
+        return 'https://localhost:8000'
+    origin = context['https_origin']
+    target = context['target']
+    validate_target(target)
+    region = metadata.get('location')
+    require(type(region) is str and re.fullmatch(r'[a-z0-9]{2,32}', region))
+    label = 'santa-' + target['SubscriptionId'].replace('-', '')[:16] + '-' + target['EnvironmentName'] + '-vm'
+    require(type(origin) is str and origin == 'https://' + label + '.' + region + '.cloudapp.azure.com')
+    return origin
+
+
 def write(path, value):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'w') as output:
@@ -119,6 +133,7 @@ def install(context_path, digest):
             metadata['resourceId'].lower() == context['target']['VmId'].lower() and metadata['vmId'].lower() == context['target']['VmInstanceId'])
     tags = {item['name']: item['value'] for item in metadata['tagsList']}
     require(tags.get('azd-solution') == 'azd-santa' and tags.get('purpose') == 'synthetic-vm-lab' and tags.get('azd-env-name') == context['target']['EnvironmentName'])
+    origin = selected_origin(context, metadata)
     work = ROOT / ('private-runtime-' + context['target']['EnvironmentName'])
     require(not work.exists() and not Path('/etc/systemd/system/azd-santa-runtime.service').exists())
     evidence = bundle / 'install-evidence'; evidence.mkdir(mode=0o700)
@@ -169,7 +184,7 @@ def install(context_path, digest):
             require(re.fullmatch('[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}', ref))
             run('pull-' + name, ['docker', '--host', 'unix:///var/run/docker.sock', 'pull', ref], 360)
         stage = load_stage(bundle)
-        stage.stage(source, bundle / 'dependency-images.lock.json', work, image)
+        stage.stage(source, bundle / 'dependency-images.lock.json', work, image, https_origin=context.get('https_origin'))
         compose = work / 'compose.json'; data = json.loads(compose.read_text())
         command = ['docker', '--host', 'unix:///var/run/docker.sock', 'compose', '--project-name', data['name'], '-f', str(compose)]
         # Explicit fresh admission only after the fresh owner/runtime job passed.
@@ -181,7 +196,7 @@ def install(context_path, digest):
         activate_runtime(bundle, compose, work)
         run('runtime-active', ['systemctl', 'is-active', 'azd-santa-runtime.service'])
         facts = {**context['target'], 'ImageId': image, 'ComposePath': str(compose),
-                 'ComposeSha256': hashlib.sha256(compose.read_bytes()).hexdigest(), 'Origin': 'https://localhost:8000'}
+                 'ComposeSha256': hashlib.sha256(compose.read_bytes()).hexdigest(), 'Origin': origin}
         write(bundle / 'complete.json', dict(scope='private-azd-install-complete', bundle_sha256=context['bundle_sha256'],
               outputs=facts, limitation='Unit ready; client finalizer must verify initialized runtime before operator binding'))
     except BaseException:

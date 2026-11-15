@@ -227,13 +227,16 @@
       "feature": "optional-private-vm-host-and-backend-lifecycle",
       "defaultEnabled": false,
       "scope": "Explicit selected environment/subscription and tagged rg-azd-santa-vm-<environment>/vm-santa-lab only",
-      "rationale": "Nested VM postprovision validates the selected account/group/VM outputs and schedules two-hour shutdown for that exact VM, including host-only mode. When SANTA_PRIVATE_BACKEND_INSTALL=true, it additionally transports bounded pinned sources, submits one durable privileged fresh-install job and observes it before nonmutating finalization. No root Intune hook, network admission, tenant grant or operator reset is added; actual complete ARM/hook/cold-install delivery remains unqualified.",
+      "rationale": "Nested VM postprovision validates the selected account/group/VM outputs and schedules two-hour shutdown for that exact VM, including host-only mode. When SANTA_PRIVATE_BACKEND_INSTALL=true, it additionally transports bounded pinned sources, submits one durable privileged fresh-install job and observes it before nonmutating finalization. SANTA_PRIVATE_HTTPS_ORIGIN=true optionally consumes the existing selected cached HTTPS endpoint reader for a fresh origin-bound profile only. No root Intune hook, network admission, tenant grant or operator reset is added; actual complete ARM/hook/cold-install delivery remains unqualified.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "38ad2224d465836224d92c2692a8e40c4985af03113f481dae308622b961655c" },
+        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "4d8e11f20af8476e40b98f2ab48b8eadd854729a5eafbdc30a222be4ad298126" },
         { "path": "experiments/vm/Install-PrivateBackend.ps1", "sha256": "33c620439f5abadef688f4a6f0477e80e4676986beac0cb6d43b975c092320d5" },
-        { "path": "experiments/server/private_install.py", "sha256": "84348ac0a9a86fc185ca2da479e872bd48f82b4e8ffacd5192c1222b35d1eae7" },
-        { "path": "experiments/server/private_install_transport.py", "sha256": "07eb9e89feffa763cd71869aecc526a39d0a4c580cae0a317daafcb8b25e22c4" }
+        { "path": "experiments/server/private_install.py", "sha256": "02c02f7c5dea94a2bff9200a225cbb07ddcc062c2bc512027ea80da4abb38f60" },
+        { "path": "experiments/server/private_install_transport.py", "sha256": "38695ddeee431c111339aeaa7210f4a0a79d2bf9702f2076d7fe9fa559c972ef" },
+        { "path": "experiments/server/prepare_zentral_eval.py", "sha256": "879290e2a7e74e0a43e0f2e66f5d537a64a69a069f1021c94403cdcc38384451" },
+        { "path": "experiments/server/stage_runtime.py", "sha256": "61d6bb2c5e32eb981b4879a57ec7337e8ef17e4ef8e5553797d57b88e0135129" },
+        { "path": "experiments/server/operator_mfa.py", "sha256": "759206c03387e3166878623a9456d3b8d42a12149f706e4707968cf9377e6a43" }
       ]
     },
     {
@@ -522,6 +525,8 @@
     }
   ],
   "gaps": [
+    "HTTPS edge local component experiments/server/https_edge.py sha256 d780fd95bf9abcf81c0f230c03474597bb1618bc4d79971219c4ee6297718ba0 renders profiles/units without cloud calls. Its explicit restrictive firewall command needs selected Linux root/CAP_NET_ADMIN authority; maintained remote service/account installation and NSG activation are not implemented by this component. No Azure/Graph grant or new paid service is added. Private Linux connection/resource/header/admission proof, public TLS/MFA, reboot and real Mac acceptance remain separate gates; direct pilot source budgeting is conservatively shared, not client attribution.",
+    "The default-off fresh HTTPS origin profile reuses existing cached endpoint graph reads and binds one selected Azure hostname through context, guest IMDS-region validation, rendered configuration and completion. It adds no grant, existing-runtime migration, DNS write, ingress, proxy or certificate service. Direct admission remains unchanged; actual fresh image/guest delivery, trusted edge headers/TLS, MFA and native one-Mac acceptance remain unqualified. See docs/fresh-https-origin.md.",
     "Independent backup-store creation orchestration is source/offline only: no actual ARM token, validate/what-if, provider-policy acceptance, deployment/hash parity or protected post-selection is proven. One application PUT is not atomic multi-resource create-only CAS or exactly-once distributed effects. Missing prerequisites are rejected without grants/remediation; unknown submission is preserved for exact Observe, never automatically replayed. Retention/data capability, lifecycle and current-authority restore remain separate gates.",
     "The private cached ARM Python callback adds explicit bounded cached-CLI acquisition, exact graph GETs and a single in-memory exact-blob SAS POST attempt. Offline controlled protocol tests are not actual token/API/RBAC/minting proof. No token export, auth fallback, grant or policy/key operation is provided. Durable cross-process operator attempt reconciliation and full confidential Run Command orchestration remain unimplemented; OS DNS/CLI internals remain trusted deadline prerequisites. See docs/private-cached-arm.md.",
     "The guarded existing-subnet setter now integrates bounded per-call CLI/token capture. HTTP/body cancellation, fresh readback and flushed once-only local evidence are source/offline checks, not overall invocation deadline, total CLI/OS memory containment, filesystem power-loss durability or live selected-network acceptance. Copied receipts do not authorize writes; lost responses remain unknown and cannot trigger automatic replacement attempts. A separate empty-network ETag probe does not qualify raw Bicep CAS, atomic multi-resource selection, off-host retention or restore.",
