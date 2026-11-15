@@ -121,8 +121,17 @@ function Get-StoreCreationPreflight($Plan,[string]$Python='python') {
         Assert-StoreDeployment ($network.scope -ceq 'private-storage-endpoint-proposal-v1' -and -not $network.changed -and
             $network.location -ceq $s.Location -and $network.selectedInstance -ieq $s[$prefix+'VmInstanceId'])
         $storage=@($network.observedSubnet.properties.serviceEndpoints | Where-Object service -IEQ 'Microsoft.Storage')
-        Assert-StoreDeployment ($storage.Count -eq 1 -and $storage[0].provisioningState -ceq 'Succeeded' -and
-            @($storage[0].locations).Count -eq 1 -and $storage[0].locations[0] -ceq $s.Location)
+        Assert-StoreDeployment ($storage.Count -eq 1 -and $storage[0].provisioningState -ceq 'Succeeded')
+        $locations=@($storage[0].locations)
+        Assert-StoreDeployment ($locations.Count -ge 1 -and $locations.Count -le 16)
+        $regions=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach($location in $locations) {
+            Assert-StoreDeployment ($location -is [string] -and $location.ToLowerInvariant() -cmatch '^[a-z0-9]{2,32}$')
+            Assert-StoreDeployment ($regions.Add($location.ToLowerInvariant()))
+        }
+        # Regional Storage can include its paired region; preserve the provider
+        # set while requiring the selected store region, not one exact entry.
+        Assert-StoreDeployment ($regions.Contains($s.Location))
         $subnets+= $network.subnetId;$observations+=$network.observationSha256
     }
     Assert-StoreDeployment ($subnets.Count -in @(1,2))

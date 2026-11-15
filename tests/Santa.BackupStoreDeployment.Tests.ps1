@@ -140,6 +140,12 @@ Describe 'Fresh creation authority and owned regional network prerequisites' {
                 $region=if($script:fault -eq 'region'){'eastus'}else{'westus2'}
                 $endpoint=@{service=if($script:fault -eq 'global'){'Microsoft.Storage.Global'}else{'Microsoft.Storage'}
                     locations=@('westus2');provisioningState=if($script:fault -eq 'pending'){'Updating'}else{'Succeeded'}}
+                switch($script:fault) {
+                    paired {$endpoint.locations=@('westus2','eastus2')}
+                    no-selected {$endpoint.locations=@('eastus2')}
+                    duplicate {$endpoint.locations=@('westus2','WESTUS2')}
+                    unsupported {$endpoint.locations=@('westus2','*')}
+                }
                 @{scope='private-storage-endpoint-proposal-v1';changed=$false;location=$region;selectedInstance=$VmInstanceId.ToString()
                     observedSubnet=@{properties=@{serviceEndpoints=if($script:fault -eq 'missing-endpoint'){@()}else{@($endpoint)}}}
                     subnetId="/subscriptions/$SubscriptionId/resourceGroups/rg-azd-santa-vm-$EnvironmentName/providers/Microsoft.Network/virtualNetworks/vnet-santa-lab/subnets/host"
@@ -154,9 +160,16 @@ Describe 'Fresh creation authority and owned regional network prerequisites' {
             Should -Invoke Invoke-StoreAzure -Times 2 -Exactly -ParameterFilter {$Arguments[0] -eq 'account'}
             Should -Invoke Invoke-StoreAzure -Times 3 -Exactly -ParameterFilter {$Arguments[0] -eq 'provider' -and $Arguments -contains '--query'}
         }
+        It 'accepts the provider-expanded paired region while retaining the selected region' {
+            $script:fault='paired';$plan=New-SantaBackupStoreDeploymentPlan @script:selectionArgs
+            $result=Get-StoreCreationPreflight $plan
+            $result.subnets.Count | Should -Be 1
+            Should -Invoke New-SantaPrivateStorageEndpointPlan -Times 1 -Exactly -ParameterFilter {$ReadArm -and -not $EnableStorageEndpoint}
+        }
         It 'rejects existing ownership/name, provider and network gaps without remediation' -ForEach @(
             @{fault='tenant'},@{fault='existing-group'},@{fault='name-unavailable'},@{fault='existing-deployment'},@{fault='provider'},
-            @{fault='region'},@{fault='global'},@{fault='pending'},@{fault='missing-endpoint'},@{fault='drift'}
+            @{fault='region'},@{fault='global'},@{fault='pending'},@{fault='missing-endpoint'},@{fault='drift'},
+            @{fault='no-selected'},@{fault='duplicate'},@{fault='unsupported'}
         ) {
             $script:fault=$fault;$plan=New-SantaBackupStoreDeploymentPlan @script:selectionArgs
             { Get-StoreCreationPreflight $plan } | Should -Throw
