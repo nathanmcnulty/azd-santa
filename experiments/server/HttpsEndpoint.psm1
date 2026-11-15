@@ -3,13 +3,80 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Invoke-SantaEndpointProcess {
+    param([string]$FileName,[string[]]$Arguments,[string]$InputText='',
+        [ValidateRange(1,300)][int]$TimeoutSeconds=30,
+        [ValidateRange(262144,8388608)][int]$InputLimit=262144)
+    # Drain both streams concurrently into finite buffers. An outer deadline
+    # covers startup, stdin, output and process exit; no unbounded ReadToEnd.
+    if ([Text.Encoding]::UTF8.GetByteCount($InputText) -gt $InputLimit) { throw 'Bounded operator input rejected.' }
+    $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$FileName
+    foreach($argument in $Arguments) { $start.ArgumentList.Add($argument) }
+    $start.UseShellExecute=$false;$start.CreateNoWindow=$true
+    $start.RedirectStandardInput=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
+    $process=[Diagnostics.Process]::new();$process.StartInfo=$start;$started=$false
+    $watch=[Diagnostics.Stopwatch]::StartNew()
+    try {
+        $null=$process.Start();$started=$true
+        $writing=$process.StandardInput.WriteAsync($InputText);$inputClosed=$false
+        $readers=@($process.StandardOutput,$process.StandardError)
+        $buffers=@([char[]]::new(1024),[char[]]::new(512))
+        $texts=@([Text.StringBuilder]::new(),[Text.StringBuilder]::new())
+        $limits=@(262144,4096);$ended=@($false,$false);$pending=@($null,$null)
+        while($true) {
+            if($watch.Elapsed.TotalSeconds -ge $TimeoutSeconds) { throw 'Bounded operator process deadline exceeded.' }
+            if(-not $inputClosed -and $writing.IsCompleted) {
+                $null=$writing.GetAwaiter().GetResult();$process.StandardInput.Close();$inputClosed=$true
+            }
+            for($i=0;$i -lt 2;$i++) {
+                if($ended[$i]) { continue }
+                if($null -eq $pending[$i]) { $pending[$i]=$readers[$i].ReadAsync($buffers[$i],0,$buffers[$i].Length) }
+                if($pending[$i].IsCompleted) {
+                    $count=$pending[$i].GetAwaiter().GetResult();$pending[$i]=$null
+                    if($count -eq 0) { $ended[$i]=$true;continue }
+                    if($texts[$i].Length+$count -gt $limits[$i]) { throw 'Bounded operator output exceeded.' }
+                    $null=$texts[$i].Append($buffers[$i],0,$count)
+                }
+            }
+            if($process.HasExited -and $ended[0] -and $ended[1]) { break }
+            $null=$process.WaitForExit(10)
+        }
+        if($process.ExitCode -ne 0 -or [Text.Encoding]::UTF8.GetByteCount($texts[0].ToString()) -gt $limits[0] -or
+            [Text.Encoding]::UTF8.GetByteCount($texts[1].ToString()) -gt $limits[1]) { throw 'Bounded operator process failed.' }
+        $texts[0].ToString()
+    } catch { throw 'Cached operator process failed, exceeded its bound or timed out; inspect outcome before another action.' }
+    finally {
+        if($started -and -not $process.HasExited) {
+            try { $process.Kill($true);$null=$process.WaitForExit(5000) } catch { }
+        }
+        $process.Dispose()
+    }
+}
+
 function Invoke-SantaEndpointAzJson {
-    param([string[]]$Arguments)
-    $raw = & az @Arguments --only-show-errors -o json 2>$null
-    if ($LASTEXITCODE) { throw 'Selected cached ARM endpoint read failed; no authentication fallback.' }
-    $text = $raw -join "`n"
-    if ([Text.Encoding]::UTF8.GetByteCount($text) -gt 262144) { throw 'ARM endpoint response exceeded its bound.' }
-    $text | ConvertFrom-Json -Depth 48 -AsHashtable -ErrorAction Stop
+    param([string[]]$Arguments,[ValidateRange(1,300)][int]$TimeoutSeconds=30,[switch]$AllowEmpty)
+    try {
+        $az=@(Get-Command az -CommandType Application -ErrorAction Stop)[0].Source
+        $args=@($Arguments)+@('--only-show-errors','-o','json')
+        if($IsWindows -and [IO.Path]::GetExtension($az) -in @('.cmd','.bat')) {
+            # Batch invocation retains Windows native argument semantics. The
+            # maintained calls need no cmd metacharacters; reject rather than
+            # let caller data become batch syntax or environment expansion.
+            if(@($args | Where-Object { $_ -match '[\r\n"&|<>^%!]'}).Count) { throw 'Unsupported batch argument.' }
+            # Windows CLI is a batch launcher. Pass data via stdin to a fixed
+            # PowerShell program, never build a cmd.exe command string.
+            $program='$ErrorActionPreference="Stop";$PSNativeCommandUseErrorActionPreference=$false;try{$p=[Console]::In.ReadToEnd()|ConvertFrom-Json;$a=@($p.arguments);$count=0;& $p.executable @a 2>$null|ForEach-Object{$line=[string]$_;$count+=[Text.Encoding]::UTF8.GetByteCount($line)+1;if($count -gt 262144){throw "Reply bound"};[Console]::Out.WriteLine($line)};exit $LASTEXITCODE}catch{exit 1}'
+            $payload=@{executable=$az;arguments=$args}|ConvertTo-Json -Compress
+            $text=Invoke-SantaEndpointProcess -FileName (Join-Path $PSHOME 'pwsh.exe') `
+                -Arguments @('-NoProfile','-NonInteractive','-Command',$program) -InputText $payload -TimeoutSeconds $TimeoutSeconds
+        } else { $text=Invoke-SantaEndpointProcess -FileName $az -Arguments $args -TimeoutSeconds $TimeoutSeconds }
+        if([string]::IsNullOrWhiteSpace($text)) {
+            if($AllowEmpty) { return }
+            throw 'A complete JSON reply is required.'
+        }
+        $value=ConvertFrom-Json -InputObject $text -Depth 48 -AsHashtable -NoEnumerate -ErrorAction Stop
+        return ,$value
+    } catch { throw 'Selected cached ARM operation failed or is unknown; no authentication fallback or automatic retry.' }
 }
 
 function Assert-SantaEndpoint {
