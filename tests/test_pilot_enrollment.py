@@ -108,6 +108,23 @@ class EnrollmentTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 pilot.projection(request)
 
+    def test_create_refuses_existing_machine_before_creating_configuration_or_secret(self):
+        for hardware_collision in (True, False):
+            types = [MagicMock() for _ in range(10)]
+            _, _, _, _, mbu, secret, config, enrollment, machine, _ = types
+            config.objects.filter.return_value.exists.return_value = False
+            mbu.objects.filter.return_value.exists.return_value = False
+            machine.objects.filter.return_value.exists.side_effect = [hardware_collision, True]
+            with patch.object(pilot, 'private_directory', return_value=MagicMock()), \
+                 patch.object(pilot, 'sync_directory'), patch.object(pilot, 'write_new'), \
+                 patch.object(pilot, 'check_runtime'), patch.object(pilot, 'models', return_value=types):
+                with self.assertRaises(ValueError):
+                    pilot.run(self.request(), '/unused-private-root', 'create')
+                config.objects.create.assert_not_called()
+                mbu.objects.create.assert_not_called()
+                secret.objects.create.assert_not_called()
+                enrollment.objects.create.assert_not_called()
+
     @unittest.skipIf(os.name == 'nt', 'Production checkpoint permissions are Linux-specific')
     def test_durable_attempt_blocks_replay_and_observe_never_creates(self):
         # Root is private without unsafe /tmp ancestor in the production tree;

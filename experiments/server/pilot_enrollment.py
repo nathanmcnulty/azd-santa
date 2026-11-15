@@ -186,11 +186,13 @@ def run(request, checkpoint_root, operation):
         sync_directory(root)
         private_directory(folder)
         write_new(folder / 'request.json', request)
-        transaction, _, _, _, MBU, Secret, Configuration, Enrollment, _, _ = models()
+        transaction, _, _, _, MBU, Secret, Configuration, Enrollment, Machine, _ = models()
         name = 'azd-santa-pilot-' + request['nonce']
         with transaction.atomic():
             need(not Configuration.objects.filter(name=name).exists()
-                 and not MBU.objects.filter(name=name).exists())
+                 and not MBU.objects.filter(name=name).exists()
+                 and not Machine.objects.filter(hardware_uuid=uuid.UUID(request['hardware_uuid'])).exists()
+                 and not Machine.objects.filter(serial_number=request['serial']).exists())
             configuration = Configuration.objects.create(name=name, client_mode=Configuration.MONITOR_MODE)
             configuration.full_clean()
             mbu = MBU.objects.create(name=name)
