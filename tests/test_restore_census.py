@@ -73,11 +73,21 @@ class Cursor:
     def fetchall(self):return self.batch
     def close(self):self.closed=True
 
+class RawConnection:
+    def __init__(self,owner):
+        self.owner=owner;self.closed=False;self.autocommit=True;self.state=0
+    def get_transaction_status(self):return self.state
+    def cursor(self):
+        self.owner.cursor_calls+=1
+        return self.owner.cursor_instance
+
 class Connection:
     vendor='postgresql';in_atomic_block=False;health_check_enabled=False;alias='default'
     def __init__(self):
         self.commands=[];self.reads=[];self.fail=None;self.cursor_instance=Cursor(self)
-        self.connection=NS(closed=False,cursor=self.cursor)
+        self.connection=RawConnection(self);self.cursor_calls=0
+        self.Database=NS(__name__='psycopg2',__version__='2.9.11 (dt dec pq3 ext lo64)',
+            extensions=NS(connection=RawConnection,TRANSACTION_STATUS_IDLE=0))
         self.catalog={key:[] for key in c.CATALOG}
         self.catalog['database']=[dict(version='180000',encoding='UTF8',database='isolated',user='reader',read_only='on',isolation='repeatable read')]
         self.catalog['schemas']=[dict(name='public',owner='reader',acl=None)]
@@ -123,6 +133,30 @@ class CensusTests(unittest.TestCase):
             with self.assertRaises(c.CensusRejected):c.collect(db,self.registry,fingerprint_key=KEY,migration_reader=migrations)
             self.assertEqual(db.commands,[])
         with self.assertRaises(c.CensusRejected):c.collect(self.db,self.registry,fingerprint_key=b'short')
+    def test_raw_driver_must_be_idle_before_any_cursor_sql_or_rollback(self):
+        for state in (1,2,3,4,None,'0',False,99):
+            self.setUp();self.db.connection.state=state
+            with self.subTest(state=state),self.assertRaises(c.CensusRejected):self.collect()
+            self.assertEqual(self.db.commands,[]);self.assertEqual(self.db.cursor_calls,0)
+        # Model raw BEGIN despite all Django/autocommit flags remaining true.
+        self.setUp();self.db.connection.state=2;caller_work=['must preserve pending work']
+        with self.assertRaises(c.CensusRejected):self.collect()
+        self.assertEqual(caller_work,['must preserve pending work']);self.assertEqual(self.db.commands,[])
+        self.assertEqual(self.db.connection.state,2)
+
+    def test_unknown_driver_version_missing_status_api_or_non_autocommit_rejects(self):
+        for change in ('driver','version','method','info-only','raw-class','autocommit'):
+            self.setUp()
+            if change=='driver':self.db.Database.__name__='psycopg'
+            elif change=='version':self.db.Database.__version__='2.9.12'
+            elif change=='method':self.db.connection.get_transaction_status=None
+            elif change=='info-only':
+                self.db.connection.get_transaction_status=None;self.db.connection.info=NS(transaction_status=0)
+            elif change=='raw-class':self.db.Database.extensions.connection=dict
+            else:self.db.connection.autocommit=False
+            with self.subTest(change=change),self.assertRaises(c.CensusRejected):self.collect()
+            self.assertEqual(self.db.commands,[]);self.assertEqual(self.db.cursor_calls,0)
+
     def test_missing_required_app_rejects_and_registry_drift_rejects(self):
         self.registry.apps.pop(0)
         with self.assertRaises(c.CensusRejected):self.collect()

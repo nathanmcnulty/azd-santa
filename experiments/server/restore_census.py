@@ -86,6 +86,17 @@ class Census:
     receipt: dict
     def __repr__(self): return '<private restore census; not authority>'
 
+def require_idle(connection):
+    # The pinned Zentral constraints use psycopg2-binary==2.9.11. No guessed
+    # psycopg3/missing-API fallback: Django's flags do not expose a raw BEGIN.
+    driver=connection.Database;raw=connection.connection
+    need(driver.__name__=='psycopg2' and driver.__version__.split()[0]=='2.9.11'
+        and isinstance(raw,driver.extensions.connection) and raw.autocommit is True)
+    idle=driver.extensions.TRANSACTION_STATUS_IDLE
+    status=raw.get_transaction_status()
+    need(type(idle) is int and idle==0 and type(status) is int and status==idle)
+
+
 class Reader:
     def __init__(self,connection,limits,clock):
         self.connection=connection;self.limits=limits;self.clock=clock
@@ -255,6 +266,7 @@ def collect(connection,registry,*,fingerprint_key,limits=Limits(),clock=time.mon
             and getattr(connection.connection,'closed',True)==0
             and (getattr(connection,'health_check_enabled',True) is False or getattr(connection,'health_check_done',False) is True)
             and connection.get_autocommit() is True and connection.in_atomic_block is False)
+        require_idle(connection)
         reader=Reader(connection,limits,clock)
         begun=True;reader.execute('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY')
         for name,value in (('statement_timeout',str(limits.statement_ms)),('lock_timeout',str(limits.lock_ms)),

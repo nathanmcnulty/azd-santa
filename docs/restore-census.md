@@ -20,6 +20,16 @@ are executable behavior, not data. This primitive does not attest source/image,
 Django/driver/version, connection provenance, caller authority or isolation.
 Those remain separate prerequisites before any actual database invocation.
 
+The raw driver must be psycopg2-binary2.9.11, the version declared in the pinned
+Zentral requirements constraints, with an open psycopg2 connection, raw
+autocommit enabled and positive `get_transaction_status()` IDLE evidence before
+any cursor or BEGIN. ACTIVE, INTRANS (including raw BEGIN hidden from Django),
+INERROR, UNKNOWN, missing APIs and other drivers/versions reject without SQL or
+ROLLBACK. No IDLE state is synthesized from Django flags. This is an exclusively
+owned dedicated connection: do not share it with other threads/callers. Driver
+identity/version strings are compatibility checks, not provenance authentication.
+
+
 `collect(connection, apps, fingerprint_key=key, limits=Limits())` opens one
 `REPEATABLE READ READ ONLY` transaction, sets statement/lock/idle timeouts and
 canonical output settings, and always rolls it back. It uses server cursors and
