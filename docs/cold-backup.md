@@ -1,8 +1,14 @@
 # Native-snapshot encrypted capture component
 
-Issue #54 remains open. `experiments/server/cold_backup.py` implements the first
-offline-tested capture mechanism for the selected initialized private VM stack.
-It has not captured a live stack, restored one, or established current authority.
+Issue #54 remains open. `experiments/server/cold_backup.py` implements the native
+capture mechanism for the selected initialized private VM stack. One actual
+six-volume synthetic private VM has now completed native-snapshot encrypted capture
+and explicit resume of its preserved originals; see the [source-bound qualification
+record](private-native-capture-qualification.md). No isolated restore, off-host
+recoverability or current-authority acceptance is established.
+
+The early preflight observations below are historical and source-specific; they
+precede that successful case.
 
 On 2026-11-14 the fresh six-volume private VM passed crypto API, original-runtime,
 worker-instance and queue preflight, then stopped before reservation at mount
@@ -12,8 +18,9 @@ The source fix recognizes only this kernel network-namespace form for `nsfs`,
 retains those mounts in the inventory and still rejects any covering or nested
 mount in a protected data tree. Tests cover unrelated namespaces, protected
 exact/parent/child mounts, malformed roots and filesystem/type mismatches.
-The installed immutable bundle remains unchanged. No backup request was
-reserved and no service stopped; source tests do not qualify live capture.
+At that early preflight the installed immutable bundle remained unchanged. No
+backup request was reserved and no service stopped in that attempt; source tests
+alone did not qualify live capture.
 
 The exact changed parser functions were separately executed readonly against
 the selected VM's actual mount table: six data volumes bound to ext4, seven
@@ -37,15 +44,16 @@ experimental byte preservation, **not** a supported Elasticsearch backup. Elasti
 explicitly says filesystem copies are unsupported even with nodes stopped;
 [native snapshots are required](https://www.elastic.co/docs/deploy-manage/tools/snapshot-and-restore#other-backup-methods).
 The revised capture contract requires a completed native repository, excludes
-raw Elasticsearch data and rejects the legacy selection scope. The current
-five-volume layout cannot satisfy this contract. The offline candidate now
-integrates the sixth volume, original generation and controller maintenance; no
+raw Elasticsearch data and rejects the legacy selection scope. The earlier
+legacy stopped five-volume VM could not satisfy this contract. The revised
+six-volume layout integrates the original generation and controller maintenance; no
 real application-data capture should use the earlier raw-directory candidate.
 The separately reviewed graceful-worker overlay is composed into the core build
-and its source/current-instance/child-join proof gate is integrated offline.
+and its source/current-instance/child-join proof gate is integrated.
 Exit zero alone cannot bypass it. Maintenance tests execute the real strict proof
-parser against mocked Docker/source/process observations; actual Linux/Kombu,
-native snapshot and application capture remain unqualified.
+parser against mocked Docker/source/process observations; those tests alone did
+not qualify actual Linux/Kombu, native snapshot or application capture. The later
+selected private-host case is recorded separately; broader cases remain open.
 It adds no service, Azure resource, grant, hook, automatic scheduling or cleanup.
 
 This is a developer qualification component, not the final administrator flow.
@@ -138,7 +146,8 @@ rechecks that same instance before stopping, then requires its matching clean
 marker with every current child joined, exited zero and acknowledging cleanup.
 The parent PID is in the container namespace, not Docker's host State.Pid. There is
 no CLI/JSON override. Only Elasticsearch's specific native-success stop phase is
-eligible for 143; actual integrated behavior remains unqualified.
+eligible for 143. The later selected actual integrated case is recorded in the
+qualification document; broader failure qualification remains open.
 
 Bounded `/proc/self/mountinfo` readback binds each selected source tree/file to
 its actual covering mount ID, device, filesystem root/source/options and source
@@ -286,9 +295,10 @@ volume and fixed `path.repo`. Staging pulls/creates dependencies before starting
 them, verifies the pinned image user `1000:0` and the exact empty local volume,
 then initializes its ownership/mode to `1000:0`/0700. It does not repair nonempty
 volumes. Exact mounts/path.repo propagate to runtime and host attestation; legacy
-five-volume manifests are rejected. This adds no paid service. The existing
-stopped VM lacks `path.repo`; it must not be reset or silently retrofitted.
-Actual qualification needs a later fresh integrated namespace.
+five-volume manifests are rejected. This adds no paid service. The earlier
+legacy stopped five-volume VM lacked `path.repo`; it was not permission to reset
+or silently retrofit it. Actual capture/resume was later exercised in the separate
+fresh six-volume private stack described in the qualification record.
 
 The backup helpers and `worker_lifecycle.py` are part of the controller's existing
 source-hash inventory. Its machine-produced `worker_hashes` pins the exact installed
@@ -300,10 +310,11 @@ the bounded output cap. Missing/duplicate/old-nonce markers fail closed; long lo
 histories exceeding the cap also fail rather than silently dropping proof.
 
 Packaging/upload callers must supply these files alongside the reviewed admission
-helper and invoke `admission-bind-fresh` before unit installation. Fixed-source
-installer inventories and any legacy uploader need corresponding integration
-before they can deploy this layout. No source-only result qualifies a cold azd
-installation. Full current-authority restore remains open.
+helper and invoke `admission-bind-fresh` before unit installation. Legacy installers
+or uploaders without the six-volume/helper inventory cannot deploy this layout.
+No source-only result qualifies a cold azd installation, and the selected actual
+private-host result does not qualify every customer deployment. Full
+current-authority restore remains open.
 
 The existing Ubuntu host was separately observed by the coordinator to have
 Python 3.12.3 and distro `python3-cryptography 41.0.7-4ubuntu0.4`; no installation
@@ -337,8 +348,8 @@ single-submission behavior. They do not prove
 actual database consistency, crash durability, Docker/systemd/IMDS ownership,
 live backup, host resource consumption or restore.
 
-Before closing #54, independently qualify actual capture and isolated restore,
-image availability/compatibility, secret handling and integrity, selected runtime
+Before closing #54, independently qualify isolated restore and the broader capture
+fault campaign, image availability/compatibility, secret handling and integrity, selected runtime
 readiness/Santa state, and security continuity. Authenticate the complete GCM tag
 and independently trusted ciphertext hash before admitting any restored data;
 this component deliberately supplies no decrypt/extract/restore command.
