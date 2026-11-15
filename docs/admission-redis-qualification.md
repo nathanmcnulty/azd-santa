@@ -32,7 +32,7 @@ The current harness binds admission SHA-256
 `ebe2abef0cb9786f677a08dacf96b27acd944fcdd4e1465afa5c74701249629b`
 from frozen product commit `f4324804c5aad6d58e70bc186850d78f3f1f6982`.
 The current operator guard is SHA-256
-`31ea35a3417108b2f1bb2698f9115dc65a12bbc43064cf296917ccad128404e1`, including the default-off fresh HTTPS settings hook. Earlier source
+`759206c03387e3166878623a9456d3b8d42a12149f706e4707968cf9377e6a43`, including the default-off fresh HTTPS settings hook. Earlier source
 used `0d5eb3b850b58c4f6092206734114fdbf931e965cb6b448feb60a4068aee4b8d`; this source refresh is not a new actual Redis or built-image result.
 Its new receipt scope is `disposable-redis-admission-fenced-lua-v2`, requiring a
 new evidence directory and new actual run. The original historical27 receipt

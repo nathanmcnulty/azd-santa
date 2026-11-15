@@ -115,6 +115,11 @@ class FreshOrigin(unittest.TestCase):
             self.assertNotIn('SECURE_PROXY_SSL_HEADER', private)
             value = settings(); value.update(django_zentral_settings={'AZD_SANTA_HTTPS_ORIGIN': ORIGIN},
                 ALLOWED_HOSTS=['localhost','127.0.0.1',ORIGIN[8:]], CSRF_TRUSTED_ORIGINS=[ORIGIN])
+            # Pinned Zentral uses ConfigList, whose equality rejects plain lists.
+            class ConfigListShape:
+                def __iter__(self): return iter([ORIGIN])
+                def __eq__(self, other): return isinstance(other, ConfigListShape)
+            value['CSRF_TRUSTED_ORIGINS'] = ConfigListShape()
             scope['install_policy'](value)
             self.assertEqual(value['SECURE_PROXY_SSL_HEADER'], ('HTTP_X_FORWARDED_PROTO','https'))
             self.assertFalse(value['USE_X_FORWARDED_HOST'])

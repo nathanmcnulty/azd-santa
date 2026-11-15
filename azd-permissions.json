@@ -236,7 +236,7 @@
         { "path": "experiments/server/private_install_transport.py", "sha256": "38695ddeee431c111339aeaa7210f4a0a79d2bf9702f2076d7fe9fa559c972ef" },
         { "path": "experiments/server/prepare_zentral_eval.py", "sha256": "879290e2a7e74e0a43e0f2e66f5d537a64a69a069f1021c94403cdcc38384451" },
         { "path": "experiments/server/stage_runtime.py", "sha256": "61d6bb2c5e32eb981b4879a57ec7337e8ef17e4ef8e5553797d57b88e0135129" },
-        { "path": "experiments/server/operator_mfa.py", "sha256": "31ea35a3417108b2f1bb2698f9115dc65a12bbc43064cf296917ccad128404e1" }
+        { "path": "experiments/server/operator_mfa.py", "sha256": "759206c03387e3166878623a9456d3b8d42a12149f706e4707968cf9377e6a43" }
       ]
     },
     {

@@ -57,7 +57,7 @@ def install_policy(namespace):
         if (type(origin) is not str or not re.fullmatch(
                 r'https://santa-[a-f0-9]{16}-[a-z0-9-]{2,32}-vm\.[a-z0-9]{2,32}\.cloudapp\.azure\.com', origin)
                 or namespace.get('ALLOWED_HOSTS') != ['localhost', '127.0.0.1', origin.removeprefix('https://')]
-                or namespace.get('CSRF_TRUSTED_ORIGINS') != [origin]):
+                or list(namespace.get('CSRF_TRUSTED_ORIGINS', ())) != [origin]):
             raise ImproperlyConfigured('Selected fresh HTTPS origin differs from host/CSRF settings')
         # Backend remains loopback-published only. The selected host edge must
         # replace this header; arbitrary forwarded host/client identity is ignored.
