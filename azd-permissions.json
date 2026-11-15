@@ -8,6 +8,32 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/blobServices/containers/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read",
+      "principal": "Explicit cached CLI operator selecting an existing independently owned backup store",
+      "phase": "discovery",
+      "feature": "offhost-backup-store-selection",
+      "defaultEnabled": false,
+      "scope": "Exact selected tenant/subscription, independent store RG/account/container and one or two explicitly selected solution VM instances and owned networks",
+      "rationale": "GET-only producer defaults to a no-CLI plan; explicit ReadArm validates cached context, independent RG ownership, VM/network linkage and before/after observations. No authentication fallback, SAS, provisioning, network changes or role grants. Copied receipts are not authority; missing or unrelated resources cannot become create/update eligibility.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "experiments/server/BackupStoreSelection.psm1",
+          "sha256": "c33df90520c4921868bbd69449cde3bf365060c3efb96aa10b4e9e265d8b7ba2"
+        },
+        {
+          "path": "experiments/server/backup_store_selection.py",
+          "sha256": "3934eeb139470803086ecbbeba26ed20a2c982c5bd4125a4b88d6e4e2ccd6bdc"
+        },
+        {
+          "path": "experiments/server/HttpsEndpoint.psm1",
+          "sha256": "f19748db7f3d7deea96182e21d93205c4bf56a8e16c477405bcfa4d1e4c28b12"
+        }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
       "permission": "Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Resources/subscriptions/resourceGroups/write; Microsoft.Resources/deployments/read; Microsoft.Resources/deployments/write; Microsoft.Resources/deployments/validate/action; Microsoft.Resources/deployments/operations/read; Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/write; Microsoft.Storage/storageAccounts/blobServices/read; Microsoft.Storage/storageAccounts/blobServices/write; Microsoft.Storage/storageAccounts/blobServices/containers/read; Microsoft.Storage/storageAccounts/blobServices/containers/write; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/write; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/virtualNetworks/subnets/write; Microsoft.Network/virtualNetworks/subnets/joinViaServiceEndpoint/action",
       "principal": "Explicit independent backup-store deployment operator using existing cached authority only",
       "phase": "deployment",
@@ -371,7 +397,8 @@
   ],
   "gaps": [
     "The explicit one-case pre-snapshot failed-request retirement uses existing selected cached ARM read/Run Command rights only. It requires positive current IMDS/same-boot, terminal-unit/cgroup, original stopped-ID and no-native-effect evidence; preserves original request/source/history; stages one cold-helper replacement and starts the original runtime once. No grants or generic recovery/resume are added. Offline tests and the separate read-only namespace probe do not establish live recovery or native backup/restore acceptance. See docs/presnapshot-recovery.md.",
-    "Issue #85 first layer adds independent backup-store templates and private native-ciphertext protocol APIs only. Actual provider/permission/policy sufficiency, cached ARM adapter, ownership preflight before deployment, service-endpoint integration, confidential selected-VM capability delivery, durable terminal job proof, independent verifier selection and VM/azd-down lifecycle preservation remain unqualified. Public-IP/SAS signedIp cannot authorize same-region Azure VMs/operators; only owned same-region endpoint targets are supported, with no fallback or unrelated subnet mutation. Restrictive Shared Key/SAS/network policy is a stop condition, not permission to change it. Root/VM azure.yaml and frozen source/controller/installer/upgrade paths are unchanged.",
+    "Issue #85 now includes a GET-only cached ARM existing-store selector with independent RG ownership and before/after checks. Live cached reader/API sufficiency, safe create-only lifecycle and provider/policy preflight remain unqualified; observation receipts are not authority or atomic snapshots. Source subnet deletion requires explicit network reconciliation; no stale ACL removal, endpoint change or provisioning is performed. Retention, independent download, portable key/image lifecycle and actual restore remain separate unqualified gates.",
+    "Issue #85 first layer added independent backup-store templates and private native-ciphertext protocol APIs only. Actual provider/permission/policy sufficiency, cached ARM SAS/delivery integration, ownership preflight before deployment, service-endpoint integration, confidential selected-VM capability delivery, durable terminal job proof, independent verifier selection and VM/azd-down lifecycle preservation remain unqualified. Public-IP/SAS signedIp cannot authorize same-region Azure VMs/operators; only owned same-region endpoint targets are supported, with no fallback or unrelated subnet mutation. Restrictive Shared Key/SAS/network policy is a stop condition, not permission to change it. Root/VM azure.yaml and frozen source/controller/installer/upgrade paths are unchanged.",
     "Off-host native ciphertext retention is separate from exact container image/source/tooling retention, portable recipient-key recovery, regional disaster recovery, sealed authentication, quarantine, actual DB/ES restoration and current authority. The current locally built core image has no authoritative registry publication; rebuilding its source does not prove the same image. Native data is capped at 2GiB and does not include or truncate image exports. No retention/recoverability claim follows from source, mock or template validation.",
     "The explicit one-helper host maintenance candidate reuses existing selected cached ARM/Run Command authority to stage immutable source, disable/stop/rebind/re-enable/start the preserved original private runtime. No Azure/Graph grant, image/security/worker change or fresh installer replay is added. Durable source/target intent and terminal proof are evidence, not external authorization. Live Linux/systemd/Run Command interruption/reboot qualification and native backup/restore/current-authority gates remain open. See docs/private-helper-upgrade.md.",
     "Authenticated archive quarantine adds only an offline Linux private extraction primitive after independently trusted ciphertext digest/recipient authentication. No SQL, cloud request, service start, credential grant or activation is added. Original cipher discard API and frozen installer/controller/producer are unchanged. Linux descriptor/crash qualification, complete schema/census, isolated PostgreSQL/native ES restore, current-authority reconciliation and fresh administrator/device reissue remain gates. See docs/authenticated-archive-quarantine.md.",

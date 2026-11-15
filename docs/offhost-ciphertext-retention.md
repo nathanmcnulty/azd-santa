@@ -137,12 +137,77 @@ LRS off-host retention does not establish regional disaster recovery or current
 authority. Data retention, independent byte verification, envelope authentication,
 inert quarantine, application restore and fresh authority remain separate gates.
 
-The next integration must provide: a cached ARM adapter; independent-store
-ownership/registration/policy preflight before deployment; narrowly scoped endpoint
+The next integration must provide: independent-store
+creation/registration/policy preflight before deployment; narrowly scoped endpoint
 enablement compatible with future host provisioning; automatic capture selection;
 confidential capability delivery to one selected source job; durable job-terminal
 observation; an independently selected verifier/restore target; and teardown
 preservation tests. None is enabled by root deployment or represented as complete.
+
+### Cached ARM selection of an existing store
+
+`experiments/server/BackupStoreSelection.psm1` now exports
+`Get-SantaBackupStoreSelection`. It is a local operator component, independent of
+both deployment entry points. Supply selected tenant/subscription, location,
+backup resource-group/account names and the **independently retained expected
+ownership GUID**, plus source environment and immutable VM instance GUID. Optional
+verifier environment and instance must be supplied together and identify a
+different owned VM. These are typed parameters; administrators never construct
+ARM fact JSON or copy a script onto a remote VM. An existing target can be selected
+using `Get-SantaPrivateVmDeploymentTarget` from `SetupTransport.psm1`.
+
+The default returns a plan of exact GET URLs without invoking Azure CLI.
+`-ReadArm` explicitly reads the existing cached CLI session, checks enabled
+subscription, tenant and AzureCloud, collects two complete resource observations,
+and checks cached context again. It reuses the bounded endpoint CLI reader and
+passes nonsecret machine-generated observations through stdin to the isolated
+Python bridge (`backup_store_selection.py`); observations are never command-line
+arguments. `-Python` can select an already installed Python executable. The bridge
+needs only the standard library; it installs nothing. The CLI reader bounds each
+parsed response, while the bridge bounds aggregate input and its subprocess time.
+When several Python applications match PATH, the bridge starts the first resolved
+application, preserving ordinary command precedence. It never joins executable
+paths or retries another interpreter after startup failure.
+The inherited CLI invocation has no hard wall-clock timeout; a future job wrapper
+must enforce and observe its own deadline. A killed or timed-out read is unknown,
+never permission to provision or repair.
+
+Selection validates exact resource IDs, strict ownership values and case-insensitive
+tag keys; ambiguous tag aliases fail. The backup resource group must have independent
+store ownership/purpose markers, no azd environment/service tags or managed owner,
+and differ from both selected VM groups. The account must independently match the
+retained ownership GUID. Source/verifier groups and VM/VNet/NIC/NSG identities,
+provisioning, immutable instance, NIC backlink, same-region owned endpoint subnets,
+deny-all inbound rule and exact default-deny Storage ACLs are verified through
+the existing retention validator plus stronger producer linkage checks. Complete
+before/after responses must match, including any ETags. This detects observed
+changes; it is not an atomic ARM snapshot or a promise against later change.
+
+Only the running cached-ARM producer supplies observation provenance. A standalone
+bridge run, copied JSON, selected receipt or its digest cannot prove ARM authority
+or authorize future SAS/deployment work. A selected receipt records only the
+observed nonsecret IDs and observation digest; retention and restore remain false,
+and fresh ARM readback is required before subsequent use. Missing, forbidden,
+deleted, unsupported or changing resources fail with a fixed redacted error and
+no successful receipt. If deleting a source VM group leaves a stale subnet ACL,
+selection stays closed and requires explicit network reconciliation; the error
+does not prove ciphertext was deleted. This layer cannot silently remove old
+rules, enable endpoints or loosen ownership.
+
+This is **existing-store inspection only**. It issues no PUT, POST, deployment,
+SAS, role/provider/policy change or data-plane request, including for a preexisting
+unrelated resource. Missing resources never trigger creation. The independent
+Bicep templates remain create-or-update templates: calling them directly can
+update an existing account. Their safe create lifecycle is still an open #85
+gate. A GET-not-found or name-availability result followed by template submission
+does not establish atomic create-only behavior; a concurrent resource could
+appear between those calls. No overwrite-prevention or azd-down preservation
+acceptance is claimed for template deployment by this reader.
+
+Remaining #85 integration includes explicit safe provisioning, compatible endpoint
+enablement and selected-job capability delivery/observation. #54 still owns actual
+off-host recovery, independently retained key/image/source artifacts and lifecycle
+proof. This component does not close either issue or authenticate any ciphertext.
 
 ## Offline evidence
 
@@ -160,3 +225,12 @@ two Linux filesystem cases explicitly skipped on Windows), followed by all241
 integrated Pester checks. Template validation, canonical permission schema and
 Bicep compilation passed. Actual Linux descriptor cases require hosted Linux
 execution; no cloud or actual transfer acceptance follows from these results.
+
+The subsequent GET-only selector passed six Python test groups and ten focused
+Pester checks, including exact cached-reader argument dispatch, no-CLI default,
+two complete readbacks, unrelated preexisting ownership, missing/forbidden/timeout
+failure, context/resource drift, endpoint/identity/provisioning negatives and
+redacted/duplicate/oversized bridge input. The full offline suite then passed all
+251 Pester checks on PowerShell7.6.9/Pester6.2.0; template validation, unchanged
+MONITOR profiles and the canonical permission schema also passed. These are
+synthetic observations and local subprocess tests, with no live Azure requests.
