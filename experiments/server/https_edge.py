@@ -142,7 +142,8 @@ def certificate_ingress_candidate(facts, nsg, subnet):
          and nsg['tags'].get('purpose') == 'synthetic-vm-lab'
          and nsg['tags'].get('azd-env-name') == facts['EnvironmentName'])
     etag = nsg['etag']
-    need(type(etag) is str and 1 <= len(etag) <= 256 and not any(c in etag for c in '\r\n'))
+    need(type(etag) is str and re.fullmatch(
+        r'(?:W/)?"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}"', etag))
     props = nsg['properties']; network = subnet['properties']
     need(props['provisioningState'] == network['provisioningState'] == 'Succeeded')
     need(not props.get('networkInterfaces') and len(props['subnets']) == 1

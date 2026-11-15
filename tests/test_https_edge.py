@@ -79,7 +79,7 @@ class Edge(unittest.TestCase):
         selected = facts(); base = selected['VmId'].split('/providers/')[0] + '/providers/Microsoft.Network/'
         nsg_id = base + 'networkSecurityGroups/nsg-santa-lab'
         subnet_id = base + 'virtualNetworks/vnet-santa-lab/subnets/host'
-        nsg = dict(id=nsg_id, etag='W/"selected"', location='westus2', tags={
+        nsg = dict(id=nsg_id, etag='W/"44444444-4444-4444-8444-444444444444"', location='westus2', tags={
             'azd-solution': 'azd-santa', 'purpose': 'synthetic-vm-lab', 'azd-env-name': 'synthetic'},
             properties=dict(provisioningState='Succeeded', subnets=[{'id': subnet_id}], securityRules=[
                 {'name': 'deny-all-inbound', 'properties': dict(priority=100, direction='Inbound',
@@ -92,6 +92,10 @@ class Edge(unittest.TestCase):
         plan = edge.certificate_ingress_candidate(selected, nsg, subnet)
         self.assertEqual((nsg, subnet), original)
         self.assertEqual(plan['if_match'], nsg['etag'])
+        for etag in ('*', ' W/"44444444-4444-4444-8444-444444444444"', '"one", "two"',
+                     'W/"44444444-4444-4444-8444-444444444444"\r\n', 'unquoted'):
+            wrong = copy.deepcopy(nsg); wrong['etag'] = etag
+            with self.assertRaises(ValueError): edge.certificate_ingress_candidate(selected, wrong, subnet)
         rules = plan['body']['properties']['securityRules']
         self.assertEqual([(r['properties']['priority'], r['properties']['access'],
                            r['properties']['protocol'], r['properties']['destinationPortRange']) for r in rules],

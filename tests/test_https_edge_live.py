@@ -111,6 +111,11 @@ class ActualHeaders(unittest.TestCase):
                 held = edge.held_configuration(facts(), '/private', phase='staging')
                 held['storage'] = config['storage']
                 held['logging'] = config['logging']
+                validation_path = state / 'held-acme.json'
+                validation_path.write_text(json.dumps(held))
+                validation = subprocess.run([str(binary), 'validate', '--config', str(validation_path)],
+                    capture_output=True, timeout=20)
+                self.assertEqual(validation.returncode, 0, 'Pinned ACME profile provisioning failed')
                 held['apps']['tls'] = config['apps']['tls']
                 held_server = held['apps']['http']['servers']['https']
                 held_server['listen'] = ['127.0.0.1:' + str(port)]
