@@ -51,6 +51,9 @@ unknown observation, never permission to change or replay a network request.
 The Windows batch-launcher shim streams/counts replies instead of collecting a
 full output array. These are captured-reply bounds, not a memory/CPU sandbox for
 Azure CLI itself. Unsupported batch metacharacters in arguments fail closed.
+Ordinary owned-process fixtures verify the recorded descendant PID is gone
+after both a Windows wrapper timeout and reply overflow; they invoke no Azure
+command. These local checks do not establish cancellation of an ARM operation.
 
 Checks include exact group/VM/network IDs and ownership markers, immutable VM
 instance, VM-to-NIC-to-subnet backlinks, same-region resources, four network ETags,

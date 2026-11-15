@@ -52,14 +52,27 @@ Describe 'Bounded cached operator process reader' {
             if(-not $IsWindows) { return }
             $fake=Join-Path $TestDrive 'ordinary-cli.cmd';$script:fakeCli=$fake
             Mock Get-Command { [pscustomobject]@{Source=$script:fakeCli} }
-            [IO.File]::WriteAllText($fake,"@echo off`r`nfor /L %%i in (1,1,50000) do @echo ordinary-test-output`r`n")
-            $watch=[Diagnostics.Stopwatch]::StartNew()
-            { Invoke-SantaEndpointAzJson @('account','show') -TimeoutSeconds 3 } | Should -Throw '*failed or is unknown*'
-            $watch.Elapsed.TotalSeconds | Should -BeLessThan 9
-            [IO.File]::WriteAllText($fake,('@echo off'+"`r`n"+'"'+$script:python+'" -I -c "import time;time.sleep(30)"'+"`r`n"))
-            $watch.Restart()
-            { Invoke-SantaEndpointAzJson @('account','show') -TimeoutSeconds 1 } | Should -Throw '*failed or is unknown*'
-            $watch.Elapsed.TotalSeconds | Should -BeLessThan 7
+            $fixture=Join-Path $TestDrive 'ordinary-child.py'
+            [IO.File]::WriteAllText($fixture,"import os,sys,time`nfrom pathlib import Path`nPath(sys.argv[1]).write_text(str(os.getpid()))`nif sys.argv[2]=='overflow':`n for _ in range(50000): print('ordinary-test-output',flush=True)`ntime.sleep(30)`n")
+            foreach($mode in @('overflow','timeout')) {
+                $pidFile=Join-Path $TestDrive ($mode+'.pid');$startedAt=Get-Date
+                [IO.File]::WriteAllText($fake,('@echo off'+"`r`n"+'"'+$script:python+'" -I "'+$fixture+'" "'+$pidFile+'" '+$mode+"`r`n"))
+                $watch=[Diagnostics.Stopwatch]::StartNew()
+                { Invoke-SantaEndpointAzJson @('account','show') -TimeoutSeconds 3 } | Should -Throw '*failed or is unknown*'
+                $watch.Elapsed.TotalSeconds | Should -BeLessThan 9
+                Test-Path $pidFile | Should -BeTrue -Because 'the owned descendant must actually run'
+                $childId=[int](Get-Content $pidFile);$child=Get-Process -Id $childId -ErrorAction SilentlyContinue
+                $leftRunning=$false
+                if($child) {
+                    try {
+                        # Never clean up an unrelated recycled PID.
+                        if($child.ProcessName -notmatch '^python' -or $child.StartTime -lt $startedAt.AddSeconds(-1)) { throw 'Unexpected fixture process identity.' }
+                        $leftRunning=-not $child.WaitForExit(1000)
+                        if($leftRunning) { $child.Kill($true);$null=$child.WaitForExit(3000) }
+                    } finally { $child.Dispose() }
+                }
+                $leftRunning | Should -BeFalse -Because "$mode must not leave the owned descendant alive"
+            }
         }
     }
 }
