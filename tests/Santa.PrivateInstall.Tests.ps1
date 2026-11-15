@@ -21,7 +21,8 @@ Describe 'Optional private VM azd installation' {
         BeforeAll { $priorEnvironment = $env:AZURE_ENV_NAME; $env:AZURE_ENV_NAME = 'synthetic' }
         AfterAll { $env:AZURE_ENV_NAME = $priorEnvironment }
         BeforeEach {
-            $script:values = @{ AZURE_ENV_NAME = 'synthetic'; SANTA_PRIVATE_BACKEND_INSTALL = 'true'
+            $script:values = @{ AZURE_ENV_NAME = 'synthetic'; AZURE_LOCATION = 'westus2'; AZURE_TENANT_ID = '22222222-2222-4222-8222-222222222222'
+                SANTA_VM_ENABLE_STORAGE_SERVICE_ENDPOINT = 'false'; SANTA_PRIVATE_BACKEND_INSTALL = 'true'
                 AZURE_SUBSCRIPTION_ID = '11111111-1111-4111-8111-111111111111'; AZURE_RESOURCE_GROUP = 'rg-azd-santa-vm-synthetic'
                 SANTA_VM_NAME = 'vm-santa-lab'; SANTA_VM_RESOURCE_ID = '/selected/vm'; SANTA_VM_INSTANCE_ID = '33333333-3333-4333-8333-333333333333'
                 SANTA_VM_DEPLOYMENT_ID = '/subscriptions/11111111-1111-4111-8111-111111111111/providers/Microsoft.Resources/deployments/private-test' }
@@ -32,7 +33,11 @@ Describe 'Optional private VM azd installation' {
             [IO.Directory]::CreateDirectory($script:privateDirectory) | Out-Null
             Mock Get-PrivateEnvironmentDirectory { $script:privateDirectory }
             Mock Invoke-PrivateAzd { param($Arguments, $Json) if ($Json) { $script:values } }
-            Mock Invoke-PrivateAzure { throw 'Unexpected Azure mutation.' }
+            Mock Invoke-PrivateAzure {
+                if ($Arguments[0] -eq 'account' -and $Arguments[1] -eq 'show') { return @{ id = $script:values.AZURE_SUBSCRIPTION_ID; tenantId = $script:values.AZURE_TENANT_ID; environmentName = 'AzureCloud' } }
+                if ($Arguments[0] -eq 'group' -and $Arguments[1] -eq 'exists') { return $false }
+                throw 'Unexpected Azure mutation or unplanned read.'
+            }
             Mock Get-SantaPrivateVmDeploymentTarget { $script:target }
             Mock Complete-SantaBackendInstallation { [pscustomobject]@{ Path = 'synthetic-binding' } }
             Mock Start-Sleep {}
@@ -58,15 +63,15 @@ Describe 'Optional private VM azd installation' {
         It 'preserves a user override and otherwise saves only stable public input automatically' {
             $script:values.SANTA_VM_SSH_PUBLIC_KEY = 'user-supplied-public-key'
             Invoke-PrivateVmAzdHook preprovision
-            Should -Invoke Invoke-PrivateAzd -Times 0 -ParameterFilter { $Arguments[1] -eq 'set' }
+            Should -Invoke Invoke-PrivateAzd -Times 0 -ParameterFilter { $Arguments[1] -eq 'set' -and $Arguments[2] -eq 'SANTA_VM_SSH_PUBLIC_KEY' }
             $script:values.Remove('SANTA_VM_SSH_PUBLIC_KEY')
             Invoke-PrivateVmAzdHook preprovision
             $path = Join-Path $script:privateDirectory 'provisioning-only.pub'
             $first = [IO.File]::ReadAllText($path)
             Invoke-PrivateVmAzdHook preprovision
             [IO.File]::ReadAllText($path) | Should -BeExactly $first
-            @(Get-ChildItem $script:privateDirectory).Count | Should -Be 1
-            Should -Invoke Invoke-PrivateAzure -Times 0
+            @(Get-ChildItem $script:privateDirectory | Where-Object Name -EQ 'provisioning-only.pub').Count | Should -Be 1
+            Should -Invoke Invoke-PrivateAzure -Times 6 -ParameterFilter { $Arguments[0] -eq 'account' -or $Arguments[0] -eq 'group' }
         }
         It 'sets the exact host shutdown guard without installing the opt-in backend' {
             Mock Send-PrivateInstallCommand { throw 'Unexpected installer action.' }

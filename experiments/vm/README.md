@@ -41,6 +41,23 @@ Prerequisites: authenticated Azure CLI/azd normal browser/broker session, PowerS
 7.6+, and existing deployment/Run Command permissions in the selected subscription.
 Do not grant new roles automatically or use device-code authentication.
 
+`SANTA_VM_ENABLE_STORAGE_SERVICE_ENDPOINT` defaults to `false`. Set it to `true`
+only for an environment intended to use the separate off-host Storage workflow;
+it adds no Storage account and leaves the host's deny-all inbound rule intact.
+The preprovision hook performs a current cached-context and live resource/linkage
+read on both default and opt-in paths, then preserves the selected subnet's
+existing service endpoints and private-network policy values. Existing-resource
+drift or extra subnet/network attachments stop before deployment. If enabling
+Storage would change an existing subnet, the first provision writes a private
+review plan bound to the current source bytes under `.azure/<environment>/` and stops. Review its IDs and exact
+endpoint diff, set `SANTA_VM_HOST_SUBNET_UPDATE_PLAN_SHA256` to that fresh plan
+hash, and rerun `azd provision`; the hash is consumed before provisioning and a
+retry needs a new live-read plan. It is not an ARM concurrency lock: avoid
+changing the subnet elsewhere during the deployment. Enabling the endpoint
+changes subnet routing and can close existing TCP connections, so avoid it while
+critical host work is running. A direct Bicep deployment does not run these
+guards.
+
 From the repository root, validate offline first:
 
 ```powershell
@@ -63,6 +80,8 @@ $subscription = '<explicit enabled subscription ID>'
 az account show --subscription $subscription
 azd env new '<unique-environment>' --subscription $subscription --location westus2 --no-prompt
 azd env set SANTA_PRIVATE_BACKEND_INSTALL true --no-prompt
+# Optional, only when the off-host Storage workflow needs this VM subnet:
+# azd env set SANTA_VM_ENABLE_STORAGE_SERVICE_ENDPOINT true --no-prompt
 azd up --no-prompt
 ```
 
@@ -117,7 +136,8 @@ durability across region/storage loss or restoration of an old valid database.
 West US 2 retail compute is approximately $27.45/month at 730 hours, plus $2.40
 for the 32-GiB Standard SSD and $3.65 for the Standard public IPv4 address:
 **approximately $33.50/month**, before storage transactions, diagnostics and
-traffic. This is not a $29.85 all-in deployment.
+traffic. The optional Storage service endpoint adds **$0/month** by itself; it
+does not provision the Storage account or incur data-retention costs.
 Recheck prices and subscription credit before longer runs. Burstable CPU credits
 are not two dedicated sustained cores. No paid backup/monitoring service is enabled.
 

@@ -101,7 +101,7 @@
       "feature": "https-endpoint-readback",
       "defaultEnabled": false,
       "scope": "Exact selected tenant/subscription, immutable VM instance and tagged rg-azd-santa-vm-<environment> with linked existing NIC/PIP/subnet/NSG only",
-      "rationale": "Read-only cached selected ARM endpoint producer verifies linked resources and deny-all inbound, then supplies digest-bound nonsecret facts to held-closed offline HTTPS rendering. The existing PIP template adds a stable Azure DNS label only on future authorized provision. No authentication, grants, ingress, certificate order or service startup occurs.",
+      "rationale": "Read-only cached selected ARM endpoint producer verifies linked resources and deny-all inbound, then supplies digest-bound nonsecret facts to held-closed offline HTTPS rendering. The existing PIP template adds a stable Azure DNS label only on future authorized provision. The same host template has a separate default-disabled Storage service endpoint; it adds no ingress. No authentication, grants, certificate order or service startup occurs.",
       "evidenceState": "code",
       "evidence": [
         {
@@ -118,7 +118,7 @@
         },
         {
           "path": "experiments/vm/infra/host.bicep",
-          "sha256": "9653a305d1ca2474c91404bccc024dfd326436aebd56ef5a97180d05cc7e6987"
+          "sha256": "e61e4051533902ad53febe8f9bb1905e12d9fb62c07b6585fc5a4b34de03d16c"
         }
       ]
     },
@@ -131,10 +131,10 @@
       "feature": "optional-private-vm-host-and-backend-lifecycle",
       "defaultEnabled": false,
       "scope": "Explicit selected environment/subscription and tagged rg-azd-santa-vm-<environment>/vm-santa-lab only",
-      "rationale": "Nested VM postprovision validates the selected account/group/VM outputs and schedules two-hour shutdown for that exact VM, including host-only mode. When SANTA_PRIVATE_BACKEND_INSTALL=true, it additionally transports bounded pinned sources, submits one durable privileged fresh-install job and observes it before nonmutating finalization. No root Intune hook, network admission, tenant grant or operator reset is added; actual complete ARM/hook/cold-install delivery remains unqualified.",
+      "rationale": "Nested VM preprovision now performs current account and network-graph GETs and preserves observed subnet endpoints; an existing Storage endpoint addition requires exact prior azd VM resource/instance binding plus a one-time plan bound to current resource IDs, source revision and source-file hashes. Postprovision still validates selected account/group/VM outputs and schedules two-hour shutdown for that exact VM, including host-only mode. When SANTA_PRIVATE_BACKEND_INSTALL=true, it additionally transports bounded pinned sources, submits one durable privileged fresh-install job and observes it before nonmutating finalization. No root Intune hook, network admission, tenant grant or operator reset is added; actual complete ARM/hook/cold-install delivery remains unqualified.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "38ad2224d465836224d92c2692a8e40c4985af03113f481dae308622b961655c" },
+        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "ef744893f95f91376bb8643416a59ced381f2af8e920c2c733e002173db6dabf" },
         { "path": "experiments/vm/Install-PrivateBackend.ps1", "sha256": "33c620439f5abadef688f4a6f0477e80e4676986beac0cb6d43b975c092320d5" },
         { "path": "experiments/server/private_install.py", "sha256": "84348ac0a9a86fc185ca2da479e872bd48f82b4e8ffacd5192c1222b35d1eae7" },
         { "path": "experiments/server/private_install_transport.py", "sha256": "07eb9e89feffa763cd71869aecc526a39d0a4c580cae0a317daafcb8b25e22c4" }
@@ -206,17 +206,21 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
-      "permission": "Microsoft.Resources/deployments/* and Microsoft.Resources/subscriptions/resourceGroups/write; Microsoft.Compute/virtualMachines/write, Microsoft.Compute/disks/write and Microsoft.Network resource write/join actions for the isolated VM lab",
+      "permission": "Microsoft.Resources/deployments/*; Microsoft.Resources/subscriptions/resourceGroups/read,write; Microsoft.Compute/virtualMachines/read,write; Microsoft.Compute/disks/write; Microsoft.Network/virtualNetworks/read,write; Microsoft.Network/virtualNetworks/subnets/read,write,joinViaServiceEndpoint/action; Microsoft.Network/networkSecurityGroups/read,write; Microsoft.Network/networkInterfaces/read,write; Microsoft.Network/publicIPAddresses/read,write",
       "principal": "Selected interactive deployment operator (existing permissions only)",
       "phase": "deployment",
       "feature": "synthetic-vm-lab",
       "defaultEnabled": false,
       "scope": "Explicit selected subscription deployment and rg-azd-santa-vm-<environment>; the template requests no role assignment or workload identity",
-      "rationale": "Optional nested azd project provisions a synthetic-only test host, disk and isolated network. This inventories operations, not consent or authorization to grant Contributor. A minimal custom deployment role has not been established.",
+      "rationale": "Optional nested azd project provisions a synthetic-only test host, disk and isolated network. Its preprovision hook performs current resource-graph GETs and a source/identity-bound one-time review gate before an existing subnet endpoint update; the template requests no role assignment or workload identity. This inventories required actions, not effective consent or authorization to grant Contributor. A minimal custom deployment role has not been established.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/vm/infra/main.bicep", "sha256": "8b4017538627d919748b6722dac4b0223e14aaaa810d742c0af3c4844702420b" },
-        { "path": "experiments/vm/infra/host.bicep", "sha256": "9653a305d1ca2474c91404bccc024dfd326436aebd56ef5a97180d05cc7e6987" }
+        { "path": "experiments/vm/infra/main.bicep", "sha256": "87bf8c5383c0006ddc7b0906479beffada29ae00324ba0c3ae93111c48470767" },
+        { "path": "experiments/vm/infra/host.bicep", "sha256": "e61e4051533902ad53febe8f9bb1905e12d9fb62c07b6585fc5a4b34de03d16c" },
+        { "path": "experiments/vm/infra/main.parameters.json", "sha256": "63877e4726323511ec32074d1931c9db7df5a8c087dc07e28187df281c20cc54" },
+        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "ef744893f95f91376bb8643416a59ced381f2af8e920c2c733e002173db6dabf" },
+        { "path": "experiments/vm/HostSubnetStorageEndpoint.psm1", "sha256": "f7699baeb23ba65bae763f5b0e502213d43cfc66cbc233691efd60d3f025262d" },
+        { "path": "tests/Santa.HostSubnetStorageEndpoint.Tests.ps1", "sha256": "3a5cb6b243d17951fa57ba53ce248dfbb8886e93d16ca29214d6dddedb912b19" }
       ]
     },
     {
@@ -430,7 +434,7 @@
     "The first exact pre-snapshot recovery failed after disabling runtime boot start; original ACTIVE/intent/failure and old request/source tuple were retained. A separately explicit, source-bound disable-only continuation now requires fresh selected authority, pinned predecessor artifacts, reviewed reload-cleared profiles, typed loaded path/argv/ignore definitions and positive terminal cgroups. No live continuation, runtime start, native backup, portable key/image retention, full-stack restore or complete application/schema census is established by this code. No new grant, automatic replay or permission sufficiency claim is added.",
     "The explicit one-case pre-snapshot failed-request retirement uses existing selected cached ARM read/Run Command rights only. It requires positive current IMDS/same-boot, terminal-unit/cgroup, original stopped-ID and no-native-effect evidence; preserves original request/source/history; stages one cold-helper replacement and starts the original runtime once. No grants or generic recovery/resume are added. Offline tests and the separate read-only namespace probe do not establish live recovery or native backup/restore acceptance. See docs/presnapshot-recovery.md.",
     "Issue #85 now includes a GET-only cached ARM existing-store selector with independent RG ownership and before/after checks. Live cached reader/API sufficiency, safe create-only lifecycle and provider/policy preflight remain unqualified; observation receipts are not authority or atomic snapshots. Source subnet deletion requires explicit network reconciliation; no stale ACL removal, endpoint change or provisioning is performed. Retention, independent download, portable key/image lifecycle and actual restore remain separate unqualified gates.",
-    "Issue #85 first layer added independent backup-store templates and private native-ciphertext protocol APIs only. Actual provider/permission/policy sufficiency, cached ARM SAS/delivery integration, ownership preflight before deployment, service-endpoint integration, confidential selected-VM capability delivery, durable terminal job proof, independent verifier selection and VM/azd-down lifecycle preservation remain unqualified. Public-IP/SAS signedIp cannot authorize same-region Azure VMs/operators; only owned same-region endpoint targets are supported, with no fallback or unrelated subnet mutation. Restrictive Shared Key/SAS/network policy is a stop condition, not permission to change it. Root/VM azure.yaml and frozen source/controller/installer/upgrade paths are unchanged.",
+    "Issue #85 first layer added independent backup-store templates and private native-ciphertext protocol APIs only. Issue #90 now wires a default-off Storage service endpoint into the optional owned VM subnet, preserving observed endpoints, checking the live resource/link graph and requiring a fresh one-time plan bound to source revision and source-file hashes for an existing-subnet change; source compile/offline checks do not qualify Azure deployment, effective network access or the concurrent-edit window. Actual provider/permission/policy sufficiency, cached ARM SAS/delivery integration, safe backup-store creation, confidential selected-VM capability delivery, durable terminal job proof, independent verifier selection and VM/azd-down lifecycle preservation remain unqualified. Public-IP/SAS signedIp cannot authorize same-region Azure VMs/operators; only owned same-region endpoint targets are supported, with no fallback or unrelated subnet mutation. Restrictive Shared Key/SAS/network policy is a stop condition, not permission to change it. Root Intune azure.yaml and frozen source/controller/installer/upgrade paths are unchanged.",
     "Off-host native ciphertext retention is separate from exact container image/source/tooling retention, portable recipient-key recovery, regional disaster recovery, sealed authentication, quarantine, actual DB/ES restoration and current authority. The current locally built core image has no authoritative registry publication; rebuilding its source does not prove the same image. Native data is capped at 2GiB and does not include or truncate image exports. No retention/recoverability claim follows from source, mock or template validation.",
     "The explicit one-helper host maintenance candidate reuses existing selected cached ARM/Run Command authority to stage immutable source, disable/stop/rebind/re-enable/start the preserved original private runtime. No Azure/Graph grant, image/security/worker change or fresh installer replay is added. Durable source/target intent and terminal proof are evidence, not external authorization. Live Linux/systemd/Run Command interruption/reboot qualification and native backup/restore/current-authority gates remain open. See docs/private-helper-upgrade.md.",
     "Authenticated archive quarantine adds only an offline Linux private extraction primitive after independently trusted ciphertext digest/recipient authentication. No SQL, cloud request, service start, credential grant or activation is added. Original cipher discard API and frozen installer/controller/producer are unchanged. Linux descriptor/crash qualification, complete schema/census, isolated PostgreSQL/native ES restore, current-authority reconciliation and fresh administrator/device reissue remain gates. See docs/authenticated-archive-quarantine.md.",

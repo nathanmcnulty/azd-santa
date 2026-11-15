@@ -7,6 +7,23 @@ param location string
 // azd initializes parameters before preprovision. Allow that local phase to
 // reach the key hook; the actual host module retains the required length gate.
 param sshPublicKey string = ''
+// The preprovision hook validates the setting and captures current endpoint
+// configuration. Existing-subnet changes require review of a private plan.
+param enableStorageServiceEndpoint string = 'false'
+param hostSubnetServiceEndpointsJson string = '[]'
+param storageServiceEndpointJson string = '{"service":"Microsoft.Storage","locations":[]}'
+@allowed([
+  'Disabled'
+  'Enabled'
+  'NetworkSecurityGroupEnabled'
+  'RouteTableEnabled'
+])
+param privateEndpointNetworkPolicies string = 'Enabled'
+@allowed([
+  'Disabled'
+  'Enabled'
+])
+param privateLinkServiceNetworkPolicies string = 'Enabled'
 
 var tags = {
   'azd-env-name': environmentName
@@ -27,6 +44,11 @@ module host './host.bicep' = {
     location: location
     sshPublicKey: sshPublicKey
     tags: tags
+    enableStorageServiceEndpoint: toLower(enableStorageServiceEndpoint) == 'true'
+    hostSubnetServiceEndpoints: json(hostSubnetServiceEndpointsJson)
+    storageServiceEndpoint: json(storageServiceEndpointJson)
+    privateEndpointNetworkPolicies: privateEndpointNetworkPolicies
+    privateLinkServiceNetworkPolicies: privateLinkServiceNetworkPolicies
   }
 }
 

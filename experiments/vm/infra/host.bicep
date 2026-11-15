@@ -2,7 +2,29 @@ param location string
 @minLength(40)
 param sshPublicKey string
 param tags object
+param enableStorageServiceEndpoint bool = false
+param hostSubnetServiceEndpoints array = []
+param storageServiceEndpoint object = {
+  service: 'Microsoft.Storage'
+  locations: []
+}
+@allowed([
+  'Disabled'
+  'Enabled'
+  'NetworkSecurityGroupEnabled'
+  'RouteTableEnabled'
+])
+param privateEndpointNetworkPolicies string = 'Enabled'
+@allowed([
+  'Disabled'
+  'Enabled'
+])
+param privateLinkServiceNetworkPolicies string = 'Enabled'
 param adminUsername string = 'santalab'
+
+var serviceEndpoints = enableStorageServiceEndpoint
+  ? union(hostSubnetServiceEndpoints, [storageServiceEndpoint])
+  : hostSubnetServiceEndpoints
 
 resource nsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
   name: 'nsg-santa-lab'
@@ -40,6 +62,9 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
           addressPrefix: '10.247.0.0/27'
           defaultOutboundAccess: false
           networkSecurityGroup: { id: nsg.id }
+          serviceEndpoints: serviceEndpoints
+          privateEndpointNetworkPolicies: privateEndpointNetworkPolicies
+          privateLinkServiceNetworkPolicies: privateLinkServiceNetworkPolicies
         }
       }
     ]

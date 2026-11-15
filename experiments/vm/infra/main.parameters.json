@@ -4,6 +4,11 @@
   "parameters": {
     "environmentName": { "value": "${AZURE_ENV_NAME}" },
     "location": { "value": "${AZURE_LOCATION}" },
-    "sshPublicKey": { "value": "${SANTA_VM_SSH_PUBLIC_KEY}" }
+    "sshPublicKey": { "value": "${SANTA_VM_SSH_PUBLIC_KEY}" },
+    "enableStorageServiceEndpoint": { "value": "${SANTA_VM_ENABLE_STORAGE_SERVICE_ENDPOINT}" },
+    "hostSubnetServiceEndpointsJson": { "value": "${SANTA_VM_HOST_SUBNET_SERVICE_ENDPOINTS_JSON}" },
+    "storageServiceEndpointJson": { "value": "${SANTA_VM_STORAGE_SERVICE_ENDPOINT_JSON}" },
+    "privateEndpointNetworkPolicies": { "value": "${SANTA_VM_PRIVATE_ENDPOINT_NETWORK_POLICIES}" },
+    "privateLinkServiceNetworkPolicies": { "value": "${SANTA_VM_PRIVATE_LINK_SERVICE_NETWORK_POLICIES}" }
   }
 }

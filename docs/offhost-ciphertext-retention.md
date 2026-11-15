@@ -14,9 +14,53 @@ administrators must not assemble receipt JSON or execute local paths remotely.
 It creates a dedicated resource group, Standard_LRS StorageV2 account and private
 `native-captures` container, with Hot block blobs, HTTPS/TLS1.2, no anonymous
 access, no trusted-service bypass and default-deny network ACLs. It accepts at
-most two explicitly selected owned subnet IDs. Those subnets must already have
-the same-region `Microsoft.Storage` service endpoint. This template never enables
-an endpoint, rewrites a subnet or weakens an existing policy.
+most two explicitly selected owned subnet IDs. Those subnets must have the
+`Microsoft.Storage` service endpoint before they can be selected. The backup-store
+template itself never enables an endpoint, rewrites a subnet or weakens an
+existing policy.
+
+The separate nested VM azd project now has an opt-in
+`SANTA_VM_ENABLE_STORAGE_SERVICE_ENDPOINT` setting. It defaults to `false`; the
+root Intune project remains compute-free. When enabled, it adds only the Storage
+service endpoint to that environment's solution-owned `host` subnet. The private
+Storage firewall still has to list the exact source or verifier subnet, and no
+Storage account, ACL rule, role assignment or public-IP fallback is created by
+this setting. Service endpoints have no separate charge; Storage account,
+transactions, retention and outbound transfer costs belong to the independent
+backup-store workflow.
+
+Before every nested VM provision, the hook reads the selected cached Azure
+context and the current resource group, VNet, NSG, NIC, public IP and VM. It
+checks their exact resource IDs, environment tags, address range, deny-all rule
+and live NIC/subnet links. The subnet may not contain extra subnets, route/NAT
+attachments, delegations, endpoint policies or unsupported configuration. The
+hook carries forward the current service-endpoint list and private-network
+policy values so an ordinary repeat deploy does not clear endpoints added for
+other services. Missing or drifted resources stop before deployment; matching
+tags or saved evidence alone are not ownership proof.
+
+An existing-subnet endpoint addition first writes a private, source-revision,
+source-byte and resource-ID-bound plan under the nested environment's ignored `.azure` directory,
+then stops. Review the exact before/after endpoint list and set
+`SANTA_VM_HOST_SUBNET_UPDATE_PLAN_SHA256` to that plan's hash before rerunning
+`azd provision`. The hook re-reads the live resource graph, consumes that
+one-time confirmation before provisioning and requires a new plan hash after a
+retry. ARM does not provide an ETag condition for the following azd deployment,
+so concurrent external network edits between the read and deployment remain a
+race; any observed drift at the next run fails closed. A direct Bicep submission
+bypasses this ownership and review guard. Enabling a service endpoint changes
+subnet routing and can close existing TCP connections; do not proceed while
+critical host tasks are running. See Microsoft's [service endpoint deployment
+considerations](https://learn.microsoft.com/en-us/azure/virtual-network/virtual-network-service-endpoints-overview#considerations).
+
+If the source subnet is later deleted, the independent store can retain a stale
+subnet ACL entry. Current-store selection fails closed when the exact source
+VM/VNet/subnet linkage is absent; it does not remove or recreate the ACL entry.
+After recreating a source environment, re-read and select its current subnet
+identity. If the old entry is permanently stale, an operator must separately
+review and reconcile that exact ACL rule against current ownership and other
+consumers. Missing-source detection does not prove that retained ciphertext was
+deleted or that a restore is possible.
 
 The template uses `azd-santa-backup-owner` and an independent store marker. It
 does not add `azd-env-name` or `azd-service-name`, and no `azure.yaml` references
