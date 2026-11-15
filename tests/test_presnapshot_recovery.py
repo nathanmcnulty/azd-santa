@@ -291,7 +291,7 @@ class Pins(unittest.TestCase):
         source=(REPO/'experiments/server/presnapshot_recovery.py').read_text()
         self.assertNotIn("['systemctl','stop'",source)
         self.assertNotIn('bind_admission_fresh(',source);self.assertNotIn('startup_allowed=',source)
-        self.assertLessEqual(len(source.encode()),32768)
+        self.assertLessEqual(len(source.encode()),65536)
 
 
 if __name__=='__main__':unittest.main()

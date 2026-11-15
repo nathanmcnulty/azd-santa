@@ -44,6 +44,33 @@ FAILED_FILES={'maintenance-failed.json':'3ed854c95967fa85c45df4792276c9a64a3ab07
 PROFILE_FIELDS=('MainPID','Result','ExecMainCode','ExecMainStatus','ExecStart','ExecStopPost',
     'LoadState','ActiveState','SubState','FragmentPath','DropInPaths','Job','InvocationID')
 RUNTIME_FIELDS=tuple(k for k in PROFILE_FIELDS if k!='ExecStopPost')
+CONTINUATIONS=RECOVERIES/'disable-only-continuations'
+CONTINUATION_ACTIVE=CONTINUATIONS/'active.json'
+PREDECESSOR_OPERATION='82e634d7656945f08c7eb02708089329'
+PREDECESSOR_INTENT='a4781fb605f036d7b24f1abbaa28f60d645a0437e253cad6ce174f518edb00eb'
+PREDECESSOR_PROGRAM='379ea274ebef9247428d7dc1c53593a4e75746be04aaba6c1b8e032b3d75b2bd'
+# Exact same-boot failed-operation observations, independently collected before continuation.
+CONTINUATION_PINS={
+    'proof':'f4fc852d1c6ecee2cee05be8697f658bc22a56d3411cfb4ffd18d4c5f5e79787',
+    'disable':'60bde163ee2d7e18f9f379d1821d800dcbc453cb31da837fdadc3c54c4783336',
+    'failed':'35b0621277ac980fb8b55c99b18aa7112ad1cb998bf875763a427af6affab3c1',
+    'caller_profile':'81ecedf9c28e28360a30bac8f817a3f31f0e05a3330148c7e67bef02eb1481ba',
+    'runtime_profile':'ba1dc0df5cc4184fbb1c6acc37871ced181aeba8bae9d3d85c34b4e3a61aa90b',
+    'caller_definitions':'2545c8a791fbe39d43e3dfe55b584ed2ed352b8d181d58e607393c75742b9034',
+    'runtime_definitions':'7cca927054927af0cbd3f75595265fa3eb340c62c30362ac35dfff2b824f6fe2',
+    'predecessor_definitions':'8a9cf021ef8d8498490bc650904a7fd4d5bc84520ff92633113ea55ee91ee5b3',
+    'predecessor_profile':'0486ca7472cbf95cc9f492f8543c95eba528adf30a5617cb258f0c1e844fcf0f',
+    'predecessor_fragment':'ea1ea10badec45a75c839a3ce6e4028d77d63b25a294e106f6e3678228f31aaf',
+}
+PREDECESSOR_INVOCATION='5aa369991246440ead85c0250ca03c45'
+
+
+def continuing(intent):return intent.get('scope')=='exact-disable-only-continuation-v1'
+def active_path(continuation):return CONTINUATION_ACTIVE if continuation else ACTIVE
+
+def recovery_unit(operation,continuation=False):
+    prefix='azd-santa-disabled-continuation-' if continuation else 'azd-santa-presnapshot-recovery-'
+    return prefix+Path(operation).name.removeprefix('operation-')+'.service'
 
 
 def need(ok):
@@ -108,13 +135,37 @@ def historical_upgrade(h,target):
     return value,folder,package
 
 
-def failed_unit(h,name,invocation,restart):
+def loaded_definitions(h,name):
+    need(re.fullmatch(r'[A-Za-z0-9.-]+',name))
+    object_name=re.sub(r'[^A-Za-z0-9]',lambda m:'_'+format(ord(m[0]),'02x'),name)
+    definitions={}
+    for prop in ('ExecStart','ExecStopPost'):
+        raw=h.command(['/usr/bin/busctl','--system','--json=short','get-property','org.freedesktop.systemd1',
+            '/org/freedesktop/systemd1/unit/'+object_name,'org.freedesktop.systemd1.Service',prop])
+        need(len(raw.encode())<=16384);value=json.loads(raw)
+        need(set(value)=={'type','data'} and value['type']=='a(sasbttttuii)' and type(value['data']) is list and len(value['data'])<=1)
+        rows=[]
+        for row in value['data']:
+            need(type(row) is list and len(row)==10 and type(row[0]) is str and row[0].startswith('/')
+                and type(row[1]) is list and 0<len(row[1])<=64 and all(type(v) is str and '\0' not in v for v in row[1])
+                and type(row[2]) is bool and all(type(v) is int for v in row[3:]))
+            # Only the typed loaded path/argv/ignore tuple is a definition.
+            # Execution timestamps/PIDs/status remain historical, never fabricated.
+            rows.append(row[:3])
+        definitions[prop]=rows
+    return definitions
+
+
+def failed_unit(h,name,invocation,restart,*,profile_sha=None,definition_sha=None):
     runtime=name=='azd-santa-runtime.service'
     profile=RUNTIME_FIELDS if runtime else PROFILE_FIELDS
     fields=profile+('ControlGroup','Slice','KillMode','Delegate','Restart','Type')
     state=unit(h,name,fields)
+    if definition_sha is not None:
+        need(sha(encoded(loaded_definitions(h,name)))==definition_sha and state['Type']==('notify' if runtime else 'oneshot'))
+    if profile_sha is not None or runtime:
+        need(sha(encoded({k:state[k] for k in profile}))==(profile_sha or RUNTIME_PROFILE))
     if runtime:
-        need(sha(encoded({k:state[k] for k in profile}))==RUNTIME_PROFILE)
         # systemctl omits empty Exec arrays: obtain typed positive manager proof,
         # never synthesize a missing scalar or infer no hook from omission.
         need(h.command(['/usr/bin/busctl','--system','get-property','org.freedesktop.systemd1',
@@ -147,7 +198,7 @@ def failed_unit(h,name,invocation,restart):
     return state
 
 
-def eligibility(h,target,*,enabled='enabled'):
+def eligibility(h,target,*,enabled='enabled',continuation=False):
     old,folder,package=historical_upgrade(h,target)
     controller=h.load(folder,'runtime_service');backup=h.load(folder,'cold_backup')
     manifest=ROOT/('private-runtime-'+target['EnvironmentName'])/'runtime-service/manifest.json';control=manifest.parent
@@ -162,11 +213,14 @@ def eligibility(h,target,*,enabled='enabled'):
         and request['target']=={'VmId':target['VmId'],'VmInstanceId':target['VmInstanceId']}
         and request['manifest_sha256']==OLD_MANIFEST and request['generation_sha256']==OLD_GENERATION
         and request['backup_program_sha256']==OLD)
-    caller=failed_unit(h,CALLER,CALLER_INVOCATION,'no')
-    need(sha(encoded({k:caller[k] for k in PROFILE_FIELDS}))==CALLER_PROFILE
+    caller=failed_unit(h,CALLER,CALLER_INVOCATION,'no',profile_sha=CONTINUATION_PINS['caller_profile'] if continuation else None,
+        definition_sha=CONTINUATION_PINS['caller_definitions'] if continuation else None)
+    need(sha(encoded({k:caller[k] for k in PROFILE_FIELDS}))==(CONTINUATION_PINS['caller_profile'] if continuation else CALLER_PROFILE)
         and caller['FragmentPath']=='/run/systemd/transient/'+CALLER and caller['DropInPaths']==''
         and sha(h.read(Path(caller['FragmentPath'])))==CALLER_FRAGMENT)
-    runtime_state=failed_unit(h,'azd-santa-runtime.service',RUNTIME_INVOCATION,'on-failure')
+    runtime_state=failed_unit(h,'azd-santa-runtime.service',RUNTIME_INVOCATION,'on-failure',
+        profile_sha=CONTINUATION_PINS['runtime_profile'] if continuation else None,
+        definition_sha=CONTINUATION_PINS['runtime_definitions'] if continuation else None)
     context_path=ROOT/'native-backup-cold3-20261114/context.json';recorder=ROOT/'native-backup-cold3-20261114/record-terminal.py'
     need(sha(h.read(context_path))==CALLER_CONTEXT and sha(h.read(recorder))==RECORDER)
     terminal=context_path.parent/'terminal-success.json';need(not terminal.exists() and not terminal.is_symlink())
@@ -238,12 +292,81 @@ def derive(old_manifest,old_generation):
     return encoded(manifest),encoded(generation)
 
 
-def prepare(h,target,folder):
-    proof,runtime=eligibility(h,target);manifest=Path(proof['manifest']);control=manifest.parent
+
+
+def predecessor_terminal(h,*,exact_profile=False):
+    name=recovery_unit(RECOVERIES/('operation-'+PREDECESSOR_OPERATION))
+    state=failed_unit(h,name,PREDECESSOR_INVOCATION,'no',
+        profile_sha=CONTINUATION_PINS['predecessor_profile'] if exact_profile else None,
+        definition_sha=CONTINUATION_PINS['predecessor_definitions'])
+    need(state['Type']=='oneshot' and state['FragmentPath']=='/run/systemd/transient/'+name
+        and state['DropInPaths']=='' and sha(h.read(Path(state['FragmentPath'])))==CONTINUATION_PINS['predecessor_fragment'])
+
+
+def predecessor(h,target):
+    """A failed reservation is evidence, never continuation authority by itself."""
+    operation=RECOVERIES/('operation-'+PREDECESSOR_OPERATION)
+    raw=h.read(ACTIVE);need(sha(raw)==PREDECESSOR_INTENT and h.read(operation/'intent.json')==raw)
+    intent=json.loads(raw)
+    need(intent['scope']=='exact-presnapshot-retirement-v1' and intent['target']==target
+        and intent['operation']==str(operation) and intent['program_sha256']==PREDECESSOR_PROGRAM)
+    program=ROOT/'helper-upgrades/programs'/PREDECESSOR_PROGRAM/'helper_upgrade.py'
+    need(sha(h.read(program))==PREDECESSOR_PROGRAM)
+    proof=snapshots(h,intent)
+    need(sha(h.read(operation/'eligibility.json'))==CONTINUATION_PINS['proof']
+        and sha(h.read(operation/'disable-intent.json'))==CONTINUATION_PINS['disable']
+        and sha(h.read(operation/'failed.json'))==CONTINUATION_PINS['failed']
+        and json.loads(h.read(operation/'disable-intent.json'))=={'scope':'persistent-boot-hold-v1'}
+        and json.loads(h.read(operation/'failed.json'))=={'automatic_replay':False,'error_type':'ValueError'})
+    expected=set(intent['snapshot_sha256'])|{'intent.json','disable-intent.json','failed.json'}
+    expected|={'evidence-'+str(i) for i in range(len(proof['evidence_sha256']))}
+    need({p.name for p in operation.iterdir()}==expected)
+    for index,path in enumerate(sorted(proof['evidence_sha256'])):
+        need(sha(h.read(operation/('evidence-'+str(index))))==proof['evidence_sha256'][path])
+    evidence_unchanged(h,proof);verify_candidate(h,intent)
+    predecessor_terminal(h,exact_profile=True)
+    current,_=eligibility(h,target,enabled='disabled',continuation=True)
+    # Everything other than the manager's explicitly pinned reload-cleared
+    # command history must equal the original positive eligibility observation.
+    for key in current:
+        if key not in ('caller_state','runtime_state'):need(current[key]==proof[key])
+    need(sha(encoded({k:proof['caller_state'][k] for k in PROFILE_FIELDS}))==CALLER_PROFILE
+        and sha(encoded({k:proof['runtime_state'][k] for k in RUNTIME_FIELDS}))==RUNTIME_PROFILE)
+    return dict(operation=str(operation),intent_sha256=PREDECESSOR_INTENT,
+        program_sha256=PREDECESSOR_PROGRAM,proof_sha256=CONTINUATION_PINS['proof'],
+        disable_sha256=CONTINUATION_PINS['disable'],failed_sha256=CONTINUATION_PINS['failed'],
+        candidate=intent['candidate'],bundle_sha256=intent['bundle_sha256'],
+        files_sha256={name:sha(h.read(operation/name)) for name in sorted(expected)})
+
+
+
+def predecessor_preserved(h,intent):
+    proof=intent['predecessor'];operation=RECOVERIES/('operation-'+PREDECESSOR_OPERATION)
+    need(proof['operation']==str(operation) and proof['intent_sha256']==PREDECESSOR_INTENT
+        and sha(h.read(ACTIVE))==PREDECESSOR_INTENT
+        and {p.name for p in operation.iterdir()}==set(proof['files_sha256']))
+    for name,digest in proof['files_sha256'].items():
+        need(re.fullmatch(r'[A-Za-z0-9.-]+',name) and sha(h.read(operation/name))==digest)
+    program=ROOT/'helper-upgrades/programs'/PREDECESSOR_PROGRAM/'helper_upgrade.py'
+    need(sha(h.read(program))==PREDECESSOR_PROGRAM)
+
+
+def continuation_entries(operation,intent,proof,*,reserved=False):
+    expected=set(intent['snapshot_sha256'])|{'intent.json'}|{'evidence-'+str(i) for i in range(len(proof['evidence_sha256']))}
+    if reserved:expected.add('continuation-intent.json')
+    need({p.name for p in operation.iterdir()}==expected)
+
+
+def prepare(h,target,folder,*,continuation=False):
+    predecessor_proof=predecessor(h,target) if continuation else None
+    if continuation:need(str(folder)==predecessor_proof['candidate'] and folder.name==predecessor_proof['bundle_sha256'])
+    proof,runtime=eligibility(h,target,enabled='disabled' if continuation else 'enabled',continuation=continuation);manifest=Path(proof['manifest']);control=manifest.parent
     new_manifest,new_generation=derive(json.loads(h.read(manifest)),json.loads(h.read(control/'container-generation.json')))
     controller=h.load(folder,'runtime_service')
     new_unit=controller.unit_text(folder/'runtime_service.py',manifest,sha(new_manifest)).encode()
-    operation=RECOVERIES/('operation-'+uuid.uuid4().hex);operation.mkdir(mode=0o700)
+    root=CONTINUATIONS if continuation else RECOVERIES
+    h.secure_directories(root)
+    operation=root/('operation-'+uuid.uuid4().hex);operation.mkdir(mode=0o700)
     snapshots={'old-manifest.json':h.read(manifest),'new-manifest.json':new_manifest,
         'old-generation.json':h.read(control/'container-generation.json'),'new-generation.json':new_generation,
         'old-unit':h.read(controller.UNIT),'new-unit':new_unit,'request-preserved.json':h.read(control/'backup-request.json'),
@@ -254,7 +377,9 @@ def prepare(h,target,folder):
         bundle_sha256=folder.name,program_sha256=sha(h.read(Path(__file__))),proof_sha256=sha(encoded(proof)),
         snapshot_sha256={name:sha(raw) for name,raw in snapshots.items()},request_sha256=REQUEST,
         new_manifest_sha256=sha(new_manifest),new_generation_sha256=sha(new_generation),new_unit_sha256=sha(new_unit))
-    raw=encoded(intent);h.exclusive(operation/'intent.json',raw);h.exclusive(ACTIVE,raw);return intent
+    if continuation:
+        intent['scope']='exact-disable-only-continuation-v1';intent['predecessor']=predecessor_proof
+    raw=encoded(intent);h.exclusive(operation/'intent.json',raw);h.exclusive(active_path(continuation),raw);return intent
 
 
 def verify_candidate(h,intent):
@@ -306,28 +431,45 @@ def retirement(h,operation,control):
 
 
 def completion(intent,digest):
-    return dict(scope='exact-presnapshot-recovery-complete-v1',intent_sha256=digest,failed_request_sha256=REQUEST,
+    result=dict(scope='exact-presnapshot-recovery-complete-v1',intent_sha256=digest,failed_request_sha256=REQUEST,
         failed_backup_operation=BACKUP_OPERATION,request_retired=True,old_backup_completed=False,new_backup_requested=False,
         new_helper_sha256=NEW,new_bundle_sha256=intent['bundle_sha256'],new_manifest_sha256=intent['new_manifest_sha256'],
         new_generation_sha256=intent['new_generation_sha256'],new_unit_sha256=intent['new_unit_sha256'],
         container_count=7,images_changed=False,credentials_reset=False,clean_worker_proof=False,backup_qualified=False)
+    if continuing(intent):result.update(continuation=True,predecessor_intent_sha256=PREDECESSOR_INTENT,original_operation_failed=True,disable_repeated=False)
+    return result
 
 
 def execute(intent_path,digest):
     import fcntl
-    h=library();raw=h.read(intent_path);need(sha(raw)==digest and h.read(ACTIVE)==raw)
-    intent=json.loads(raw);operation=h.checked(Path(intent['operation']),directory=True)
-    need(Path(intent_path)==operation/'intent.json' and sha(h.read(Path(__file__)))==intent['program_sha256'])
-    need(not any((operation/name).exists() for name in ('disable-intent.json','retirement-intent.json','start-intent.json','failed.json','complete.json')))
+    h=library();raw=h.read(intent_path);need(sha(raw)==digest)
+    intent=json.loads(raw);is_continuation=continuing(intent)
+    need(h.read(active_path(is_continuation))==raw)
+    operation=h.checked(Path(intent['operation']),directory=True)
+    need(intent['scope'] in ('exact-presnapshot-retirement-v1','exact-disable-only-continuation-v1')
+        and Path(intent_path)==operation/'intent.json' and sha(h.read(Path(__file__)))==intent['program_sha256'])
+    if is_continuation:need(operation.parent==CONTINUATIONS and re.fullmatch(r'operation-[a-f0-9]{32}',operation.name))
+    need(not any((operation/name).exists() for name in ('disable-intent.json','continuation-intent.json','retirement-intent.json','start-intent.json','failed.json','complete.json')))
     try:
+        if is_continuation:
+            proof_before=json.loads(h.read(operation/'eligibility.json'))
+            continuation_entries(operation,intent,proof_before)
         verify_candidate(h,intent);proof=snapshots(h,intent)
-        current,runtime=eligibility(h,intent['target']);need(current==proof)
-        h.exclusive(operation/'disable-intent.json',encoded({'scope':'persistent-boot-hold-v1'}))
-        h.command(['systemctl','disable','azd-santa-runtime.service']);need(h.unit_enabled()=='disabled')
+        if is_continuation:
+            need(predecessor(h,intent['target'])==intent['predecessor'])
+        current,runtime=eligibility(h,intent['target'],enabled='disabled' if is_continuation else 'enabled',continuation=is_continuation);need(current==proof)
+        if is_continuation:
+            h.exclusive(operation/'continuation-intent.json',encoded({'predecessor_intent_sha256':PREDECESSOR_INTENT,'skip_disable':True}))
+        else:
+            h.exclusive(operation/'disable-intent.json',encoded({'scope':'persistent-boot-hold-v1'}))
+            h.command(['systemctl','disable','azd-santa-runtime.service']);need(h.unit_enabled()=='disabled')
         control=Path(proof['manifest']).parent
         with h.checked(control/'supervisor.lock').open('r+b') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-            current,runtime=eligibility(h,intent['target'],enabled='disabled');need(current==proof)
+            if is_continuation:
+                continuation_entries(operation,intent,proof,reserved=True)
+                need(predecessor(h,intent['target'])==intent['predecessor'])
+            current,runtime=eligibility(h,intent['target'],enabled='disabled',continuation=is_continuation);need(current==proof)
             verify_candidate(h,intent);snapshots(h,intent);evidence_unchanged(h,proof)
             retirement(h,operation,control)
             for name,path,old in (('manifest',Path(proof['manifest']),OLD_MANIFEST),
@@ -356,8 +498,11 @@ def execute(intent_path,digest):
 
 def current_binding(h,intent,proof):
     historical_upgrade(h,intent['target']);verify_candidate(h,intent);evidence_unchanged(h,proof)
-    caller=failed_unit(h,CALLER,CALLER_INVOCATION,'no')
-    need(sha(encoded({k:caller[k] for k in PROFILE_FIELDS}))==CALLER_PROFILE)
+    if continuing(intent):
+        predecessor_preserved(h,intent);predecessor_terminal(h)
+    caller=failed_unit(h,CALLER,CALLER_INVOCATION,'no',profile_sha=CONTINUATION_PINS['caller_profile'] if continuing(intent) else None,
+        definition_sha=CONTINUATION_PINS['caller_definitions'] if continuing(intent) else None)
+    need(sha(encoded({k:caller[k] for k in PROFILE_FIELDS}))==(CONTINUATION_PINS['caller_profile'] if continuing(intent) else CALLER_PROFILE))
     controller=h.load(Path(intent['candidate']),'runtime_service')
     controller.load_manifest(proof['manifest'],intent['new_manifest_sha256']);h.effective_unit(controller.UNIT)
     control=Path(proof['manifest']).parent;no_request(control)
@@ -376,8 +521,8 @@ def current_binding(h,intent,proof):
 
 
 def record_terminal(intent_path,digest):
-    h=library();raw=h.read(intent_path);need(sha(raw)==digest and h.read(ACTIVE)==raw)
-    intent=json.loads(raw);operation=Path(intent['operation'])
+    h=library();raw=h.read(intent_path);need(sha(raw)==digest)
+    intent=json.loads(raw);need(h.read(active_path(continuing(intent)))==raw);operation=Path(intent['operation'])
     need(Path(intent_path)==operation/'intent.json' and sha(h.read(Path(__file__)))==intent['program_sha256']
         and os.environ.get('SERVICE_RESULT')=='success' and os.environ.get('EXIT_CODE')=='exited'
         and os.environ.get('EXIT_STATUS')=='0' and re.fullmatch(r'[a-f0-9]{32}',os.environ.get('INVOCATION_ID','')))
@@ -386,11 +531,12 @@ def record_terminal(intent_path,digest):
         intent_sha256=digest,completion_sha256=sha(body),invocation=os.environ['INVOCATION_ID'])))
 
 
-def observe(h,target,bundle):
-    if not ACTIVE.exists():return dict(scope='exact-presnapshot-recovery-observation-v1',state='not-requested',new_bundle_sha256=bundle)
-    raw=h.read(ACTIVE);intent=json.loads(raw);need(intent['target']==target and intent['bundle_sha256']==bundle)
+def observe(h,target,bundle,*,continuation=False):
+    active=active_path(continuation)
+    if not active.exists():return dict(scope='exact-presnapshot-recovery-observation-v1',state='not-requested',new_bundle_sha256=bundle)
+    raw=h.read(active);intent=json.loads(raw);need(intent['target']==target and intent['bundle_sha256']==bundle and continuing(intent)==continuation)
     operation=h.checked(Path(intent['operation']),directory=True);need(h.read(operation/'intent.json')==raw)
-    name='azd-santa-presnapshot-recovery-'+operation.name.removeprefix('operation-')+'.service'
+    name=recovery_unit(operation,continuation)
     state=unit(h,name,('LoadState','ActiveState','SubState','Result','ExecMainStatus','MainPID','InvocationID','Job'))
     need(state['LoadState'] in ('loaded','not-found'));phase='unknown'
     if (operation/'failed.json').exists() or (state['LoadState']=='loaded' and (state['Result']!='success' or state['ActiveState']=='failed')):phase='failed'
@@ -411,10 +557,14 @@ def run(value):
     h=library();need(sys.platform=='linux' and os.geteuid()==0 and type(value)is dict
         and set(value)<={'mode','target','bundle_sha256','archive_sha256','count','index','data'})
     mode=value['mode'];target=value['target'];bundle=value['bundle_sha256']
+    continuation=mode in ('continue-observe','continue-request')
+    if continuation:mode=mode.removeprefix('continue-')
     need(mode in ('observe','chunk','request') and re.fullmatch(r'[a-f0-9]{64}',bundle))
-    if ACTIVE.exists():return observe(h,target,bundle)
+    if active_path(continuation).exists():return observe(h,target,bundle,continuation=continuation)
+    previous=predecessor(h,target) if continuation else None
+    if continuation:need(bundle==previous['bundle_sha256'])
     historical_upgrade(h,target)
-    if mode=='observe':return observe(h,target,bundle)
+    if mode=='observe':return observe(h,target,bundle,continuation=continuation)
     h.secure_directories(RECOVERIES)
     if mode=='chunk':
         archive=value['archive_sha256'];index=value['index'];count=value['count'];data=value['data']
@@ -424,14 +574,15 @@ def run(value):
         if path.exists():need(h.read(path)==data.encode())
         else:h.exclusive(path,data.encode())
         return dict(scope='exact-presnapshot-recovery-chunk-v1',index=index,new_bundle_sha256=bundle)
-    folder=candidate(h,target,bundle,value['archive_sha256'],value['count']);intent=prepare(h,target,folder)
+    folder=Path(previous['candidate']) if continuation else candidate(h,target,bundle,value['archive_sha256'],value['count'])
+    intent=prepare(h,target,folder,continuation=continuation)
     operation=Path(intent['operation']);digest=sha(h.read(operation/'intent.json'));program=Path(__file__)
-    h.command(['systemd-run','--no-block','--unit=azd-santa-presnapshot-recovery-'+operation.name.removeprefix('operation-'),
+    h.command(['systemd-run','--no-block','--unit='+recovery_unit(operation,continuation).removesuffix('.service'),
         '--property=Type=oneshot','--property=Restart=no','--property=TimeoutStartSec=900','--property=RuntimeMaxSec=900',
         '--property=PrivateTmp=no','--property=ProtectHome=no','--property=NoNewPrivileges=yes','--property=UMask=0077',
         '--property=ExecStopPost=/usr/bin/python3 -I '+str(program)+' --record-terminal '+str(operation/'intent.json')+' --sha256 '+digest,
         '/usr/bin/python3','-I',str(program),'--execute',str(operation/'intent.json'),'--sha256',digest])
-    return observe(h,target,bundle)
+    return observe(h,target,bundle,continuation=continuation)
 
 
 if __name__=='__main__':
