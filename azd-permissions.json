@@ -528,7 +528,7 @@
       "phase": "deployment",
       "evidence": [
         {
-          "sha256": "3cf6e14a2b5e58cff61744ab17f6ebe4ff800a9b05f69c6680519dcf40402fa2",
+          "sha256": "67a0fc62c5e15a8fc44fad9d8640647ea289028743230f9ff1f7e975ee0a83e6",
           "path": "scripts/Santa.SyncProfilePublisher.psm1"
         },
         {
@@ -554,7 +554,7 @@
       "phase": "deployment",
       "evidence": [
         {
-          "sha256": "3cf6e14a2b5e58cff61744ab17f6ebe4ff800a9b05f69c6680519dcf40402fa2",
+          "sha256": "67a0fc62c5e15a8fc44fad9d8640647ea289028743230f9ff1f7e975ee0a83e6",
           "path": "scripts/Santa.SyncProfilePublisher.psm1"
         },
         {
@@ -580,7 +580,7 @@
       "phase": "deployment",
       "evidence": [
         {
-          "sha256": "3cf6e14a2b5e58cff61744ab17f6ebe4ff800a9b05f69c6680519dcf40402fa2",
+          "sha256": "67a0fc62c5e15a8fc44fad9d8640647ea289028743230f9ff1f7e975ee0a83e6",
           "path": "scripts/Santa.SyncProfilePublisher.psm1"
         },
         {

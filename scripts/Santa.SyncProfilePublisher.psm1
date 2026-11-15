@@ -105,6 +105,10 @@ function Merge-SyncProfile($Current,$Material,[string]$ExpectedOrigin) {
     foreach($key in $baseline.Keys){if($key -cnotin (@('PayloadContent')+$metadata)){Assert-Sync ($remote.ContainsKey($key) -and (Sync-Json $remote[$key]) -ceq (Sync-Json $baseline[$key]))}}
     foreach($key in $remote.Keys){Assert-Sync ($key -cin $baseline.Keys)}
     foreach($item in @($remote,$settings)) {
+        foreach($key in $metadata){
+            if($item.ContainsKey($key) -and $key -cnotin @('PayloadEnabled','PayloadVersion')){Assert-Sync ($item[$key] -is [string])}
+        }
+        Assert-Sync ($item.ContainsKey('PayloadVersion') -and $item['PayloadVersion'] -is [long] -and $item['PayloadVersion'] -eq 1)
         $id=[guid]::Empty
         Assert-Sync ($item.ContainsKey('PayloadUUID') -and [guid]::TryParse($item['PayloadUUID'],[ref]$id) -and $id -ne [guid]::Empty -and
             $item.ContainsKey('PayloadIdentifier') -and $item['PayloadIdentifier'] -is [string] -and $item['PayloadIdentifier'] -cmatch '^[A-Za-z0-9.-]{1,255}$')
@@ -113,7 +117,9 @@ function Merge-SyncProfile($Current,$Material,[string]$ExpectedOrigin) {
     $readerSettings.MaxCharactersInDocument=1MB;$reader=[Xml.XmlReader]::Create([IO.StringReader]::new($text),$readerSettings)
     $document=[Xml.XmlDocument]::new();$document.XmlResolver=$null;$document.PreserveWhitespace=$true
     try{$document.Load($reader)}finally{$reader.Dispose()}
-    $dict=$document.SelectSingleNode('/plist/dict/array/dict')
+    $payloadArray=$document.SelectSingleNode('/plist/dict/key[text()="PayloadContent"]/following-sibling::*[1]')
+    Assert-Sync ($null -ne $payloadArray -and $payloadArray.Name -ceq 'array')
+    $dict=$payloadArray.SelectSingleNode('dict')
     $elements=@($dict.ChildNodes|Where-Object NodeType -EQ ([Xml.XmlNodeType]::Element))
     for($i=0;$i -lt $elements.Count;$i+=2){if($elements[$i].InnerText -cin @('SyncBaseURL','SyncExtraHeaders')){$null=$dict.RemoveChild($elements[$i]);$null=$dict.RemoveChild($elements[$i+1])}}
     foreach($key in @('SyncBaseURL','SyncExtraHeaders')) {
@@ -123,6 +129,12 @@ function Merge-SyncProfile($Current,$Material,[string]$ExpectedOrigin) {
             $v=$document.CreateElement('string');$v.InnerText=$provider[$key]['Zentral-Authorization'];$null=$node.AppendChild($v)}
         $null=$dict.AppendChild($node)
     }
+    # Compare the complete reparsed profile against precisely the intended edit,
+    # including the actual PayloadContent Santa dictionary and all metadata.
+    $settings['SyncBaseURL']=$provider['SyncBaseURL']
+    $settings['SyncExtraHeaders']=$provider['SyncExtraHeaders']
+    $merged=Sync-Parse $document.OuterXml
+    Assert-Sync ((Sync-Json $merged) -ceq (Sync-Json $remote))
     $bytes=[Text.Encoding]::UTF8.GetBytes($document.OuterXml)
     [pscustomobject]@{payload=[Convert]::ToBase64String($bytes);hash=(Sync-Hash $bytes)}
 }
@@ -155,7 +167,10 @@ function Invoke-SantaIntuneSyncProfile {
         $owned=Read-SyncReceipt $OwnedReceiptPath $target
         Assert-SyncContext $target
         $contextSettings=Get-MgRequestContext -ErrorAction Stop -Verbose:$false -Debug:$false
-        $saved=@{MaxRetry=[int]$contextSettings.MaxRetry;ClientTimeout=[int]$contextSettings.ClientTimeout}
+        $timeout=$contextSettings.ClientTimeout
+        Assert-Sync ($timeout -is [TimeSpan] -and $timeout.Ticks -gt 0 -and
+            $timeout.Ticks % [TimeSpan]::TicksPerSecond -eq 0 -and $timeout.TotalSeconds -le [int]::MaxValue)
+        $saved=@{MaxRetry=[int]$contextSettings.MaxRetry;ClientTimeout=[int]$timeout.TotalSeconds}
         $null=Set-MgRequestContext -MaxRetry 0 -ClientTimeout 30 -ErrorAction Stop -Verbose:$false -Debug:$false -Confirm:$false
         $before=Read-SyncSnapshot $target $owned
         if($Action -ceq 'Inspect'){return [pscustomobject]@{state='read-only-inspection';target=$target;currentProfileSha256=$before.hash;cloudWrite=$false;nativeAcceptance=$false}}
@@ -184,7 +199,7 @@ function Invoke-SantaIntuneSyncProfile {
             Assert-Sync ($fresh.profile['@odata.etag'] -is [string] -and $fresh.profile['@odata.etag'] -cmatch '\A(?:W/)?"[\x21\x23-\x7e]{1,256}"\z')
             $headers['If-Match']=$fresh.profile['@odata.etag']
         }
-        $null=Invoke-SyncGraph PATCH "/v1.0/deviceManagement/deviceConfigurations/$ExpectedConfigurationObjectId" @{payload=$desired.payload;payloadName=$fresh.profile.payloadName} $headers
+        $null=Invoke-SyncGraph PATCH "/v1.0/deviceManagement/deviceConfigurations/$ExpectedConfigurationObjectId" @{'@odata.type'='#microsoft.graph.macOSCustomConfiguration';payload=$desired.payload;payloadName=$fresh.profile.payloadName} $headers
         $after=Read-SyncSnapshot $target $owned
         Assert-Sync ($after.hash -ceq $desired.hash -and $after.scopeHash -ceq $before.scopeHash)
         $result=@{state='payload-readback-verified';configurationObjectId=$ExpectedConfigurationObjectId;profileSha256=$desired.hash

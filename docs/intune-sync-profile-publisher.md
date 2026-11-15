@@ -32,7 +32,8 @@ The command preserves the current owned profile's organization, identifiers and
 UUIDs, requires every baseline setting (including Monitor mode and StaticRules),
 and merges only the two sync settings. It reads the full scope again, writes an
 exclusive nonsecret intent checkpoint, and submits one PATCH to that configuration
-object containing only payload and payloadName. It never creates profiles, posts
+object containing the fixed macOSCustomConfiguration type plus only payload and
+payloadName. It never creates profiles, posts
 assignments, changes the other four profiles, or changes the device mode. The three
 required cached scopes are DeviceManagementConfiguration.ReadWrite.All,
 Group.Read.All and Device.Read.All; metadata is not permission to grant them.

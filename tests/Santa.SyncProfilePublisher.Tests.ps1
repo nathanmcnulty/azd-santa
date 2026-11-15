@@ -28,13 +28,13 @@ Describe 'Single owned sync profile publisher (offline)' {
         $script:params=@{Action='Apply';ExpectedTenantId=$script:target.tenant;ExpectedAccount=$script:target.account;ExpectedGroupId=$script:target.group;ExpectedGroupDisplayName='Pilot';ExpectedDeviceObjectId=$script:target.deviceObject;ExpectedDeviceId=$script:target.device;ExpectedDeviceName='Pilot Mac';ExpectedConfigurationObjectId=$script:target.configuration;OwnedReceiptPath=$script:receiptPath;ProviderProfilePath=$script:providerPath;QualificationPath=$script:qualPath;ReviewEvidencePath=$script:reviewPath;ExpectedSyncOrigin='https://santa.example.invalid';ExpectedCurrentProfileSha256=[Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($script:remoteText)));CheckpointPath=(Join-Path $caseDir 'intent.json')}
         $script:badMode='';$script:patches=0;$script:paginated=$false;$script:wrongDevice=$false;$script:failPatch=$false;$script:drift=$false;$script:reads=0
         Mock Get-MgContext -ModuleName Santa.SyncProfilePublisher { [pscustomobject]@{TenantId=$script:target.tenant;Account=$script:target.account;AuthType='Delegated';Environment='Global';TokenCredentialType='InteractiveBrowser';Scopes=@('DeviceManagementConfiguration.ReadWrite.All','Group.Read.All','Device.Read.All')} }
-        Mock Get-MgRequestContext -ModuleName Santa.SyncProfilePublisher { [pscustomobject]@{MaxRetry=3;ClientTimeout=300} }
+        Mock Get-MgRequestContext -ModuleName Santa.SyncProfilePublisher { [pscustomobject]@{MaxRetry=3;ClientTimeout=[TimeSpan]::FromSeconds(300)} }
         Mock Set-MgRequestContext -ModuleName Santa.SyncProfilePublisher { }
         Mock Invoke-MgGraphRequest -ModuleName Santa.SyncProfilePublisher {
             if($Method -eq 'PATCH') {
                 Test-Path $script:params.CheckpointPath | Should -BeTrue
                 $Uri | Should -BeExactly "/v1.0/deviceManagement/deviceConfigurations/$($script:target.configuration)"
-                $b=ConvertFrom-Json $Body -AsHashtable;($b.Keys|Sort-Object)-join ','|Should -Be 'payload,payloadName'
+                $b=ConvertFrom-Json $Body -AsHashtable;($b.Keys|Sort-Object)-join ','|Should -Be '@odata.type,payload,payloadName';$b['@odata.type']|Should -BeExactly '#microsoft.graph.macOSCustomConfiguration'
                 $script:patches++;if($script:failPatch){throw ('SECRET-CANARY '+('A'*64))};$script:remote.payload=$b.payload;return
             }
             if($script:badMode -eq 'assignments' -and $Uri -match '/assignments$'){return @{value=@();'@odata.nextLink'='https://graph.microsoft.com/next'}}
@@ -80,6 +80,21 @@ Describe 'Single owned sync profile publisher (offline)' {
         $xml|Should -Match '<key>StaticRules</key>';$xml|Should -Match 'Zentral-Authorization';$xml|Should -Not -Match 'synthetic-provider'
         ($result|ConvertTo-Json)|Should -Not -Match 'Bearer|A{64}|payload"'
         (Get-Content $script:params.CheckpointPath -Raw)|Should -Not -Match 'Bearer|A{64}|SyncBaseURL'
+    }
+    It 'rejects array-valued metadata preceding PayloadContent instead of misplacing the credential' {
+        $script:remoteText=$script:remoteText.Replace('<string>PilotOrg</string>','<array><dict/></array>')
+        $script:remote.payload=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($script:remoteText))
+        $script:params.ExpectedCurrentProfileSha256=[Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($script:remoteText)))
+        {Invoke-SantaIntuneSyncProfile @script:params}|Should -Throw '*SantaSync.*'
+        $script:patches|Should -Be 0
+        Test-Path $script:params.CheckpointPath|Should -BeFalse
+    }
+    It 'rejects nonintegral, zero or out-of-Int32 timeout values before changing SDK settings' -ForEach @('fraction','zero','overflow') {
+        $script:badTimeout=switch($_){fraction{[TimeSpan]::FromMilliseconds(1500)} zero{[TimeSpan]::Zero} overflow{[TimeSpan]::FromSeconds([double][int]::MaxValue+1)}}
+        Mock Get-MgRequestContext -ModuleName Santa.SyncProfilePublisher {[pscustomobject]@{MaxRetry=3;ClientTimeout=$script:badTimeout}}
+        {Invoke-SantaIntuneSyncProfile @script:params}|Should -Throw '*SantaSync.*'
+        Should -Invoke Set-MgRequestContext -ModuleName Santa.SyncProfilePublisher -Times 0
+        $script:patches|Should -Be 0
     }
     It 'rejects pagination and substituted immutable device ID before PATCH' -ForEach @('paginated','wrongDevice') {
         Set-Variable -Scope Script -Name $_ -Value $true
