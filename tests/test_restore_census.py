@@ -54,7 +54,11 @@ class Cursor:
             db.maximum=int(re.search(r'octet_length\(value\)<=(\d+)',sql).group(1))
             body=sql.split(' FROM (',1)[1].rsplit(') AS census_values(value)',1)[0]
             key=next((name for name,query in c.CATALOG.items() if query==body),None)
-            if key:self.stream=copy.deepcopy(db.catalog[key])
+            if key:
+                self.stream=copy.deepcopy(db.catalog[key])
+                # PG18 categorizes oid as OTHER (JSON text), bigint as NUMERIC.
+                if key=='columns' and not re.search(r"'type_oid',\s*a\.atttypid::bigint",body):
+                    for item in self.stream:item['type_oid']=str(item['type_oid'])
             else:
                 table=next((name for name in db.data if c.quote('public')+'.'+c.quote(name) in body),None)
                 assert table is not None,body
@@ -200,6 +204,16 @@ class CensusTests(unittest.TestCase):
             else:self.db.catalog['constraints']=[v for v in self.db.catalog['constraints'] if v['type']!='p']
             observed=self.collect()
             with self.assertRaises(c.CensusRejected):c.compare(observed,observed,self.mapping(observed),fingerprint_key=KEY)
+
+    def test_pg18_oid_wire_requires_numeric_cast_without_weakening_classifier(self):
+        observed=self.collect();self.assertTrue(observed.receipt['complete_supported_data'])
+        raw_query=c.CATALOG['columns'].replace('a.atttypid::bigint','a.atttypid')
+        self.db=Connection()
+        with patch.dict(c.CATALOG,{'columns':raw_query}):
+            uncast=self.collect()
+        self.assertIs(type(uncast.manifest['catalog']['columns'][0]['type_oid']),str)
+        self.assertFalse(uncast.receipt['complete_supported_data']);self.assertEqual(uncast.manifest['data'],{})
+        with self.assertRaises(c.CensusRejected):c.compare(uncast,uncast,self.mapping(uncast),fingerprint_key=KEY)
 
     def test_percent_identifiers_are_literal_on_parameter_free_read_wire(self):
         name='literal%s%table'

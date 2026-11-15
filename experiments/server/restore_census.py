@@ -132,7 +132,7 @@ CATALOG = {
  'bound',pg_get_expr(c.relpartbound,c.oid),'view',CASE WHEN c.relkind IN ('v','m') THEN pg_get_viewdef(c.oid,false) END)::text
  FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE """+NS,
  'columns':"""SELECT json_build_object('schema',n.nspname,'table',c.relname,'name',a.attname,'position',a.attnum,
- 'dropped',a.attisdropped,'type_oid',a.atttypid,'type',format_type(a.atttypid,a.atttypmod),'type_schema',tn.nspname,'not_null',a.attnotnull,
+ 'dropped',a.attisdropped,'type_oid',a.atttypid::bigint,'type',format_type(a.atttypid,a.atttypmod),'type_schema',tn.nspname,'not_null',a.attnotnull,
  'acl',a.attacl,'options',a.attoptions,'fdw_options',a.attfdwoptions,'storage',a.attstorage,'compression',a.attcompression,'statistics',a.attstattarget,
  'identity',a.attidentity,'generated',a.attgenerated,'default',pg_get_expr(d.adbin,d.adrelid),
  'collation',CASE WHEN a.attcollation<>0 THEN json_build_array(cn.nspname,co.collname) END)::text
