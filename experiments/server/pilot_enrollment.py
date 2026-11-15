@@ -151,7 +151,7 @@ def projection(request):
          and secret.request_count in (0, 1))
     machines = list(Machine.objects.filter(enrollment=enrollment).values('serial_number', 'hardware_uuid'))
     need(len(machines) <= 1 and all(m['serial_number'] == request['serial']
-         and m['hardware_uuid'].upper() == request['hardware_uuid'] for m in machines))
+         and str(m['hardware_uuid']).upper() == request['hardware_uuid'] for m in machines))
     return configuration, enrollment, secret
 
 
