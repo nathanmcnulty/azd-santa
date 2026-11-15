@@ -53,6 +53,62 @@ class Edge(unittest.TestCase):
         for line in ('User=azd-santa-https', 'MemoryMax=192M', 'MemorySwapMax=0', 'CPUQuota=50%', 'LimitNOFILE=256', 'TasksMax=64', 'ProtectSystem=strict', 'CapabilityBoundingSet=CAP_NET_BIND_SERVICE', 'Restart=no'):
             self.assertIn(line + '\n', text)
 
+    def test_certificate_qualification_has_no_application_proxy(self):
+        import json
+        for phase in ('staging', 'production'):
+            data = edge.held_configuration(facts(), Path('/private/state'), phase=phase)
+            self.assertNotIn('reverse_proxy', json.dumps(data))
+            server = data['apps']['http']['servers']['https']
+            self.assertEqual(server['listen'], ['0.0.0.0:443'])
+            self.assertEqual(server['routes'][0]['handle'][0]['status_code'], 503)
+            self.assertEqual(server['routes'][1]['handle'][0]['status_code'], 421)
+            self.assertTrue(server['routes'][0]['handle'][0]['close'])
+            issuer = data['apps']['tls']['automation']['policies'][0]['issuers'][0]
+            self.assertEqual(issuer['test_ca'], issuer['ca'])
+        with self.assertRaises(ValueError):
+            edge.held_configuration(facts(), Path('/private/state'), phase='private')
+
+    def test_firewall_lock_is_created_by_boot_tmpfiles_before_sandboxing(self):
+        self.assertEqual(edge.lock_tmpfiles_text(), 'f /run/xtables.lock 0600 root root -\n')
+        unit = edge.firewall_unit_text('/opt/azd-santa-https/pinned/https_edge.py')
+        self.assertIn('Requires=systemd-tmpfiles-setup.service\n', unit)
+        self.assertIn('After=systemd-tmpfiles-setup.service network-online.target docker.service\n', unit)
+        self.assertIn('ReadWritePaths=/run/xtables.lock\n', unit)
+
+    def test_certificate_network_candidate_is_conditional_and_one_device_only(self):
+        selected = facts(); base = selected['VmId'].split('/providers/')[0] + '/providers/Microsoft.Network/'
+        nsg_id = base + 'networkSecurityGroups/nsg-santa-lab'
+        subnet_id = base + 'virtualNetworks/vnet-santa-lab/subnets/host'
+        nsg = dict(id=nsg_id, etag='W/"44444444-4444-4444-8444-444444444444"', location='westus2', tags={
+            'azd-solution': 'azd-santa', 'purpose': 'synthetic-vm-lab', 'azd-env-name': 'synthetic'},
+            properties=dict(provisioningState='Succeeded', subnets=[{'id': subnet_id}], securityRules=[
+                {'name': 'deny-all-inbound', 'properties': dict(priority=100, direction='Inbound',
+                    access='Deny', protocol='*', sourcePortRange='*', destinationPortRange='*',
+                    sourceAddressPrefix='*', destinationAddressPrefix='*')}]))
+        subnet = dict(id=subnet_id, properties=dict(provisioningState='Succeeded',
+            networkSecurityGroup={'id': nsg_id}, ipConfigurations=[{'id': selected['IpConfigurationId']}]))
+        nsg['properties']['securityRules'][0]['properties']['destinationPortRanges'] = []
+        original = copy.deepcopy((nsg, subnet))
+        plan = edge.certificate_ingress_candidate(selected, nsg, subnet)
+        self.assertEqual((nsg, subnet), original)
+        self.assertEqual(plan['if_match'], nsg['etag'])
+        for etag in ('*', ' W/"44444444-4444-4444-8444-444444444444"', '"one", "two"',
+                     'W/"44444444-4444-4444-8444-444444444444"\r\n', 'unquoted'):
+            wrong = copy.deepcopy(nsg); wrong['etag'] = etag
+            with self.assertRaises(ValueError): edge.certificate_ingress_candidate(selected, wrong, subnet)
+        rules = plan['body']['properties']['securityRules']
+        self.assertEqual([(r['properties']['priority'], r['properties']['access'],
+                           r['properties']['protocol'], r['properties']['destinationPortRange']) for r in rules],
+                         [(100, 'Allow', 'Tcp', '443'), (110, 'Deny', '*', '*')])
+        for changed in ('extra_device', 'foreign_assignment', 'extra_rule', 'wrong_owner', 'missing_etag'):
+            other, network = copy.deepcopy(original)
+            if changed == 'extra_device': network['properties']['ipConfigurations'].append({'id': 'other'})
+            if changed == 'foreign_assignment': other['properties']['subnets'].append({'id': 'other'})
+            if changed == 'extra_rule': other['properties']['securityRules'].append(rules[0])
+            if changed == 'wrong_owner': other['tags']['purpose'] = 'other'
+            if changed == 'missing_etag': other['etag'] = ''
+            with self.assertRaises(ValueError): edge.certificate_ingress_candidate(selected, other, network)
+
     def test_unreviewed_modes_paths_and_ports_are_rejected(self):
         for phase in ('', 'enabled', 'PRIVATE'):
             with self.assertRaises(ValueError): edge.configuration(facts(), Path('/private/state'), phase=phase)
