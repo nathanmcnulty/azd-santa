@@ -87,7 +87,7 @@
         },
         {
           "path": "experiments/server/HttpsEndpoint.psm1",
-          "sha256": "64436f71334defdf5ba1abe67db0d0f150eddb421f082fd1232471cdcda0d740"
+          "sha256": "bd003aaab833c8b09f7347881c0ecf5b41d5268d8e51dbebb343ac51fe4df9ff"
         }
       ]
     },
@@ -137,7 +137,7 @@
       "evidence": [
         {
           "path": "experiments/server/HttpsEndpoint.psm1",
-          "sha256": "64436f71334defdf5ba1abe67db0d0f150eddb421f082fd1232471cdcda0d740"
+          "sha256": "bd003aaab833c8b09f7347881c0ecf5b41d5268d8e51dbebb343ac51fe4df9ff"
         },
         {
           "path": "experiments/server/New-SantaHttpsCandidate.ps1",

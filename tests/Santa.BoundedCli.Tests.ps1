@@ -48,5 +48,18 @@ Describe 'Bounded cached operator process reader' {
             { Invoke-SantaEndpointAzJson @('account','show') } | Should -Throw
             (Invoke-SantaEndpointAzJson @('deployment','sub','create') -AllowEmpty) | Should -BeNullOrEmpty
         }
+        It 'bounds actual Windows batch-wrapper output and deadline without running Azure CLI' {
+            if(-not $IsWindows) { return }
+            $fake=Join-Path $TestDrive 'ordinary-cli.cmd';$script:fakeCli=$fake
+            Mock Get-Command { [pscustomobject]@{Source=$script:fakeCli} }
+            [IO.File]::WriteAllText($fake,"@echo off`r`nfor /L %%i in (1,1,50000) do @echo ordinary-test-output`r`n")
+            $watch=[Diagnostics.Stopwatch]::StartNew()
+            { Invoke-SantaEndpointAzJson @('account','show') -TimeoutSeconds 3 } | Should -Throw '*failed or is unknown*'
+            $watch.Elapsed.TotalSeconds | Should -BeLessThan 9
+            [IO.File]::WriteAllText($fake,('@echo off'+"`r`n"+'"'+$script:python+'" -I -c "import time;time.sleep(30)"'+"`r`n"))
+            $watch.Restart()
+            { Invoke-SantaEndpointAzJson @('account','show') -TimeoutSeconds 1 } | Should -Throw '*failed or is unknown*'
+            $watch.Elapsed.TotalSeconds | Should -BeLessThan 7
+        }
     }
 }

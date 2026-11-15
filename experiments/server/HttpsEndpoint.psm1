@@ -65,7 +65,7 @@ function Invoke-SantaEndpointAzJson {
             if(@($args | Where-Object { $_ -match '[\r\n"&|<>^%!]'}).Count) { throw 'Unsupported batch argument.' }
             # Windows CLI is a batch launcher. Pass data via stdin to a fixed
             # PowerShell program, never build a cmd.exe command string.
-            $program='$ErrorActionPreference="Stop";try{$p=[Console]::In.ReadToEnd()|ConvertFrom-Json;$a=@($p.arguments);$r=& $p.executable @a 2>$null;if($LASTEXITCODE){exit 1};[Console]::Out.Write(($r -join "`n"))}catch{exit 1}'
+            $program='$ErrorActionPreference="Stop";$PSNativeCommandUseErrorActionPreference=$false;try{$p=[Console]::In.ReadToEnd()|ConvertFrom-Json;$a=@($p.arguments);$count=0;& $p.executable @a 2>$null|ForEach-Object{$line=[string]$_;$count+=[Text.Encoding]::UTF8.GetByteCount($line)+1;if($count -gt 262144){throw "Reply bound"};[Console]::Out.WriteLine($line)};exit $LASTEXITCODE}catch{exit 1}'
             $payload=@{executable=$az;arguments=$args}|ConvertTo-Json -Compress
             $text=Invoke-SantaEndpointProcess -FileName (Join-Path $PSHOME 'pwsh.exe') `
                 -Arguments @('-NoProfile','-NonInteractive','-Command',$program) -InputText $payload -TimeoutSeconds $TimeoutSeconds
