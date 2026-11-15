@@ -465,7 +465,7 @@
       "evidence": [
         {
           "path": "scripts/Invoke-SantaIntuneProfiles.ps1",
-          "sha256": "55c9ae9d977f4d14dc591c83fedd7ab0c0ff5f4fb10a4a0a4993b5128e10e326",
+          "sha256": "abfe8321ccc723e849407097ab4438669471d3e170f3de2024ebea990e814885",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntuneProfiles.ps1"
         }
       ]
@@ -484,7 +484,7 @@
       "evidence": [
         {
           "path": "scripts/Invoke-SantaIntuneProfiles.ps1",
-          "sha256": "55c9ae9d977f4d14dc591c83fedd7ab0c0ff5f4fb10a4a0a4993b5128e10e326",
+          "sha256": "abfe8321ccc723e849407097ab4438669471d3e170f3de2024ebea990e814885",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntuneProfiles.ps1"
         }
       ]
@@ -564,6 +564,84 @@
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
         }
       ]
+    },
+    {
+      "principal": "Explicit selected cached delegated operator",
+      "phase": "deployment",
+      "evidence": [
+        {
+          "sha256": "67a0fc62c5e15a8fc44fad9d8640647ea289028743230f9ff1f7e975ee0a83e6",
+          "path": "scripts/Santa.SyncProfilePublisher.psm1"
+        },
+        {
+          "sha256": "76fb14665de1c8261a0a2ce6fbf77345cf5ad796874b6dff36f8a87b0aea81e5",
+          "path": "scripts/Invoke-SantaIntuneSyncProfile.ps1"
+        },
+        {
+          "sha256": "1d183be5d7a08d27e72c336203d531fdbf001506cecec7d91ee23bfa949229cd",
+          "path": "scripts/Santa.ProviderPlan.psm1"
+        }
+      ],
+      "kind": "delegated",
+      "feature": "intune-sync-profile-publication",
+      "defaultEnabled": false,
+      "evidenceState": "code",
+      "resource": "Microsoft Graph",
+      "scope": "Exact existing owned configuration and unchanged static one-Mac pilot group/device in the selected tenant",
+      "rationale": "Default disabled. Inspect/Observe are read-only; explicit Apply verifies exact cached identity and scope, source-reviewed private provider payload, fresh current hash and exclusive intent before one no-retry PATCH. No authentication, consent, profile creation or assignment mutation.",
+      "permission": "DeviceManagementConfiguration.ReadWrite.All"
+    },
+    {
+      "principal": "Explicit selected cached delegated operator",
+      "phase": "deployment",
+      "evidence": [
+        {
+          "sha256": "67a0fc62c5e15a8fc44fad9d8640647ea289028743230f9ff1f7e975ee0a83e6",
+          "path": "scripts/Santa.SyncProfilePublisher.psm1"
+        },
+        {
+          "sha256": "76fb14665de1c8261a0a2ce6fbf77345cf5ad796874b6dff36f8a87b0aea81e5",
+          "path": "scripts/Invoke-SantaIntuneSyncProfile.ps1"
+        },
+        {
+          "sha256": "1d183be5d7a08d27e72c336203d531fdbf001506cecec7d91ee23bfa949229cd",
+          "path": "scripts/Santa.ProviderPlan.psm1"
+        }
+      ],
+      "kind": "delegated",
+      "feature": "intune-sync-profile-publication",
+      "defaultEnabled": false,
+      "evidenceState": "code",
+      "resource": "Microsoft Graph",
+      "scope": "Exact existing owned configuration and unchanged static one-Mac pilot group/device in the selected tenant",
+      "rationale": "Default disabled. Inspect/Observe are read-only; explicit Apply verifies exact cached identity and scope, source-reviewed private provider payload, fresh current hash and exclusive intent before one no-retry PATCH. No authentication, consent, profile creation or assignment mutation.",
+      "permission": "Group.Read.All"
+    },
+    {
+      "principal": "Explicit selected cached delegated operator",
+      "phase": "deployment",
+      "evidence": [
+        {
+          "sha256": "67a0fc62c5e15a8fc44fad9d8640647ea289028743230f9ff1f7e975ee0a83e6",
+          "path": "scripts/Santa.SyncProfilePublisher.psm1"
+        },
+        {
+          "sha256": "76fb14665de1c8261a0a2ce6fbf77345cf5ad796874b6dff36f8a87b0aea81e5",
+          "path": "scripts/Invoke-SantaIntuneSyncProfile.ps1"
+        },
+        {
+          "sha256": "1d183be5d7a08d27e72c336203d531fdbf001506cecec7d91ee23bfa949229cd",
+          "path": "scripts/Santa.ProviderPlan.psm1"
+        }
+      ],
+      "kind": "delegated",
+      "feature": "intune-sync-profile-publication",
+      "defaultEnabled": false,
+      "evidenceState": "code",
+      "resource": "Microsoft Graph",
+      "scope": "Exact existing owned configuration and unchanged static one-Mac pilot group/device in the selected tenant",
+      "rationale": "Default disabled. Inspect/Observe are read-only; explicit Apply verifies exact cached identity and scope, source-reviewed private provider payload, fresh current hash and exclusive intent before one no-retry PATCH. No authentication, consent, profile creation or assignment mutation.",
+      "permission": "Device.Read.All"
     }
   ],
   "gaps": [
@@ -613,6 +691,7 @@
     "Offline candidate drafting adds no Graph, Azure, provider, GitHub or Azure DevOps permissions and cannot publish rules. Sync-provider administration, profile distribution, publisher authority and selected-target live proof require separate source-specific review; enrollment profiles and credentials stay outside Git.",
     "Proposed optional self-hosted Azure sync (#37): hosting deployment identity, resource scopes/SKUs, durable state data roles and cleanup rights remain unselected; no Azure permission or grant is added by the loopback-only model.",
     "Proposed optional sync administration (#37): separate Entra operator audience, app roles and approval/publisher separation need exact-target review. Device enrollment is not operator authentication; certificate issuance, trusted-ingress binding, rotation/revocation and secure MDM delivery permissions remain gaps.",
-    "Proposed rule publication and telemetry retention (#37) need approved immutable snapshot scope, rollback, privacy and backup/deletion authority. Fixture approval labels, synthetic bearers, candidate drafts and this manifest authorize no live access or rule/profile publication."
+    "Proposed rule publication and telemetry retention (#37) need approved immutable snapshot scope, rollback, privacy and backup/deletion authority. Fixture approval labels, synthetic bearers, candidate drafts and this manifest authorize no live access or rule/profile publication.",
+    "The default-off Intune sync-profile publisher has offline mocked boundary coverage only. Actual cached Graph PATCH/readback, concurrent control-plane behavior, native Mac profile delivery/sync/rule receipt/execution and clearing previously downloaded rules on rollback remain unqualified. Existing scopes are inventoried, not granted; no new consent is requested by this command."
   ]
 }

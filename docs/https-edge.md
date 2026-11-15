@@ -57,9 +57,12 @@ and a separate Linux loopback echo fixture passed the corrected behavior.
 The running private service remains the original staged version; its old
 configuration and the failed header observation are retained as evidence.
 
-These are private component proofs. Integrated overload/dependency failure,
-renewal/reboot, trusted certificates, operator enrollment and actual Mac sync
-remain unqualified. Public ingress remains closed.
+These component proofs do not qualify the full overload/dependency fault matrix,
+renewal, automated customer enrollment or actual Mac sync. Selected reboot and
+[held certificate trials](azure-hostname-tls-qualification.md) have separate
+evidence below; the trial report also records a separate restricted human
+administrator enrollment/login. These do not establish general public
+application readiness or a native Mac result.
 
 ## Held certificate qualification
 

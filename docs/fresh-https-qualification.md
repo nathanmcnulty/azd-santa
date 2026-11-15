@@ -102,8 +102,11 @@ hash and assignment, but its successful endpoint capture was from September27.
 It does not prove current health. Issue105 tracks explicit stale-evidence handling.
 No new backend SyncBaseURL or credential was delivered to the Mac.
 
-Remaining pilot gates include broader stress/held-work failures, trusted public
-TLS and renewal/restart, real operator browser
-MFA, Intune delivery and actual native rule/event receipt. Backup/restore,
+Subsequent [held certificate trials](azure-hostname-tls-qualification.md) verified
+production trust and certificate reuse after restart on the selected hostname.
+Remaining pilot gates include broader stress/held-work failures, renewal and
+automated public application deployment, automated customer setup,
+Intune delivery and actual native rule/event receipt. Selected human browser
+MFA enrollment/login is recorded in the subsequent trial report. Backup/restore,
 upgrades and Container Apps parity remain broader open requirements. This result
 does not qualify any of them or authorize wider deployment or Lockdown mode.
