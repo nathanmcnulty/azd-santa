@@ -245,3 +245,5 @@ arbitrarily rolled-back disk or bypassed controller trustworthy. An external
 current-authority boundary for automatic stale-restore detection remains a
 separate unimplemented gate. No SQL, service, tenant or restore operations were
 performed to prepare this design.
+
+The [read-only restore census](restore-census.md) now supplies a bounded registry/schema/row observation and strict comparator. Controlled adapter tests are not actual Django/PostgreSQL census or full restore coverage; all authority and activation gates above remain closed.
