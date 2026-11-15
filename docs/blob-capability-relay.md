@@ -86,6 +86,17 @@ Typed body and ExecStopPost receipts remain separate. Successful observation
 requires authoritative terminal unit state/invocation plus the typed delegated
 upload outcome, body hash, source/boot binding and retained evidence. A body file
 alone is insufficient; a failed manager state overrides retained success.
+Collected-unit handling is deliberately narrow: not-found must still report
+inactive/dead, Result success, MainPID0, ExecMainStatus0 and empty Job,
+InvocationID and ControlGroup. A failed, active, pending or contradictory manager
+fact wins over retained success. Loaded terminal success requires its matching
+invocation and the same quiescent fields. Both cases additionally require the
+exact fixed job cgroup path to be absent under positively attested kernel
+cgroup2fs, root/slice controllers and system.slice domain/events. An existing
+empty/populated/symlink group is not absence; missing hierarchy facts stay closed.
+The launch explicitly fixes system.slice, KillMode control-group and Delegate=no.
+No missing manager field or arbitrary absent host path becomes a GC default.
+
 Expiry blocks new capability use but does not erase a completed observation.
 The outcome is `uploaded-unverified`, with independent byte verification,
 restore acceptance and current authority explicitly false. Permissionr download

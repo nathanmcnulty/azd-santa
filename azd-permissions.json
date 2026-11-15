@@ -86,10 +86,11 @@
       "feature": "offhost-ciphertext-retention",
       "defaultEnabled": false,
       "scope": "Exact independently owned Storage account/container/blob and verified solution VM instance/NIC/subnet/NSG bindings; one source target and a different selected owned verifier",
-      "rationale": "The private protocol component rechecks supplied cached-ARM selection before an exact listServiceSas request and handles short-lived HTTPS create-only/read-only capabilities without account-key retrieval or role assignment. listServiceSas is powerful account-level authority; code blob restriction does not narrow that RBAC action. Cached ARM adapter, confidential selected-VM delivery and job-terminal observation remain integration gates. Blob byte verification does not authenticate the envelope, retain images/portable keys, establish current authority or restore applications.",
+      "rationale": "The private protocol component rechecks supplied cached-ARM selection before an exact listServiceSas request and handles short-lived HTTPS create-only/read-only capabilities without account-key retrieval or role assignment. listServiceSas is powerful account-level authority; code blob restriction does not narrow that RBAC action. The typed source relay adds recipient crypto, a once-only journal and strict manager/cgroup terminal checks; actual cached ARM delivery and guest terminal behavior remain integration gates. Blob byte verification does not authenticate the envelope, retain images/portable keys, establish current authority or restore applications.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/blob_retention.py", "sha256": "f5aa619725104fa3a4bbe174a7ea4ceb236d9eab68675b8730d90984cb3e1818" }
+        { "path": "experiments/server/blob_retention.py", "sha256": "f5aa619725104fa3a4bbe174a7ea4ceb236d9eab68675b8730d90984cb3e1818" },
+        { "path": "experiments/server/blob_capability_relay.py", "sha256": "eb6a5eee83ededf08e78c6203aeb7babc8e36129cf836f2af7ef80be0f6a9a1c" }
       ]
     },
     {

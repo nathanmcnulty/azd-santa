@@ -5,6 +5,7 @@ import datetime as dt
 import io
 import json
 import os
+from types import SimpleNamespace
 from pathlib import Path,PurePosixPath
 import stat
 import sys
@@ -47,10 +48,10 @@ class Relay(unittest.TestCase):
             request_sha256=self.record['complete']['maintenance_sha256'],generation_sha256='b'*64,completion_sha256='c'*64,maintenance_sha256='a'*64)
         self.transport=fixtures.Transport(self.raw);self.upload_calls=0;MemoryState.stores={}
         self.manager=dict(LoadState='loaded',ActiveState='activating',SubState='start',Result='success',MainPID=str(os.getpid()),
-            InvocationID='e'*32,ExecMainStatus='0',Job='')
+            InvocationID='e'*32,ExecMainStatus='0',Job='',ControlGroup='')
         self.patches=[patch.object(relay,'guest'),patch.object(relay,'fresh',side_effect=self.identity),
             patch.object(relay,'capture',side_effect=self.capture),patch.object(relay,'State',MemoryState),
-            patch.object(relay,'launch'),patch.object(relay,'unit_state',side_effect=lambda name:copy.deepcopy(self.manager)),
+            patch.object(relay,'launch'),patch.object(relay,'absent_cgroup',return_value=True),patch.object(relay,'unit_state',side_effect=lambda name:copy.deepcopy(self.manager)),
             patch.object(relay,'read_file',side_effect=self.read_file),patch.object(relay.blob,'upload_file',side_effect=self.upload),
             patch.object(relay.time,'time',side_effect=lambda:self.now),patch.dict(os.environ,{'INVOCATION_ID':'e'*32})]
         for p in self.patches:p.start();self.addCleanup(p.stop)
@@ -178,6 +179,41 @@ class Relay(unittest.TestCase):
         self.assertEqual(relay.observe(self.selected,read_guest=True)['state'],'unknown')
         self.boot='66666666-6666-4666-8666-666666666666'
         with self.assertRaises(relay.RelayRejected):relay.observe(self.selected,read_guest=True)
+    def test_gc_loadstate_never_overrides_negative_active_or_pending_manager_facts(self):
+        offer,packet,digest=self.reserved();self.execute(digest);self.terminal(digest);self.finished()
+        self.manager.update(LoadState='not-found',InvocationID='')
+        baseline=self.manager.copy()
+        mutations=[dict(ActiveState='failed',SubState='failed',Result='timeout',MainPID='27',ExecMainStatus='1',Job='queued'),
+            dict(ActiveState='active'),dict(ActiveState='activating'),dict(ActiveState='deactivating'),dict(SubState='start'),
+            dict(Result='timeout'),dict(Result='signal'),dict(MainPID='27'),dict(ExecMainStatus='1'),dict(Job='queued'),
+            dict(InvocationID='e'*32),dict(ControlGroup='/system.slice/another.service')]
+        for changes in mutations:
+            self.manager.clear();self.manager.update(baseline);self.manager.update(changes)
+            relay.absent_cgroup.reset_mock()
+            with self.subTest(changes=changes):self.assertEqual(relay.observe(self.selected,read_guest=True)['state'],'unknown')
+            relay.absent_cgroup.assert_not_called()
+        self.manager.clear();self.manager.update(baseline)
+        self.assertEqual(relay.observe(self.selected,read_guest=True)['state'],'uploaded-unverified')
+        relay.absent_cgroup.assert_called_once_with('azd-santa-blob-relay-'+offer['offer_id']+'.service')
+        self.assertEqual(self.upload_calls,1);relay.launch.assert_called_once()
+
+    def test_gc_and_loaded_success_both_require_absent_cgroup_and_execution_proof(self):
+        offer,packet,digest=self.reserved();self.execute(digest);self.terminal(digest);self.finished()
+        for state,invocation in (('loaded','e'*32),('not-found','')):
+            self.manager.update(LoadState=state,InvocationID=invocation)
+            relay.absent_cgroup.return_value=False
+            self.assertEqual(relay.observe(self.selected,read_guest=True)['state'],'unknown')
+            relay.absent_cgroup.return_value=True
+            self.assertEqual(relay.observe(self.selected,read_guest=True)['state'],'uploaded-unverified')
+        MemoryState.stores[self.selected].pop('execution-intent.json')
+        with self.assertRaises(relay.RelayRejected):relay.observe(self.selected,read_guest=True)
+
+    def test_missing_manager_fields_are_never_synthesized_as_gc_defaults(self):
+        offer,packet,digest=self.reserved();self.execute(digest);self.terminal(digest);self.finished()
+        self.manager.update(LoadState='not-found',InvocationID='');self.manager.pop('ControlGroup')
+        with self.assertRaises(relay.RelayRejected):relay.observe(self.selected,read_guest=True)
+        relay.absent_cgroup.assert_not_called()
+
     def test_completed_observation_survives_capability_offer_expiry_without_reusing_it(self):
         offer,packet,digest=self.reserved();self.execute(digest);self.terminal(digest);self.finished();self.now=offer['expires']+1
         self.assertEqual(relay.observe(self.selected,read_guest=True)['state'],'uploaded-unverified')
@@ -214,6 +250,51 @@ class Relay(unittest.TestCase):
         self.manager['InvocationID']='e'*32;self.execute(digest)
         with self.assertRaises(relay.RelayRejected):self.terminal(digest,'success','1')
         self.assertFalse(MemoryState(self.selected).exists('terminal.json'))
+
+class KernelCgroupContract(unittest.TestCase):
+    def setUp(self):
+        self.unit='azd-santa-blob-relay-'+('a'*32)+'.service'
+        self.fs='cgroup2fs';self.present=False
+        self.files={'cgroup.type':b'domain\n','cgroup.events':b'populated 1\nfrozen 0\n','cgroup.controllers':b'cpuset cpu io memory pids\n'}
+        self.command=patch.object(relay,'command',side_effect=lambda args:self.fs+'\n').start()
+        self.reader=patch.object(relay,'read_file',side_effect=lambda path,maximum:self.files[path.name]).start()
+        self.lstat=patch.object(Path,'lstat',side_effect=self.stat).start()
+        self.addCleanup(patch.stopall)
+    def stat(self,*args,**kwargs):
+        if not self.present:raise FileNotFoundError()
+        return SimpleNamespace(st_mode=stat.S_IFDIR|0o755)
+    def test_absence_requires_positive_kernel_hierarchy_before_exact_name_probe(self):
+        self.assertTrue(relay.absent_cgroup(self.unit));self.lstat.assert_called_once()
+        self.command.assert_called_once()
+        self.assertEqual(self.command.call_args.args[0][:3],['/usr/bin/stat','--file-system','--format=%T'])
+        self.present=True;self.assertFalse(relay.absent_cgroup(self.unit))
+        self.lstat.side_effect=None;self.lstat.return_value=SimpleNamespace(st_mode=stat.S_IFLNK|0o777)
+        self.assertFalse(relay.absent_cgroup(self.unit))
+    def test_missing_or_untrusted_hierarchy_never_becomes_absence_proof(self):
+        cases=(('fs','tmpfs'),('cgroup.type',b'threaded\n'),('cgroup.events',b''),
+            ('cgroup.events',b'populated 0\npopulated 0\n'),('cgroup.controllers',b''),('cgroup.controllers',b'cpu cpu pids\n'))
+        for key,value in cases:
+            old=self.fs if key=='fs' else self.files[key]
+            if key=='fs':self.fs=value
+            else:self.files[key]=value
+            self.lstat.reset_mock()
+            with self.subTest(key=key,value=value),self.assertRaises(relay.RelayRejected):relay.absent_cgroup(self.unit)
+            self.lstat.assert_not_called()
+            if key=='fs':self.fs=old
+            else:self.files[key]=old
+        self.files.pop('cgroup.events')
+        with self.assertRaises(KeyError):relay.absent_cgroup(self.unit)
+    def test_alias_unit_name_is_rejected_before_any_probe(self):
+        with self.assertRaises(relay.RelayRejected):relay.absent_cgroup('../'+self.unit)
+        self.command.assert_not_called();self.reader.assert_not_called();self.lstat.assert_not_called()
+    def test_scalar_manager_parser_requires_controlgroup_and_every_field_once(self):
+        fields=dict(LoadState='not-found',ActiveState='inactive',SubState='dead',Result='success',MainPID='0',InvocationID='',ExecMainStatus='0',Job='',ControlGroup='')
+        self.command.side_effect=None;self.command.return_value='\n'.join(k+'='+v for k,v in fields.items())
+        self.assertEqual(relay.unit_state(self.unit),fields)
+        for raw in (self.command.return_value+'\nControlGroup=',self.command.return_value.replace('ControlGroup=',''),self.command.return_value+'\nUnexpected=bad'):
+            self.command.return_value=raw
+            with self.assertRaises(relay.RelayRejected):relay.unit_state(self.unit)
+
 
 class CaptureSelector(unittest.TestCase):
     def setUp(self):

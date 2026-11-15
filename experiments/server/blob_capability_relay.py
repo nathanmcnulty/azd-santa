@@ -300,7 +300,7 @@ def context(state,expected_offer=None):
 
 
 def unit_state(name):
-    fields=('LoadState','ActiveState','SubState','Result','MainPID','InvocationID','ExecMainStatus','Job')
+    fields=('LoadState','ActiveState','SubState','Result','MainPID','InvocationID','ExecMainStatus','Job','ControlGroup')
     values={}
     for line in command(['systemctl','show',name,'--property='+','.join(fields)]).splitlines():
         key,separator,value=line.partition('=');need(separator and key in fields and key not in values);values[key]=value
@@ -322,7 +322,7 @@ def launch(intent,digest):
     script=Path(__file__).absolute();need(script.is_relative_to(ROOT) and re.fullmatch(r'/[A-Za-z0-9/_.-]+',str(script)))
     need(sha(read_file(script,262144))==intent['program_sha256'])
     command(['systemd-run','--no-block','--unit='+intent['unit'].removesuffix('.service'),'--property=Type=oneshot',
-        '--property=Restart=no','--property=NoNewPrivileges=yes','--property=PrivateTmp=yes','--property=ProtectHome=yes',
+        '--property=Restart=no','--property=Slice=system.slice','--property=KillMode=control-group','--property=Delegate=no','--property=NoNewPrivileges=yes','--property=PrivateTmp=yes','--property=ProtectHome=yes',
         '--property=UMask=0077','--property=TimeoutStartSec='+str(intent['seconds']+300),
         '--property=RuntimeMaxSec='+str(intent['seconds']+300),
         '--property=ExecStopPost=/usr/bin/python3 -I '+str(script)+' --record-terminal '+intent['operation']+' --sha256 '+digest,
@@ -424,23 +424,41 @@ def record_terminal(selected,digest):
             service_result=result,exit_code=code,exit_status=status,body_sha256=sha(raw) if raw is not None else None)))
 
 
+def absent_cgroup(unit):
+    # A missing path alone is not proof: attest the real unified kernel tree.
+    need(re.fullmatch(r'azd-santa-blob-relay-[a-f0-9]{32}\.service',unit))
+    root=Path('/sys/fs/cgroup');slice=root/'system.slice'
+    need(command(['/usr/bin/stat','--file-system','--format=%T',str(root)]).strip()=='cgroup2fs')
+    controllers=[read_file(path,4096).decode('ascii').split() for path in (root/'cgroup.controllers',slice/'cgroup.controllers')]
+    need(all('pids' in values and len(values)==len(set(values)) for values in controllers)
+        and set(controllers[1])<=set(controllers[0]) and read_file(slice/'cgroup.type',4096).strip()==b'domain')
+    events=[line.split() for line in read_file(slice/'cgroup.events',4096).decode('ascii').splitlines()]
+    need(len(events)==2 and {tuple(v) for v in events}<={('populated','0'),('populated','1'),('frozen','0'),('frozen','1')}
+        and {v[0] for v in events}=={'populated','frozen'})
+    try:(slice/unit).lstat()
+    except FileNotFoundError:return True
+    return False  # Present, populated, empty or symlinked is never GC absence.
+
+
 def _observe(state):
     offer,record,proof=context(state);current(offer,record,proof,require_fresh=False)
     result=dict(scope='blob-relay-observation-v1',operation=state.operation,offer_sha256=sha(encoded(offer)),state='offered',
         automatic_replay=False,independent_bytes_verified=False,restore_accepted=False,current_authority=False)
     if not state.exists('submit-intent.json'):return result
     intent,digest=load_intent(state);manager=unit_state(intent['unit']);phase='unknown'
+    quiet=all(manager[key]==value for key,value in dict(ActiveState='inactive',SubState='dead',Result='success',
+        MainPID='0',ExecMainStatus='0',Job='',ControlGroup='').items())
     terminal=parsed(state.read('terminal.json')) if state.exists('terminal.json') else None
     if terminal is not None:
         need(set(terminal)=={'scope','intent_sha256','invocation','service_result','exit_code','exit_status','body_sha256'}
             and terminal['scope']=='blob-relay-systemd-terminal-v1' and terminal['intent_sha256']==digest
             and re.fullmatch(r'[a-f0-9]{32}',terminal['invocation']))
-        if terminal['service_result']=='success' and terminal['exit_code']=='exited' and terminal['exit_status']=='0':
+        invocation=manager['InvocationID']==('' if manager['LoadState']=='not-found' else terminal['invocation'])
+        if quiet and invocation and terminal['service_result']=='success' and terminal['exit_code']=='exited' and terminal['exit_status']=='0':
             raw,value=verified_body(state,intent,digest);need(value['state']=='uploaded' and sha(raw)==terminal['body_sha256'])
-            if manager['LoadState']=='not-found' or (manager['ActiveState']=='inactive' and manager['SubState']=='dead'
-                and manager['Result']=='success' and manager['ExecMainStatus']=='0' and manager['MainPID']=='0'
-                and manager['Job']=='' and manager['InvocationID']==terminal['invocation']):phase='uploaded-unverified'
-    elif manager['LoadState']=='loaded' and manager['ActiveState'] in ('active','activating','deactivating'):phase='in-progress'
+            need(parsed(state.read('execution-intent.json'))==dict(scope='one-upload-execution-v1',intent_sha256=digest,invocation=terminal['invocation']))
+            if absent_cgroup(intent['unit']):phase='uploaded-unverified'
+    elif manager['LoadState']=='loaded' and manager['Result']=='success' and manager['ActiveState'] in ('active','activating','deactivating'):phase='in-progress'
     result.update(state=phase,unit=intent['unit'],intent_sha256=digest);return result
 
 
