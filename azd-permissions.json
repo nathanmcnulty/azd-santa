@@ -19,7 +19,7 @@
       "evidence": [
         {
           "path": "experiments/server/BackupStoreSelection.psm1",
-          "sha256": "9703a627599b72a9e0bac52d192afa6dd5d5888b68c9e0da3dcf0ec7dd1fdeb4"
+          "sha256": "c33df90520c4921868bbd69449cde3bf365060c3efb96aa10b4e9e265d8b7ba2"
         },
         {
           "path": "experiments/server/backup_store_selection.py",

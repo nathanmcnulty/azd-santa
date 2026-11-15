@@ -6,6 +6,7 @@ Describe 'GET-only cached backup store selection producer' {
     InModuleScope BackupStoreSelection {
         BeforeAll {
             $script:python = if ($env:SANTA_CRYPTO_PYTHON) { $env:SANTA_CRYPTO_PYTHON } else { 'python' }
+            $script:pythonResolved = @(Get-Command $script:python -CommandType Application)[0].Source
             $script:arguments = @{
                 TenantId='55555555-5555-4555-8555-555555555555';SubscriptionId='11111111-1111-4111-8111-111111111111'
                 Location='westus2';BackupResourceGroupName='independent-backups';BackupStoreName='santatestbackup'
@@ -44,6 +45,16 @@ Describe 'GET-only cached backup store selection producer' {
             $result.retention_proven | Should -BeFalse
             $script:reads | Should -Be 30
             Should -Invoke Invoke-SantaStoreCachedRead -Times 32 -Exactly
+        }
+        It 'starts the first Python PATH match when command discovery returns several' {
+            Mock Get-Command { @(
+                [pscustomobject]@{Source=$script:pythonResolved},
+                [pscustomobject]@{Source='/never-used/second/python'}
+            ) } -ParameterFilter { $CommandType -eq 'Application' }
+            $result=Get-SantaBackupStoreSelection @script:arguments
+            $result.scope | Should -BeExactly 'backup-store-selection-plan-v1'
+            Should -Invoke Get-Command -Times 1 -Exactly
+            Should -Invoke Invoke-SantaStoreCachedRead -Times 0 -Exactly
         }
         It 'rejects wrong cached context before resource reads' {
             $script:fixture.context_before.tenantId=$script:arguments.OwnershipId

@@ -165,6 +165,9 @@ Python bridge (`backup_store_selection.py`); observations are never command-line
 arguments. `-Python` can select an already installed Python executable. The bridge
 needs only the standard library; it installs nothing. The CLI reader bounds each
 parsed response, while the bridge bounds aggregate input and its subprocess time.
+When several Python applications match PATH, the bridge starts the first resolved
+application, preserving ordinary command precedence. It never joins executable
+paths or retries another interpreter after startup failure.
 The inherited CLI invocation has no hard wall-clock timeout; a future job wrapper
 must enforce and observe its own deadline. A killed or timed-out read is unknown,
 never permission to provision or repair.

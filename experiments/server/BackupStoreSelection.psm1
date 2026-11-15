@@ -7,7 +7,9 @@ $script:EndpointReader = Import-Module (Join-Path $PSScriptRoot 'HttpsEndpoint.p
 function Invoke-SantaStoreBridge {
     param([hashtable]$Request, [string]$Python)
     $start = [Diagnostics.ProcessStartInfo]::new()
-    $start.FileName = (Get-Command $Python -CommandType Application -ErrorAction Stop).Source
+    # Get-Command can return every matching PATH application. Preserve ordinary
+    # first-match command precedence instead of joining multiple executable paths.
+    $start.FileName = @(Get-Command $Python -CommandType Application -ErrorAction Stop)[0].Source
     $start.ArgumentList.Add('-I')
     $start.ArgumentList.Add((Join-Path $PSScriptRoot 'backup_store_selection.py'))
     $start.UseShellExecute = $false
