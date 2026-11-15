@@ -41,8 +41,10 @@ checks cached context again. `-EnableStorageEndpoint` proposes adding regional
 Storage; without it the current endpoints are preserved. There is no Apply switch,
 login, retry, permission fallback, deployment, provider registration or network
 mutation. Missing, forbidden, changing or unsupported observations fail with a
-fixed error and no successful proposal. The inherited CLI reader bounds responses
-but has no hard outer process deadline; the future caller must enforce one.
+fixed error and no successful proposal. The shared cached CLI reader now enforces
+a30-second default outer process deadline, finite concurrent stdout/stderr buffers
+and process-tree termination with a bounded reap on failure. Timeout remains an
+unknown observation, never permission to change or replay a network request.
 
 Checks include exact group/VM/network IDs and ownership markers, immutable VM
 instance, VM-to-NIC-to-subnet backlinks, same-region resources, four network ETags,

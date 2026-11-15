@@ -79,7 +79,7 @@
       "evidence": [
         {
           "path": "experiments/server/BackupStoreSelection.psm1",
-          "sha256": "c33df90520c4921868bbd69449cde3bf365060c3efb96aa10b4e9e265d8b7ba2"
+          "sha256": "9e6b14153d46d6b7799718deb87aa50e3c1146ded1db13801926595dbcf11f4b"
         },
         {
           "path": "experiments/server/backup_store_selection.py",
@@ -87,7 +87,7 @@
         },
         {
           "path": "experiments/server/HttpsEndpoint.psm1",
-          "sha256": "f19748db7f3d7deea96182e21d93205c4bf56a8e16c477405bcfa4d1e4c28b12"
+          "sha256": "64436f71334defdf5ba1abe67db0d0f150eddb421f082fd1232471cdcda0d740"
         }
       ]
     },
@@ -136,7 +136,7 @@
       "evidence": [
         {
           "path": "experiments/server/HttpsEndpoint.psm1",
-          "sha256": "f19748db7f3d7deea96182e21d93205c4bf56a8e16c477405bcfa4d1e4c28b12"
+          "sha256": "64436f71334defdf5ba1abe67db0d0f150eddb421f082fd1232471cdcda0d740"
         },
         {
           "path": "experiments/server/New-SantaHttpsCandidate.ps1",
