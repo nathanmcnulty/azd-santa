@@ -2,6 +2,9 @@
 
 Issue [90](https://github.com/nathanmcnulty/azd-santa/issues/90) supplies optional
 creation-time VM template wiring and a read-only existing-network proposal.
+The separate [guarded setter](private-storage-endpoint-update.md) adds an explicit
+once-only operator API; its integration/live gates do not change this planner's
+read-only behavior or make raw Bicep conditional.
 Root Intune deployment remains compute-free. VM backend installation remains
 separately disabled by default; no installer bundle, device assignment, storage
 firewall, container, credentials, role grant or inbound rule changes here.
