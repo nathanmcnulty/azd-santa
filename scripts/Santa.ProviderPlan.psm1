@@ -171,4 +171,37 @@ function Get-SantaProviderProfilePlan {
     }
 }
 
+function Read-SantaReviewedProviderMaterial {
+    param([hashtable]$Arguments)
+    # Private in-memory material only. Public planning remains digest-only and
+    # publicationAllowed=false; a plan is never authorization to publish.
+    $plan=Get-SantaProviderProfilePlan @Arguments -EnablePlanning
+    $provider=Read-SantaPlanInput $Arguments.ProviderProfilePath
+    $baseline=Read-SantaPlanInput (Join-Path (Split-Path $PSScriptRoot -Parent) 'profiles/generated/40-configuration.mobileconfig')
+    $qualification=Read-SantaPlanInput $Arguments.QualificationPath
+    $receipt=Read-SantaPlanInput $Arguments.OwnedReceiptPath
+    $review=Read-SantaPlanInput $Arguments.ReviewEvidencePath
+    if($provider.sha256 -cne $plan.fingerprints.providerProfile -or $baseline.sha256 -cne $plan.fingerprints.baseline -or
+        $qualification.sha256 -cne $plan.fingerprints.qualification -or $receipt.sha256 -cne $plan.fingerprints.ownershipReceipt) { throw 'SantaPlan.InputChanged' }
+    $contract=ConvertFrom-Json $qualification.text -AsHashtable -DateKind String
+    if($review.sha256 -cne $contract.reviewEvidenceSha256) { throw 'SantaPlan.InputChanged' }
+    [pscustomobject]@{plan=$plan;baseline=$baseline.text;payload=(Get-SantaPlanPayload (ConvertFrom-SantaPlanPlist $provider.text))
+        qualification=$contract;receipt=(ConvertFrom-Json $receipt.text -AsHashtable -DateKind String)}
+}
+
+function Assert-SantaBaselineSyncRemoval {
+    param([string]$Payload,[bool]$AllowSyncRemoval)
+    try {
+        $text=[Text.UTF8Encoding]::new($false,$true).GetString([Convert]::FromBase64String($Payload))
+        if([Text.Encoding]::UTF8.GetByteCount($text) -gt 1MB) { throw 'Bound' }
+        $settings=Get-SantaPlanPayload (ConvertFrom-SantaPlanPlist $text)
+        if(($settings.ContainsKey('SyncBaseURL') -or $settings.ContainsKey('SyncExtraHeaders')) -and -not $AllowSyncRemoval) {
+            throw 'SantaPlan.ExplicitSyncRemovalRequired'
+        }
+    } catch {
+        if($_.Exception.Message -ceq 'SantaPlan.ExplicitSyncRemovalRequired') { throw 'SantaPlan.ExplicitSyncRemovalRequired' }
+        throw 'SantaPlan.RemoteConfigurationRejected'
+    }
+}
+
 Export-ModuleMember -Function Get-SantaProviderProfilePlan

@@ -146,6 +146,9 @@ Optional sync and rule work is documented separately in the
 [offline rule-candidate draft guide](docs/candidate-drafts.md). The local draft
 generator does not publish rules or change the deployment baseline. Provider/Mac
 qualification, approval and publication remain tracked in the backlog.
+The [owned sync-profile publisher](docs/intune-sync-profile-publisher.md) is
+default-off and requires separate explicit Apply; offline tests do not establish
+Intune delivery or native Santa sync behavior.
 
 - [Santa repository](https://github.com/northpolesec/santa)
 - [Santa deployment: getting started](https://northpole.dev/deployment/getting-started/)
