@@ -1,0 +1,43 @@
+targetScope = 'subscription'
+
+@minLength(2)
+@maxLength(32)
+param environmentName string
+param location string
+// azd initializes parameters before preprovision. Allow that local phase to
+// reach the key hook; the actual host module retains the required length gate.
+param sshPublicKey string = ''
+// Empty azd inputs retain disabled/empty defaults without ordinary prompts.
+@allowed(['', 'false', 'true'])
+param backupStorageEndpoint string = ''
+param existingHostServiceEndpointsJson string = ''
+
+var tags = {
+  'azd-env-name': environmentName
+  'azd-solution': 'azd-santa'
+  purpose: 'synthetic-vm-lab'
+}
+
+resource group 'Microsoft.Resources/resourceGroups@2025-04-01' = {
+  name: 'rg-azd-santa-vm-${environmentName}'
+  location: location
+  tags: tags
+}
+
+module host './host.bicep' = {
+  name: 'santa-vm-host'
+  scope: group
+  params: {
+    location: location
+    sshPublicKey: sshPublicKey
+    tags: tags
+    enableBackupStorageEndpoint: backupStorageEndpoint == 'true'
+    existingHostServiceEndpoints: empty(existingHostServiceEndpointsJson) ? [] : json(existingHostServiceEndpointsJson)
+  }
+}
+
+output AZURE_RESOURCE_GROUP string = group.name
+output SANTA_VM_NAME string = host.outputs.vmName
+output SANTA_VM_RESOURCE_ID string = host.outputs.vmResourceId
+output SANTA_VM_INSTANCE_ID string = host.outputs.vmInstanceId
+output SANTA_VM_DEPLOYMENT_ID string = '${subscription().id}/providers/Microsoft.Resources/deployments/${deployment().name}'

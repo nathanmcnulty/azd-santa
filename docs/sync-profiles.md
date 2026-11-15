@@ -3,6 +3,8 @@
 Assessed 2026-10-16 at repository revision
 `b636b4c10cf2947348114839a3c4b226558c6de5` for SANTA-003. This is setup and
 qualification guidance, not an enabled integration or server compatibility claim.
+Updated 2026-11-07 for the selected self-hosted Zentral source and private VM
+qualification; native Mac sync remains unqualified.
 The deployment-only baseline remains independent of sync, Azure compute, GitHub
 and Azure DevOps. Its generated configuration remains Monitor mode with no
 `SyncBaseURL`; keep the one-device pilot and existing profile ownership receipts.
@@ -28,6 +30,7 @@ restoring a profile alone is not proof of rule rollback.
 | Deployment-only | Existing generated profiles, static validation and fixtures | The SANTA-002 real-Mac deployment/health gate |
 | Workshop | Official managed service and current vendor setup documentation | Selected tenant/config revision, authentication, pinned-client compatibility and one-Mac wire/rule/rollback evidence |
 | Existing Zentral server | Documented configuration/enrollment/profile workflow | Exact installed server release/commit, supported feature intersection and the same one-Mac qualification |
+| Selected self-hosted Zentral on Azure VM | Private real-server protocol, operator, restricted database and reboot qualification; see [database role evidence](database-role-separation.md) | Complete cold azd installation, trusted HTTPS/admission, backup/restore and one-Mac sync/rule/event acceptance |
 | Azure-native | Local protocol fixtures only | Separate value/security design and wire conformance before implementing a service |
 
 Current service documentation can describe features newer than the pinned client.
@@ -54,10 +57,17 @@ from a live tenant is credential-bearing material, not a repository fixture.
 Following the [Zentral Santa guide](https://www.zentral.com/docs/zentral/apps/santa/),
 an administrator identifies the exact server version and configuration, creates
 or selects an enrollment restricted to the approved pilot, and retrieves its
-profile or preference plist securely. The enrollment secret is embedded in the
-sync URL. Never paste that URL into an issue, shell history, agent conversation,
-Git artifact or diagnostic receipt. API enrollment listings can also return
-secrets; do not use their raw output as read-only evidence.
+profile or preference plist securely. Authentication placement depends on the
+selected server revision. The selected
+[Zentral generator at commit 88e67b3](https://github.com/zentralopensource/zentral/blob/88e67b3ce49033aab028029937a6e14f7c489073/zentral/contrib/santa/utils.py#L15-L24)
+uses the canonical `/public/santa/sync/` base path and supplies the enrollment
+credential through `SyncExtraHeaders` in the `Zentral-Authorization` header.
+Legacy secret-bearing URL forms also exist; never assume a URL or profile is
+nonsecret from its appearance. Keep complete profiles, authorization headers,
+enrollment URLs and raw API enrollment responses out of issues, shell history,
+agent conversations, Git artifacts and diagnostic receipts. Do not construct an
+authentication mode manually or infer native-client compatibility from server
+HTTP tests.
 
 Review the server's authentication, TLS, supported rule types/policies and JSON
 protocol against the pinned client before distribution. Re-enrollment can replace

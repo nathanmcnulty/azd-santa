@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/zentralopensource/zentral",
+  "commit": "88e67b3ce49033aab028029937a6e14f7c489073",
+  "archiveUrl": "https://codeload.github.com/zentralopensource/zentral/tar.gz/88e67b3ce49033aab028029937a6e14f7c489073",
+  "archiveSha256": "e8379103ccbda8e900e6215cd87125c61817473d4a483eacb1c63f463f927c9f",
+  "retrievedOn": "2026-11-06",
+  "purpose": "Private synthetic evaluation only; standard upstream build includes evaluation-licensed ee files. Not approved for production or redistribution."
+}

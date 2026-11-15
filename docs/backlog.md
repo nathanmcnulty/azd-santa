@@ -426,7 +426,10 @@ Review SANTA-007 against the current repository state. Its status or authorizati
 - **Wave:** 3
 - **Authorization:** local-only
 - **Blocker:** _none_
-- **Claim:** _none_
+- **Claim owner:** codex-santa-backend-coordinator
+- **Claim worktree:** E&colon;/azd-santa-worktrees/durable-spike-20261022
+- **Claim base revision:** `7b396fd4f8eda7b970d7294b525d8cfcd2c627cc`
+- **Claim started:** 2026-11-06T19&colon;28&colon;04Z
 
 **Problem:**
 

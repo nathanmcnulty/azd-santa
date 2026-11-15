@@ -1,0 +1,6 @@
+{
+  "postgres": "postgres@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42",
+  "redis": "redis@sha256:5b816bb37d9707a70f10ef5002ecf8ee431750d397010fc4314c93dca887962f",
+  "rabbitmq": "rabbitmq@sha256:87178a0ee3e2f52980ba356d38646ed1056705ff2d5ff281f8965456eaa0c1e3",
+  "elasticsearch": "docker.elastic.co/elasticsearch/elasticsearch@sha256:43ea348fb0ae21f8610b1d144dfd165ee4045537bcdba3789ad0e5107533415c"
+}
