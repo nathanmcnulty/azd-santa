@@ -8,6 +8,7 @@ param(
     [Parameter(Mandatory)][string] $ExpectedAccount,
     [string] $Organization = 'Contoso',
     [switch] $AllowProfileUpdate,
+    [switch] $AllowSyncRemoval,
     [switch] $Apply,
     [string] $ReceiptPath = (Join-Path (Split-Path -Parent $PSScriptRoot) '.azure/azd-santa/intune-profiles-receipt.json')
 )
@@ -16,6 +17,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Import-Module (Join-Path $PSScriptRoot 'Santa.Template.psm1') -Force
+$providerChecks=Import-Module (Join-Path $PSScriptRoot 'Santa.ProviderPlan.psm1') -PassThru -Force
 
 function Invoke-GraphJson {
     param(
@@ -137,6 +139,9 @@ $preflight = @(
                 (Get-RemoteProperty -Object $remote -Name 'payloadName') -ceq $profileSpec.fileName -and
                 (Get-RemoteProperty -Object $remote -Name 'payloadFileName') -ceq $profileSpec.fileName) { 'verify' }
             else { 'update' }
+        if($profileSpec.id -ceq 'configuration' -and $action -ceq 'update') {
+            & $providerChecks {param($payload,$allowed) Assert-SantaBaselineSyncRemoval $payload $allowed} (Get-RemoteProperty -Object $remote -Name 'payload') ([bool]$AllowSyncRemoval)
+        }
         [pscustomobject]@{ spec = $profileSpec; remote = $remote; assigned = $assignments.Count -eq 1; action = $action }
     }
 )
