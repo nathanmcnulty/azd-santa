@@ -25,7 +25,7 @@ class EnrollmentTests(unittest.TestCase):
     def request(self):
         return dict(scope=pilot.SCOPE, nonce='a' * 32, deployment_sha256='b' * 64,
                     origin='https://santa.example.invalid', serial='SYNTHETIC123',
-                    hardware_uuid='11111111-1111-4111-8111-111111111111', operator_username='synthetic',
+                    hardware_uuid='AABBCCDD-1111-4111-8111-AABBCCDDEEFF', operator_username='synthetic',
                     source_commit=pilot.SOURCE,
                     recipient_public_key=base64.b64encode(self.key.public_key().public_bytes(
                         serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)).decode())
@@ -84,7 +84,7 @@ class EnrollmentTests(unittest.TestCase):
         mbu.objects.get.return_value = SimpleNamespace(pk=4)
         enrollment.objects.get.return_value = SimpleNamespace(pk=7, secret_id=8)
         secret.objects.get.return_value = SimpleNamespace(meta_business_unit_id=4,
-            serial_numbers=[request['serial']], udids=[request['hardware_uuid']], quota=1,
+            serial_numbers=[request['serial']], udids=[str(uuid.UUID(request['hardware_uuid']))], quota=1,
             revoked_at=None, expired_at=None, request_count=1)
         rule.objects.filter.return_value.exists.return_value = False
         values = machine.objects.filter.return_value.values
