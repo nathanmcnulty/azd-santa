@@ -147,7 +147,8 @@
       "evidence": [
         { "path": "experiments/server/blob_retention.py", "sha256": "f5aa619725104fa3a4bbe174a7ea4ceb236d9eab68675b8730d90984cb3e1818" },
         { "path": "experiments/server/blob_capability_relay.py", "sha256": "eb6a5eee83ededf08e78c6203aeb7babc8e36129cf836f2af7ef80be0f6a9a1c" },
-        { "path": "experiments/server/private_arm_adapter.py", "sha256": "5da1bd9c26fe0fead5c1b1c75197dfbd4a2df0ef5de5ab2fd0162ea6b52fbdc4" }
+        { "path": "experiments/server/private_arm_adapter.py", "sha256": "5da1bd9c26fe0fead5c1b1c75197dfbd4a2df0ef5de5ab2fd0162ea6b52fbdc4" },
+        { "path": "experiments/server/blob_verifier_relay.py", "sha256": "210a48a8a8e980bb1b8415612d08114523a7e71d2d5505cda89dd1ac6c6fb8ac" }
       ]
     },
     {
@@ -484,6 +485,7 @@
     }
   ],
   "gaps": [
+    "The separate r-only confidential verifier relay binds a different VM and same boot, reuses exact ciphertext GET verification in a fresh fixed private output and once-only job, and requires strict terminal/GC/cgroup plus local file evidence. No new grant or source c-only role change is added. Offline crypto/protocol tests and platform-specific file checks are not selected-VM/Storage download, full confidential Azure orchestration, ciphertext authentication, lifecycle or restore acceptance. Trusted current operator/capture provenance and actual independent download remain separate gates. See docs/blob-verifier-relay.md.",
     "The private cached ARM Python callback adds explicit bounded cached-CLI acquisition, exact graph GETs and a single in-memory exact-blob SAS POST attempt. Offline controlled protocol tests are not actual token/API/RBAC/minting proof. No token export, auth fallback, grant or policy/key operation is provided. Durable cross-process operator attempt reconciliation and full confidential Run Command orchestration remain unimplemented; OS DNS/CLI internals remain trusted deadline prerequisites. See docs/private-cached-arm.md.",
     "The guarded existing-subnet setter now integrates bounded per-call CLI/token capture. HTTP/body cancellation, fresh readback and flushed once-only local evidence are source/offline checks, not overall invocation deadline, total CLI/OS memory containment, filesystem power-loss durability or live selected-network acceptance. Copied receipts do not authorize writes; lost responses remain unknown and cannot trigger automatic replacement attempts. A separate empty-network ETag probe does not qualify raw Bicep CAS, atomic multi-resource selection, off-host retention or restore.",
     "The confidential exact-capture source-VM Blob relay adds local recipient crypto and a once-only guest upload journal only. It requires fresh existing cached ARM ownership/target selection and exact create-only SAS minting outside the envelope. No ARM token, backup private key, new grant, policy change or Azure orchestration is supplied. Actual selected-VM cryptography41/Linux descriptor tests and a read-only installed-capture/IMDS/cgroup preflight passed; actual upload service/Run Command delivery, create-only PUT and separate verifier download remain unqualified; envelopes and receipts are not authority. See docs/blob-capability-relay.md.",
