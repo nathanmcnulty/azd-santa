@@ -42,9 +42,10 @@ parent is fsynced after a new root directory; the worker independently fsyncs it
 attempt reservation before database effects. Unknown outcomes never retry Create.
 One CLI submission is not a claim that every SDK/distributed effect is exactly once.
 
-The opaque response is saved in an owner-private ciphertext-only receipt. C#
-performs OAEP-SHA256 decryption, duplicate/extra-field rejection and strict
-recipient/context/configuration/enrollment ID checks, then composes the profile.
+C# first performs OAEP-SHA256 decryption, duplicate/extra-field rejection and
+strict recipient/context/configuration/enrollment ID checks, then composes the
+profile. Only a validated opaque response is saved in the owner-private
+ciphertext-only receipt; invalid responses never become checkpoints.
 The actual credential is never a PowerShell string, URI, argv, console value or
 checkpoint field. Only private profile bytes are passed to `Write-SantaPrivateBytes`;
 plaintext buffers are cleared and the ephemeral key disposed. Managed strings,
@@ -61,9 +62,6 @@ concurrent privileged writers remain prerequisites.
 
 Offline tests use synthetic identities, real RSA/C# XML handling, actual Python
 request validation, controlled host/Docker adapters and mocked Azure responses.
-CLI process tripwires prevent real Azure CLI execution. An early mock-seam test
-bypassed its higher-level mock and attempted local account-show for a nonexistent
-synthetic subscription; it failed before target/Run Command access. No tenant or
-VM mutation occurred. Actual Run Command delivery, ORM creation, private output on
+CLI process tripwires prevent real Azure CLI execution. Actual Run Command delivery, ORM creation, private output on
 the selected operator host and native profile delivery remain separate gates.
 See [the worker](pilot-enrollment.md).
