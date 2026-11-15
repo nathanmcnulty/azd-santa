@@ -116,6 +116,8 @@ class CensusTests(unittest.TestCase):
     def test_complete_fixture_registry_through_proxy_schema_rows_and_readonly_rollback(self):
         observed=self.collect();receipt=c.compare(observed,copy.deepcopy(observed),self.mapping(observed),fingerprint_key=KEY)
         self.assertTrue(receipt['exact_match']);self.assertFalse(receipt['current_authority']);self.assertFalse(receipt['provenance_authenticated'])
+        for result in (receipt,observed.receipt):
+            self.assertFalse(result['schema_complete']);self.assertEqual(result['referenced_definitions'],'unproven')
         self.assertEqual(observed.receipt['rows'],4);self.assertTrue(observed.receipt['complete_supported_data'])
         self.assertEqual(len(observed.manifest['registry']['models']),4)
         self.assertEqual(observed.manifest['data'][c.relation_key('public','auth_group')]['rows'],0)

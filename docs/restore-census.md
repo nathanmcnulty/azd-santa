@@ -78,6 +78,19 @@ casts. The private observation retains blocker identities and reports
 partial coverage. Other catalog classes remain explicit blockers until their
 schema and execution semantics receive a reviewed adapter.
 
+Referenced excluded/global definitions remain an explicit unproven gate. Namespace
+selection omits pg_catalog, other pg_* namespaces and information_schema; the
+recursive dependency inventory follows dependents, not every referenced object.
+A custom routine, collation or operator class in an excluded namespace can retain
+its name while its definition changes. A stored column's qualified collation
+name or an index definition alone cannot detect that change. Before full restore
+acceptance, independently inventory and bind these referenced definitions and
+relevant global objects against the reviewed engine/source baseline. Neither
+column builtin-OID guards nor exact_match closes this gap. Both observation and
+comparison therefore return `referenced_definitions='unproven'` and
+`schema_complete=false`; no schema-complete or restore approval follows from a
+successful comparison. Issues54 and79 remain open.
+
 Sequence values are not MVCC-consistent even inside repeatable-read. The receipt
 always leaves `sequence_quiescence_proven=false`; independently proven stopped
 writers are required before interpreting the sequence/data observations as a

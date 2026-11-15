@@ -316,6 +316,7 @@ def collect(connection,registry,*,fingerprint_key,limits=Limits(),clock=time.mon
             complete_supported_data=not unsupported,
             fingerprint=keyed(fingerprint_key,'census',manifest),read_only=True,
             provenance_authenticated=False,coverage_reviewed=False,sequence_quiescence_proven=False,
+            referenced_definitions='unproven',schema_complete=False,
             restore_accepted=False,current_authority=False)
         return Census(manifest,receipt)
     except Exception:
@@ -389,6 +390,7 @@ def compare(observed,expected,dispositions,*,fingerprint_key):
                             and v['foreign_columns']==[item['target']] for v in constraints))
         return dict(scope='restore-census-comparison-v1',exact_match=True,mapped_items=len(keys),
             fingerprint=keyed(fingerprint_key,'comparison',observed.manifest),
-            provenance_authenticated=False,current_authority=False,restore_accepted=False)
+            provenance_authenticated=False,referenced_definitions='unproven',schema_complete=False,
+            current_authority=False,restore_accepted=False)
     except Exception:
         raise CensusRejected('Restore census comparison rejected; retain original inputs and inspect privately') from None
