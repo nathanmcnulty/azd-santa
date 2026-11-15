@@ -111,6 +111,13 @@ Mocks, real local child processes and in-memory HTTP handlers are distinct gates
 No backup upload, independent retention, current-authority restore or public/native
 Santa acceptance follows from creating this store.
 
+On 2026-11-15 UTC the maintained read-only prerequisite path passed against the
+selected two deallocated Santa lab VMs: current cached tenant/subscription,
+registered providers, the supported Storage API/region, fresh generated-name
+availability and both owned regional Storage endpoints were observed. This check
+made no resource write, acquired no SAS and created no store. Validation/what-if,
+submission and deployment observation remain separate live gates.
+
 See [off-host retention](offhost-ciphertext-retention.md) and
 [owned Storage endpoints](private-storage-endpoint.md). The Azure
 [subscription deployment API](https://learn.microsoft.com/en-us/rest/api/resources/deployments/create-or-update-at-subscription-scope?view=rest-resources-2025-04-01)
