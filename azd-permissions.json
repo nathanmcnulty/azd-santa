@@ -19,7 +19,7 @@
       "evidence": [
         {
           "path": "experiments/vm/PrivateStorageEndpointUpdate.psm1",
-          "sha256": "2be9ed9e9a2492f61cf33a58fe23c2967760a0b6bb1971a72a9a4868f422d8ce"
+          "sha256": "aa3fe97def8c437cd4657920299dfbae51a9e2b21b259c52ffc18431999f88f8"
         },
         {
           "path": "experiments/vm/PrivateStorageEndpoint.psm1",

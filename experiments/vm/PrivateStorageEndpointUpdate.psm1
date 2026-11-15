@@ -53,8 +53,10 @@ function New-EndpointPlan([hashtable]$Target) {
     New-SantaPrivateStorageEndpointPlan @Target -EnableStorageEndpoint -ReadArm
 }
 function Get-EndpointToken([hashtable]$Target) {
+    # CLI subscription and tenant switches are mutually exclusive here. The
+    # selected tenant is checked in both fresh plans and the returned token facts.
     $value=& $script:planner {param($a) Read-Network -Arguments $a} @('account','get-access-token','--resource','https://management.azure.com/',
-        '--subscription',$Target.SubscriptionId.ToString(),'--tenant',$Target.TenantId.ToString())
+        '--subscription',$Target.SubscriptionId.ToString())
     Assert-Endpoint ($value.subscription -is [string] -and $value.tenant -is [string] -and $value.accessToken -is [string] -and
         $value.subscription -ieq $Target.SubscriptionId.ToString() -and $value.tenant -ieq $Target.TenantId.ToString() -and
         $value.tokenType -ceq 'Bearer' -and $value.accessToken -cmatch '^[A-Za-z0-9._~+/=-]{16,32768}$')

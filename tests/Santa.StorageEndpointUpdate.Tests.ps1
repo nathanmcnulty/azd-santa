@@ -186,9 +186,12 @@ Describe 'Cached token and persisted unknown-state boundaries' {
         It 'captures only a matching cached token via the existing reader without token argv' {
             $target=@{TenantId=[guid]'22222222-2222-4222-8222-222222222222';SubscriptionId=[guid]'11111111-1111-4111-8111-111111111111'}
             Mock Read-Network -ModuleName PrivateStorageEndpoint {param($Arguments)
-                $Arguments | Should -HaveCount 8
+                $Arguments | Should -HaveCount 6
                 ($Arguments[0..1] -join ' ') | Should -BeExactly 'account get-access-token'
                 $Arguments | Should -Not -Contain 'private-token-in-memory-only'
+                $Arguments | Should -Not -Contain '--tenant'
+                $Arguments[4] | Should -BeExactly '--subscription'
+                $Arguments[5] | Should -BeExactly '11111111-1111-4111-8111-111111111111'
                 @{subscription='11111111-1111-4111-8111-111111111111';tenant='22222222-2222-4222-8222-222222222222';tokenType='Bearer';accessToken='private-token-in-memory-only'}
             }
             $token=Get-EndpointToken $target
