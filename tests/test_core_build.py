@@ -70,6 +70,169 @@ USER zentral
 """
 UPSTREAM_LICENSE = b"Apache-2.0 and ZPEL notice\n"
 UPSTREAM_REGISTRY = core_build.UPSTREAM_REGISTRY
+UPSTREAM_STORES_BACKENDS = b"""from importlib import import_module
+import logging
+from django.db import models
+
+
+logger = logging.getLogger("zentral.core.events.stores.all")
+
+
+class StoreBackend(models.TextChoices):
+    ClickHouse = "CLICKHOUSE", "ClickHouse"
+    Datadog = "DATADOG", "Datadog"
+    Elasticsearch = "ELASTICSEARCH", "Elasticsearch"
+    HTTP = "HTTP", "HTTP"
+    Kinesis = "KINESIS", "Kinesis"
+    OpenSearch = "OPENSEARCH", "OpenSearch"
+    Panther = "PANTHER", "Panther"
+    S3Parquet = "S3_PARQUET", "S3 Parquet"
+    Snowflake = "SNOWFLAKE", "Snowflake"
+    Splunk = "SPLUNK", "Splunk"
+    SumoLogic = "SUMO_LOGIC", "Sumo Logic"
+
+
+def get_store_backend(store, load=False):
+    backend = StoreBackend(store.backend)
+    try:
+        module = import_module(f"zentral.core.stores.backends.{backend.value.lower()}")
+        backend_cls = getattr(module, f"{backend.name}Store")
+    except (ImportError, AttributeError):
+        logger.exception("Could not load store backend %s", backend)
+    return backend_cls(store, load)
+"""
+UPSTREAM_STORES_SERIALIZERS = b"""from django.utils.text import slugify
+from rest_framework import serializers
+from accounts.models import Group
+from zentral.core.events.serializers import EventFilterSetSerializer
+from zentral.core.stores.backends.all import StoreBackend
+from zentral.core.stores.backends.clickhouse import ClickHouseStoreSerializer
+from zentral.core.stores.backends.datadog import DatadogStoreSerializer
+from zentral.core.stores.backends.es_os_base import ESOSStoreSerializer
+from zentral.core.stores.backends.http import HTTPStoreSerializer
+from zentral.core.stores.backends.kinesis import KinesisStoreSerializer
+from zentral.core.stores.backends.opensearch import OpenSearchStoreSerializer
+from zentral.core.stores.backends.panther import PantherStoreSerializer
+from zentral.core.stores.backends.s3_parquet import S3ParquetStoreSerializer
+from zentral.core.stores.backends.snowflake import SnowflakeStoreSerializer
+from zentral.core.stores.backends.splunk import SplunkStoreSerializer
+from zentral.core.stores.backends.sumo_logic import SumoLogicStoreSerializer
+from .models import Store
+
+
+class StoreSerializer(serializers.ModelSerializer):
+    event_filters = EventFilterSetSerializer(required=False)
+    clickhouse_kwargs = ClickHouseStoreSerializer(source="get_clickhouse_kwargs", required=False, allow_null=True)
+    datadog_kwargs = DatadogStoreSerializer(source="get_datadog_kwargs", required=False, allow_null=True)
+    elasticsearch_kwargs = ESOSStoreSerializer(source="get_elasticsearch_kwargs", required=False, allow_null=True)
+    http_kwargs = HTTPStoreSerializer(source="get_http_kwargs", required=False, allow_null=True)
+    kinesis_kwargs = KinesisStoreSerializer(source="get_kinesis_kwargs", required=False, allow_null=True)
+    opensearch_kwargs = OpenSearchStoreSerializer(source="get_opensearch_kwargs", required=False, allow_null=True)
+    panther_kwargs = PantherStoreSerializer(source="get_panther_kwargs", required=False, allow_null=True)
+    s3_parquet_kwargs = S3ParquetStoreSerializer(source="get_s3_parquet_kwargs", required=False, allow_null=True)
+    snowflake_kwargs = SnowflakeStoreSerializer(source="get_snowflake_kwargs", required=False, allow_null=True)
+    splunk_kwargs = SplunkStoreSerializer(source="get_splunk_kwargs", required=False, allow_null=True)
+    sumo_logic_kwargs = SumoLogicStoreSerializer(source="get_sumo_logic_kwargs", required=False, allow_null=True)
+
+    class Meta:
+        model = Store
+        fields = (
+            "id",
+            "provisioning_uid",
+            "name",
+            "description",
+            "admin_console",
+            "events_url_authorized_roles",
+            "event_filters",
+            "created_at",
+            "updated_at",
+            # backends
+            "backend",
+            "clickhouse_kwargs",
+            "datadog_kwargs",
+            "elasticsearch_kwargs",
+            "http_kwargs",
+            "kinesis_kwargs",
+            "opensearch_kwargs",
+            "panther_kwargs",
+            "s3_parquet_kwargs",
+            "snowflake_kwargs",
+            "splunk_kwargs",
+            "sumo_logic_kwargs",
+        )
+
+    def validate(self, data):
+        data = super().validate(data)
+        # slug
+        slug = slugify(data["name"])
+        slug_unicity_qs = Store.objects.filter(slug=slug)
+        if self.instance and self.instance.pk:
+            slug_unicity_qs = slug_unicity_qs.exclude(pk=self.instance.pk)
+        if slug_unicity_qs.exists():
+            raise serializers.ValidationError(
+                {"name": "A store with the same slugified version of this name already exists"}
+            )
+        data["slug"] = slug
+        # backend
+        backend = StoreBackend(data["backend"])
+        # backend kwargs
+        backend_slug = backend.value.lower()
+        data["backend_kwargs"] = data.pop(f"get_{backend_slug}_kwargs", None)
+        if not data["backend_kwargs"]:
+            raise serializers.ValidationError(
+                {f"{backend_slug}_kwargs": "This field is required."}
+            )
+        # other backends kwargs
+        for other_backend in StoreBackend:
+            if other_backend == backend:
+                continue
+            other_backend_slug = other_backend.value.lower()
+            if data.pop(f"get_{other_backend_slug}_kwargs", None):
+                raise serializers.ValidationError(
+                    {f"{other_backend_slug}_kwargs": "This field cannot be set for this backend."}
+                )
+        return data
+
+    def create(self, validated_data):
+        backend_kwargs = validated_data.pop("backend_kwargs", {})
+        validated_data["backend_kwargs"] = {}
+        store = super().create(validated_data)
+        store.set_backend_kwargs(backend_kwargs)
+        store.save()
+        return store
+
+    def update(self, instance, validated_data):
+        backend_kwargs = validated_data.pop("backend_kwargs", {})
+        store = super().update(instance, validated_data)
+        store.set_backend_kwargs(backend_kwargs)
+        store.save()
+        return store
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        if instance.provisioning_uid:
+            for field in list(ret.keys()):
+                if field == "backend" or "kwargs" in field:
+                    ret.pop(field)
+        else:
+            # other backends kwargs
+            for other_backend in StoreBackend:
+                if other_backend == ret["backend"]:
+                    continue
+                other_backend_slug = other_backend.value.lower()
+                ret.pop(f"{other_backend_slug}_kwargs", None)
+        return ret
+
+
+class StoreProvisioningSerializer(StoreSerializer):
+    # for provisioning, reference roles by provisioning_uid, not pk
+    events_url_authorized_roles = serializers.SlugRelatedField(
+        many=True,
+        queryset=Group.objects.filter(provisioned_role__isnull=False),
+        slug_field="provisioned_role__provisioning_uid",
+        required=False,
+    )
+"""
 
 
 class CoreBuildTests(unittest.TestCase):
@@ -79,10 +242,13 @@ class CoreBuildTests(unittest.TestCase):
         (source / "server").mkdir()
         (source / "server" / "realms" / "backends").mkdir(parents=True)
         (source / "zentral").mkdir()
+        (source / "zentral" / "core" / "stores" / "backends").mkdir(parents=True)
         (source / "ee").mkdir()
         (source / "Dockerfile").write_bytes(UPSTREAM_DOCKERFILE.encode("utf-8"))
         (source / "LICENSE").write_bytes(UPSTREAM_LICENSE)
         (source / core_build.REGISTRY_PATH).write_bytes(UPSTREAM_REGISTRY)
+        (source / core_build.STORES_BACKENDS_PATH).write_bytes(UPSTREAM_STORES_BACKENDS)
+        (source / core_build.STORES_SERIALIZERS_PATH).write_bytes(UPSTREAM_STORES_SERIALIZERS)
         docker_hash = hashlib.sha256((source / "Dockerfile").read_bytes()).hexdigest()
         license_hash = hashlib.sha256((source / "LICENSE").read_bytes()).hexdigest()
         registry_hash = hashlib.sha256((source / core_build.REGISTRY_PATH).read_bytes()).hexdigest()
@@ -100,6 +266,8 @@ class CoreBuildTests(unittest.TestCase):
                 "Dockerfile",
                 "LICENSE",
                 core_build.REGISTRY_PATH,
+                core_build.STORES_BACKENDS_PATH,
+                core_build.STORES_SERIALIZERS_PATH,
             ],
             check=True,
         )
@@ -138,7 +306,29 @@ class CoreBuildTests(unittest.TestCase):
             core_build.CORE_REGISTRY_SHA256,
             "2c2aceac8fb47a73a418b471a87e0a47e2c852a7f57e7022e27f400aa79b261f",
         )
-        rendered = core_build.render_core_dockerfile(UPSTREAM_DOCKERFILE, UPSTREAM_LICENSE, UPSTREAM_REGISTRY)
+        self.assertEqual(
+            hashlib.sha256(UPSTREAM_STORES_BACKENDS).hexdigest(),
+            "7db6c71eb508bce42d92803c9dc83799fd7d5dbacec577a47f98aaf06b0a5d4a",
+        )
+        self.assertEqual(
+            core_build.CORE_STORES_BACKENDS_SHA256,
+            "3a61216f59b69808a926e7063737004fc0b60d4e8642427f22323eca61a7a09b",
+        )
+        self.assertEqual(
+            hashlib.sha256(UPSTREAM_STORES_SERIALIZERS).hexdigest(),
+            "8fb0083e1b2e867372a5f3b7bfbe037d1903aa77ef09308ae7db47beab4cef3d",
+        )
+        self.assertEqual(
+            core_build.CORE_STORES_SERIALIZERS_SHA256,
+            "85c7f6dfc6a8ccfdd5aef35827d9d4aa5baa3b557d84caec53d56bffd01abb66",
+        )
+        rendered = core_build.render_core_dockerfile(
+            UPSTREAM_DOCKERFILE,
+            UPSTREAM_LICENSE,
+            UPSTREAM_REGISTRY,
+            UPSTREAM_STORES_BACKENDS,
+            UPSTREAM_STORES_SERIALIZERS,
+        )
         self.assertIn("ARG APP_ENV=core", rendered)
         self.assertIn("FROM base-builder AS core-builder", rendered)
         self.assertIn("FROM base-runner AS core-runner", rendered)
@@ -155,8 +345,13 @@ class CoreBuildTests(unittest.TestCase):
         self.assertIn("test -d /zentral/server/accounts", rendered)
         self.assertIn("test -d /zentral/server/realms", rendered)
         self.assertIn("test -d /zentral/zentral/contrib/santa", rendered)
+        self.assertIn("test -f /zentral/zentral/core/stores/backends/all.py", rendered)
+        self.assertIn("test -f /zentral/zentral/core/stores/serializers.py", rendered)
         self.assertIn("prepare_core_registry.py", rendered)
+        self.assertIn("prepare_core_stores.py", rendered)
         self.assertIn("Core registry input SHA256", rendered)
+        self.assertIn("Core stores backend registry input SHA256", rendered)
+        self.assertIn("Core stores serializers input SHA256", rendered)
 
     def test_registry_narrowing_removes_only_ee_backends(self) -> None:
         narrowed = core_build.narrow_core_registry(UPSTREAM_REGISTRY)
@@ -170,6 +365,32 @@ class CoreBuildTests(unittest.TestCase):
         self.assertNotIn(b'"saml":', narrowed)
         with self.assertRaises(ValueError):
             core_build.narrow_core_registry(UPSTREAM_REGISTRY + b"\n")
+
+    def test_store_narrowing_removes_only_ee_backends(self) -> None:
+        backends = core_build.narrow_core_store_backends(UPSTREAM_STORES_BACKENDS)
+        serializers = core_build.narrow_core_store_serializers(UPSTREAM_STORES_SERIALIZERS)
+        self.assertIn(b"Modified by azd-santa", backends)
+        self.assertIn(b'ClickHouse = "CLICKHOUSE"', backends)
+        self.assertIn(b'Elasticsearch = "ELASTICSEARCH"', backends)
+        self.assertIn(b'HTTP = "HTTP"', backends)
+        self.assertIn(b'Kinesis = "KINESIS"', backends)
+        self.assertIn(b'OpenSearch = "OPENSEARCH"', backends)
+        self.assertIn(b'S3Parquet = "S3_PARQUET"', backends)
+        for unavailable in (b"Datadog", b"Panther", b"Snowflake", b"Splunk", b"SumoLogic"):
+            self.assertNotIn(unavailable, backends)
+        for unavailable in (b"datadog", b"panther", b"snowflake", b"splunk", b"sumo_logic"):
+            self.assertNotIn(b"backends." + unavailable, serializers)
+            self.assertNotIn(unavailable + b"_kwargs", serializers)
+        self.assertIn(b"backends.clickhouse", serializers)
+        self.assertIn(b"backends.es_os_base", serializers)
+        self.assertIn(b"backends.http", serializers)
+        self.assertIn(b"backends.kinesis", serializers)
+        self.assertIn(b"backends.opensearch", serializers)
+        self.assertIn(b"backends.s3_parquet", serializers)
+        with self.assertRaises(ValueError):
+            core_build.narrow_core_store_backends(UPSTREAM_STORES_BACKENDS + b"\n")
+        with self.assertRaises(ValueError):
+            core_build.narrow_core_store_serializers(UPSTREAM_STORES_SERIALIZERS + b"\n")
 
     def test_derivation_is_deterministic_and_does_not_change_source(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -211,11 +432,14 @@ class CoreBuildTests(unittest.TestCase):
             source.mkdir()
             (source / "server").mkdir()
             (source / "zentral").mkdir()
+            (source / "zentral" / "core" / "stores" / "backends").mkdir(parents=True)
             (source / "ee").mkdir()
             (source / "server" / "realms" / "backends").mkdir(parents=True)
             (source / "Dockerfile").write_bytes(UPSTREAM_DOCKERFILE.encode("utf-8"))
             (source / "LICENSE").write_bytes(UPSTREAM_LICENSE)
             (source / core_build.REGISTRY_PATH).write_bytes(UPSTREAM_REGISTRY)
+            (source / core_build.STORES_BACKENDS_PATH).write_bytes(UPSTREAM_STORES_BACKENDS)
+            (source / core_build.STORES_SERIALIZERS_PATH).write_bytes(UPSTREAM_STORES_SERIALIZERS)
             docker_hash = hashlib.sha256((source / "Dockerfile").read_bytes()).hexdigest()
             license_hash = hashlib.sha256((source / "LICENSE").read_bytes()).hexdigest()
             with mock.patch.object(core_build, "UPSTREAM_DOCKERFILE_SHA256", docker_hash), mock.patch.object(
