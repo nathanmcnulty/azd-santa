@@ -2,6 +2,9 @@
 
 Issue [90](https://github.com/nathanmcnulty/azd-santa/issues/90) supplies optional
 creation-time VM template wiring and a read-only existing-network proposal.
+The separate [guarded setter](private-storage-endpoint-update.md) adds an explicit
+once-only operator API; its integration/live gates do not change this planner's
+read-only behavior or make raw Bicep conditional.
 Root Intune deployment remains compute-free. VM backend installation remains
 separately disabled by default; no installer bundle, device assignment, storage
 firewall, container, credentials, role grant or inbound rule changes here.
@@ -41,8 +44,16 @@ checks cached context again. `-EnableStorageEndpoint` proposes adding regional
 Storage; without it the current endpoints are preserved. There is no Apply switch,
 login, retry, permission fallback, deployment, provider registration or network
 mutation. Missing, forbidden, changing or unsupported observations fail with a
-fixed error and no successful proposal. The inherited CLI reader bounds responses
-but has no hard outer process deadline; the future caller must enforce one.
+fixed error and no successful proposal. The shared cached CLI reader now enforces
+a 30-second default outer process deadline, finite concurrent stdout/stderr buffers
+and process-tree termination with a bounded reap on failure. Timeout remains an
+unknown observation, never permission to change or replay a network request.
+The Windows batch-launcher shim streams/counts replies instead of collecting a
+full output array. These are captured-reply bounds, not a memory/CPU sandbox for
+Azure CLI itself. Unsupported batch metacharacters in arguments fail closed.
+Ordinary owned-process fixtures verify the recorded descendant PID is gone
+after both a Windows wrapper timeout and reply overflow; they invoke no Azure
+command. These local checks do not establish cancellation of an ARM operation.
 
 Checks include exact group/VM/network IDs and ownership markers, immutable VM
 instance, VM-to-NIC-to-subnet backlinks, same-region resources, four network ETags,

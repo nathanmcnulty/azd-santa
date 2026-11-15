@@ -6,36 +6,22 @@ $script:EndpointReader = Import-Module (Join-Path $PSScriptRoot 'HttpsEndpoint.p
 
 function Invoke-SantaStoreBridge {
     param([hashtable]$Request, [string]$Python)
-    $start = [Diagnostics.ProcessStartInfo]::new()
     # Get-Command can return every matching PATH application. Preserve ordinary
     # first-match command precedence instead of joining multiple executable paths.
-    $start.FileName = @(Get-Command $Python -CommandType Application -ErrorAction Stop)[0].Source
-    $start.ArgumentList.Add('-I')
-    $start.ArgumentList.Add((Join-Path $PSScriptRoot 'backup_store_selection.py'))
-    $start.UseShellExecute = $false
-    $start.CreateNoWindow = $true
-    $start.RedirectStandardInput = $true
-    $start.RedirectStandardOutput = $true
-    $start.RedirectStandardError = $true
-    $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
-    try {
-        $payload = $Request | ConvertTo-Json -Depth 48 -Compress
-        if ([Text.Encoding]::UTF8.GetByteCount($payload) -gt 8388608) { throw 'Selection input bound exceeded.' }
-        $null = $process.Start()
-        $stdout = $process.StandardOutput.ReadToEndAsync()
-        $stderr = $process.StandardError.ReadToEndAsync()
-        $process.StandardInput.Write($payload); $process.StandardInput.Close()
-        if (-not $process.WaitForExit(30000)) { $process.Kill($true); throw 'Selection bridge timed out.' }
-        $output = $stdout.GetAwaiter().GetResult()
-        $null = $stderr.GetAwaiter().GetResult()
-        if ($process.ExitCode -ne 0 -or [Text.Encoding]::UTF8.GetByteCount($output) -gt 65536) { throw 'Selection bridge failed.' }
-        $output | ConvertFrom-Json -Depth 48 -AsHashtable -ErrorAction Stop
-    } finally { $process.Dispose() }
+    $file = @(Get-Command $Python -CommandType Application -ErrorAction Stop)[0].Source
+    $arguments=@('-I',(Join-Path $PSScriptRoot 'backup_store_selection.py'))
+    $payload=$Request | ConvertTo-Json -Depth 48 -Compress
+    $output=& $script:EndpointReader {
+        param($file,$arguments,$payload)
+        Invoke-SantaEndpointProcess -FileName $file -Arguments $arguments -InputText $payload -InputLimit 8388608 -TimeoutSeconds 30
+    } $file $arguments $payload
+    if ([Text.Encoding]::UTF8.GetByteCount($output) -gt 65536) { throw 'Selection bridge output bound exceeded.' }
+    $output | ConvertFrom-Json -Depth 48 -AsHashtable -ErrorAction Stop
 }
 
 function Invoke-SantaStoreCachedRead {
     param([string[]]$Arguments)
-    # Reuse the existing bounded cached CLI reader, without exporting its private API.
+    # Reuse the bounded cached CLI reader, without exporting its private API.
     & $script:EndpointReader { param([string[]]$a) Invoke-SantaEndpointAzJson -Arguments $a } $Arguments
 }
 
