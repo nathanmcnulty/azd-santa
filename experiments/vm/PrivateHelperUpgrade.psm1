@@ -19,7 +19,7 @@ function Invoke-UpgradeAzure([string[]]$Arguments) {
 
 function Send-UpgradeCommand([hashtable]$Target, [hashtable]$Command, [string]$ProgramPath = $script:programPath) {
     $bytes = [IO.File]::ReadAllBytes($ProgramPath)
-    if ($bytes.Length -gt 32768) { throw 'Upgrade source exceeded its transport bound.' }
+    if ($bytes.Length -gt 65536) { throw 'Upgrade source exceeded its transport bound.' }
     $hash = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData($bytes))
     $memory = [IO.MemoryStream]::new()
     try {
@@ -34,11 +34,11 @@ function Send-UpgradeCommand([hashtable]$Target, [hashtable]$Command, [string]$P
     $bootstrap = @'
 import base64,gzip,hashlib,io,json,os
 from pathlib import Path
-with gzip.GzipFile(fileobj=io.BytesIO(base64.b64decode(os.environ['AZD_HELPER_PROGRAM'],validate=True))) as stream: raw=stream.read(32769)
-assert len(raw)<=32768 and hashlib.sha256(raw).hexdigest()==os.environ['AZD_HELPER_PROGRAM_SHA']
+with gzip.GzipFile(fileobj=io.BytesIO(base64.b64decode(os.environ['AZD_HELPER_PROGRAM'],validate=True))) as stream: raw=stream.read(65537)
+assert len(raw)<=65536 and hashlib.sha256(raw).hexdigest()==os.environ['AZD_HELPER_PROGRAM_SHA']
 value=json.loads(base64.b64decode(os.environ['AZD_HELPER_UPGRADE_COMMAND'],validate=True))
 path=Path('/var/lib/azd-santa-qualification/helper-upgrades/programs')/os.environ['AZD_HELPER_PROGRAM_SHA']/'helper_upgrade.py'
-if value['mode']!='observe':
+if value['mode'] not in ('observe','continue-observe'):
  root=Path('/var/lib/azd-santa-qualification')
  for item in (root,*root.parents):
   info=item.stat();assert item==item.resolve(strict=True) and info.st_uid==0 and not info.st_mode&0o022

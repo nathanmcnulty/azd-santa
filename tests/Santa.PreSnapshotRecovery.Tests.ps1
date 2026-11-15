@@ -7,6 +7,10 @@ Describe 'Explicit pre-snapshot failure recovery' {
         $result = & python -m unittest discover -s $PSScriptRoot -p test_presnapshot_recovery.py 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
     }
+    It 'passes the separate disable-only continuation and reload tests' {
+        $result = & python -m unittest discover -s $PSScriptRoot -p test_disabled_continuation.py 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
+    }
     InModuleScope PrivatePreSnapshotRecovery {
         BeforeEach {
             $script:target = @{ SubscriptionId='11111111-1111-4111-8111-111111111111' }
@@ -27,6 +31,23 @@ Describe 'Explicit pre-snapshot failure recovery' {
             $result.newBackupRequested | Should -BeFalse
             Should -Invoke Get-RecoveryTarget -Times 0
             Should -Invoke Send-RecoveryCommand -Times 0
+        }
+        It 'plans continuation locally without changing original action defaults' {
+            $result = Repair-SantaPrivatePreSnapshotFailure -SubscriptionId $script:target.SubscriptionId -EnvironmentName synthetic -ContinueDisableOnly
+            $result.continueDisableOnly | Should -BeTrue
+            $result.predecessorIntentSha256 | Should -BeExactly 'a4781fb605f036d7b24f1abbaa28f60d645a0437e253cad6ce174f518edb00eb'
+            Should -Invoke Get-RecoveryTarget -Times 0
+            Should -Invoke Send-RecoveryCommand -Times 0
+        }
+        It 'routes explicit continuation through observe and one request without reuploading candidate' {
+            Mock Send-RecoveryCommand {
+                param($Target,$Command)
+                $script:calls += $Command
+                if ($Command.mode -eq 'continue-chunk') { return @{scope='exact-presnapshot-recovery-chunk-v1';index=$Command.index} }
+                @{scope='exact-presnapshot-recovery-observation-v1';state=if($Command.mode -eq 'continue-observe'){'not-requested'}else{'in-progress'}}
+            }
+            Repair-SantaPrivatePreSnapshotFailure -SubscriptionId $script:target.SubscriptionId -EnvironmentName synthetic -ContinueDisableOnly -Apply | Out-Null
+            ($script:calls.mode -join ',') | Should -Be 'continue-observe,continue-request'
         }
         It 'uploads chunks then requests exactly once' {
             $result = Repair-SantaPrivatePreSnapshotFailure -SubscriptionId $script:target.SubscriptionId -EnvironmentName synthetic -Apply
@@ -67,13 +88,25 @@ Describe 'Recovery transport envelope' {
             Mock Invoke-UpgradeAzure {
                 param($Arguments)
                 $body = [IO.File]::ReadAllText($Arguments[-1].Substring(1))
-                [Text.Encoding]::UTF8.GetByteCount($body) | Should -BeLessThan 65537
+                $size=[Text.Encoding]::UTF8.GetByteCount($body)
+                $size | Should -BeLessThan 65537
+                Write-Host "Recovery maximum-chunk envelope: $size bytes (64KiB maximum)."
                 $nonce = [regex]::Match($body,'SANTA_HELPER_UPGRADE_DONE:([a-f0-9]{32})').Groups[1].Value
                 @{ value=@(@{code='ProvisioningState/succeeded';message="SANTA_HELPER_UPGRADE_JSON:{""new_bundle_sha256"":""bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb""}`nSANTA_HELPER_UPGRADE_DONE:$nonce"}) }
             }
             $program = Join-Path $PSScriptRoot '../experiments/server/presnapshot_recovery.py'
             Send-UpgradeCommand @{SubscriptionId='11111111-1111-4111-8111-111111111111';ResourceGroup='synthetic';VmName='synthetic'} @{mode='chunk';bundle_sha256='b'*64;data='a'*24576} -ProgramPath $program | Out-Null
             Should -Invoke Invoke-UpgradeAzure -Times 1
+        }
+        It 'retains both source and actual body caps without invoking Azure for oversized envelopes' {
+            Mock Invoke-UpgradeAzure { throw 'Must not invoke Azure.' }
+            $program=Join-Path $TestDrive 'incompressible-program.bin'
+            [IO.File]::WriteAllBytes($program,[Security.Cryptography.RandomNumberGenerator]::GetBytes(65536))
+            $target=@{SubscriptionId='11111111-1111-4111-8111-111111111111';ResourceGroup='synthetic';VmName='synthetic'}
+            { Send-UpgradeCommand $target @{mode='continue-chunk';bundle_sha256='b'*64;data='a'*24576} -ProgramPath $program } | Should -Throw '*transport exceeded 64KiB*'
+            [IO.File]::WriteAllBytes($program,[byte[]]::new(65537))
+            { Send-UpgradeCommand $target @{mode='continue-observe';bundle_sha256='b'*64} -ProgramPath $program } | Should -Throw '*source exceeded*'
+            Should -Invoke Invoke-UpgradeAzure -Times 0
         }
     }
 }

@@ -8,6 +8,36 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "principal": "Explicit selected cached ARM operator, existing privileged guest Run Command authority only",
+      "phase": "runtime",
+      "feature": "exact-disable-only-presnapshot-continuation",
+      "defaultEnabled": false,
+      "scope": "Exact same-boot privatehook3 pilot and explicitly reviewed failed disable-only predecessor operation; never general backup resume or restore",
+      "rationale": "An explicit offline-plan/default and ContinueDisableOnly Apply route bind the original immutable failed operation, typed loaded commands and positive terminal cgroups before one separate journaled retirement/rebind/start. It creates no role or scope grants and preserves the original ACTIVE/failure. Source/decompression is capped at64KiB and the actual combined transport body independently remains64KiB. Offline tests do not establish live continuation or backup/restore acceptance.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "experiments/server/presnapshot_recovery.py",
+          "sha256": "c27dd335c6a49b7ecf9215180d9f3e7294c162e742ba86d18babdda998430e10"
+        },
+        {
+          "path": "experiments/vm/PrivateHelperUpgrade.psm1",
+          "sha256": "529221780ee1cfd3667aaa8e133b04bcad832222a3d51ba7d7460754a4585249"
+        },
+        {
+          "path": "experiments/vm/PrivatePreSnapshotRecovery.psm1",
+          "sha256": "bc48e68dcf1cf840e1d97557608cadda9a6cba011532434275629ee77e93073b"
+        },
+        {
+          "path": "experiments/vm/Repair-PrivatePreSnapshotFailure.ps1",
+          "sha256": "9ce59ffaf61db19ac92d4838c14fe5bdc3be8b92de3ee9ed6063e8e35e389bbb"
+        }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
       "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/blobServices/containers/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read",
       "principal": "Explicit cached CLI operator selecting an existing independently owned backup store",
       "phase": "discovery",
@@ -397,6 +427,7 @@
   ],
   "gaps": [
     "The restore-census primitive observes an already-open isolated PostgreSQL connection and reviewed Django registry only. It adds no Azure/Graph grant, connection/authentication, restore, row transformation or activation. Controlled SQL/registry adapters do not prove real Django/PostgreSQL18 catalog compatibility, isolated database coverage, sequence quiescence, trusted source/image/authority or native restoration. See docs/restore-census.md.",
+    "The first exact pre-snapshot recovery failed after disabling runtime boot start; original ACTIVE/intent/failure and old request/source tuple were retained. A separately explicit, source-bound disable-only continuation now requires fresh selected authority, pinned predecessor artifacts, reviewed reload-cleared profiles, typed loaded path/argv/ignore definitions and positive terminal cgroups. No live continuation, runtime start, native backup, portable key/image retention, full-stack restore or complete application/schema census is established by this code. No new grant, automatic replay or permission sufficiency claim is added.",
     "The explicit one-case pre-snapshot failed-request retirement uses existing selected cached ARM read/Run Command rights only. It requires positive current IMDS/same-boot, terminal-unit/cgroup, original stopped-ID and no-native-effect evidence; preserves original request/source/history; stages one cold-helper replacement and starts the original runtime once. No grants or generic recovery/resume are added. Offline tests and the separate read-only namespace probe do not establish live recovery or native backup/restore acceptance. See docs/presnapshot-recovery.md.",
     "Issue #85 now includes a GET-only cached ARM existing-store selector with independent RG ownership and before/after checks. Live cached reader/API sufficiency, safe create-only lifecycle and provider/policy preflight remain unqualified; observation receipts are not authority or atomic snapshots. Source subnet deletion requires explicit network reconciliation; no stale ACL removal, endpoint change or provisioning is performed. Retention, independent download, portable key/image lifecycle and actual restore remain separate unqualified gates.",
     "Issue #85 first layer added independent backup-store templates and private native-ciphertext protocol APIs only. Actual provider/permission/policy sufficiency, cached ARM SAS/delivery integration, ownership preflight before deployment, service-endpoint integration, confidential selected-VM capability delivery, durable terminal job proof, independent verifier selection and VM/azd-down lifecycle preservation remain unqualified. Public-IP/SAS signedIp cannot authorize same-region Azure VMs/operators; only owned same-region endpoint targets are supported, with no fallback or unrelated subnet mutation. Restrictive Shared Key/SAS/network policy is a stop condition, not permission to change it. Root/VM azure.yaml and frozen source/controller/installer/upgrade paths are unchanged.",
