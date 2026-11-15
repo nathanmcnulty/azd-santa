@@ -80,6 +80,14 @@ Describe 'One bound recipient-sealed pilot profile export'{
    Test-Path ($script:output+'.intent.json')|Should -BeTrue;Test-Path $script:output|Should -BeFalse
    Should -Invoke Send-PilotEnrollment -Times 1 -Exactly
   }
+  It 'does not persist an unvalidated response containing plaintext extra fields' {
+   Mock Send-PilotEnrollment { '{"secret":"plaintext-canary"}' }
+   {Invoke-SantaPilotEnrollment @script:pilotArguments -Action Create}|Should -Throw
+   Test-Path ($script:output+'.intent.json')|Should -BeTrue
+   Test-Path ($script:output+'.sealed.json')|Should -BeFalse
+   Test-Path $script:output|Should -BeFalse
+   [IO.File]::ReadAllText($script:output+'.intent.json')|Should -Not -Match 'plaintext-canary'
+  }
   It 'rejects an existing output before any cloud request'{
    [IO.File]::WriteAllText($script:output,'retained')
    {Invoke-SantaPilotEnrollment @script:pilotArguments -Action Create}|Should -Throw

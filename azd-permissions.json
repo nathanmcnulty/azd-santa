@@ -19,7 +19,7 @@
       "evidence": [
         {
           "path": "experiments/server/PilotEnrollmentTransport.psm1",
-          "sha256": "96b3d51eae38169efa29a0a5e85304c9b5bbf8b6591fac7efb22c1cafd2469b0"
+          "sha256": "d0e463e852136ca6d092e03eadada1696487ac9ef6d61fb682f7a5d6c265914e"
         },
         {
           "path": "experiments/server/Invoke-SantaPilotEnrollment.ps1",

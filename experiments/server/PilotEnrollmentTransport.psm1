@@ -81,8 +81,8 @@ function Invoke-SantaPilotEnrollment{
   if(($context|ConvertTo-Json -Depth 16 -Compress) -cne ((Pilot-Read @('account','show','--subscription',$bound.SubscriptionId))|ConvertTo-Json -Depth 16 -Compress)){throw 'Selected account drift.'}
   & $script:files {param($p,$b) Write-SantaPrivateBytes $p $b} $intent ([Text.Encoding]::UTF8.GetBytes((@{scope='one-pilot-enrollment-attempt-v1';context_sha256=$digest;binding=$request.Binding;request=$enrollment}|ConvertTo-Json -Depth 8 -Compress)))
   try{$envelope=Send-PilotEnrollment $request $enrollment create}catch{if(-not $ReadbackOnUnknown){throw};$envelope=Send-PilotEnrollment $request $enrollment observe}
-  & $script:files {param($p,$b) Write-SantaPrivateBytes $p $b} $sealed ([Text.Encoding]::UTF8.GetBytes($envelope))
   $profile=[SantaPilot.Profile]::Receive($envelope,$digest,$request.Recipient.KeyId,$request.Recipient.Key,$baseline,$bound.Origin)
+  & $script:files {param($p,$b) Write-SantaPrivateBytes $p $b} $sealed ([Text.Encoding]::UTF8.GetBytes($envelope))
   & $script:files {param($p,$b) Write-SantaPrivateBytes $p $b} $PrivateOutputPath $profile
   @{scope='santa-pilot-enrollment-export-v1';profileExported=$true;privateOutputPath=$PrivateOutputPath;deviceDeliveryProven=$false;monitor=$true}
  }catch{throw 'Pilot enrollment failed or is unknown; preserve local intent/ciphertext. Never replay Create. No profile or credential is returned.'}
