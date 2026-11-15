@@ -33,7 +33,7 @@ The xtables lock must exist and connlimit must be available on the selected host
 Concurrent unrelated firewall writers and arbitrary later root changes are not
 contained by this helper. Failures preserve the restrictive partial state.
 
-Six offline cases cover configuration, header trust, service bounds and firewall
+Seven offline cases cover configuration, header trust, service bounds and firewall
 preservation/rejection. The pinned Windows Caddy binary provisioned the private
 profile successfully using a synthetic certificate; no listener or ACME request
 was started. Actual Linux rule behavior, connection floods, header enforcement,

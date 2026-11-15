@@ -102,5 +102,10 @@ class Firewall(unittest.TestCase):
         self.input.insert(1, ['-A', 'INPUT', '-j', 'ACCEPT'])
         with self.assertRaises(ValueError): edge.verify_firewall(8443)
 
+    def test_return_before_limit_is_rejected_even_when_both_rules_exist(self):
+        edge.ensure_firewall(8443)
+        self.chain[1], self.chain[2] = self.chain[2], self.chain[1]
+        with self.assertRaises(ValueError): edge.verify_firewall(8443)
+
 
 if __name__ == '__main__': unittest.main()

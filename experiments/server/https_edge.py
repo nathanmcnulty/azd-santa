@@ -73,6 +73,9 @@ def unit_text(binary, config, state, *, port=8443):
         'After=network-online.target azd-santa-https-firewall-' + str(port) + '.service',
         '[Service]', 'Type=exec', 'User=azd-santa-https', 'Group=azd-santa-https',
         'ExecStart=' + paths[0] + ' run --config ' + paths[1],
+        'Environment=HOME=' + paths[2],
+        'Environment=XDG_CONFIG_HOME=' + paths[2] + '/xdg-config',
+        'Environment=XDG_DATA_HOME=' + paths[2] + '/xdg-data',
         'Restart=no', 'TimeoutStopSec=15', 'KillMode=control-group', 'UMask=0077',
         'NoNewPrivileges=yes', 'PrivateTmp=yes', 'PrivateDevices=yes', 'ProtectHome=yes',
         'ProtectSystem=strict', 'ReadWritePaths=' + paths[2],
@@ -94,7 +97,8 @@ def firewall_unit_text(script, *, port=8443):
         'ExecStart=/usr/bin/python3 -I -B ' + str(script) + ' --ensure-firewall ' + str(port),
         'TimeoutStartSec=60', 'NoNewPrivileges=yes', 'ProtectSystem=strict',
         'ReadWritePaths=/run/xtables.lock',
-        'ProtectHome=yes', 'PrivateTmp=yes', 'CapabilityBoundingSet=CAP_NET_ADMIN', ''))
+        'ProtectHome=yes', 'PrivateTmp=yes', 'CapabilityBoundingSet=CAP_NET_ADMIN',
+        'MemoryMax=64M', 'TasksMax=16', 'LimitNOFILE=64', ''))
 
 
 def rules(port):
@@ -124,6 +128,8 @@ def verify_firewall(port):
     chain, reject, jump = rules(port)
     chain_lines = lines(command(['-S', chain]))
     need(len(chain_lines) == 3 and chain_lines[0] == ['-N', chain])
+    # Membership alone is insufficient: RETURN must not bypass the limiter.
+    need(chain_lines[2] == ['-A', chain, '-j', 'RETURN'])
     command(['-C', chain, *reject]); command(['-C', chain, '-j', 'RETURN'])
     input_lines = lines(command(['-S', 'INPUT']))
     entries = [row for row in input_lines if row[:2] == ['-A', 'INPUT']]
