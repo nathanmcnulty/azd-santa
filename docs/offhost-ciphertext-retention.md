@@ -122,6 +122,10 @@ byte verification; download and compare with the separately retained expected SH
 
 ## Recovery artifacts and remaining integration
 
+The optional VM creation-time Storage endpoint setting and GET-only existing
+network proposal are described in [private Storage endpoint wiring](private-storage-endpoint.md).
+They do not apply an existing-network change or close live retention/restore gates.
+
 The native 2GiB artifact does not retain container images. The selected local core
 image `sha256:8321d09e6b0904e39e282cf07e809fdfe7c8baeb3638d77e44ba51bf4d0ce43a`
 was built locally, without an authoritative registry publication. Full restore

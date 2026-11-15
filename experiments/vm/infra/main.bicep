@@ -7,6 +7,10 @@ param location string
 // azd initializes parameters before preprovision. Allow that local phase to
 // reach the key hook; the actual host module retains the required length gate.
 param sshPublicKey string = ''
+// Empty azd inputs retain disabled/empty defaults without ordinary prompts.
+@allowed(['', 'false', 'true'])
+param backupStorageEndpoint string = ''
+param existingHostServiceEndpointsJson string = ''
 
 var tags = {
   'azd-env-name': environmentName
@@ -27,6 +31,8 @@ module host './host.bicep' = {
     location: location
     sshPublicKey: sshPublicKey
     tags: tags
+    enableBackupStorageEndpoint: backupStorageEndpoint == 'true'
+    existingHostServiceEndpoints: empty(existingHostServiceEndpointsJson) ? [] : json(existingHostServiceEndpointsJson)
   }
 }
 
