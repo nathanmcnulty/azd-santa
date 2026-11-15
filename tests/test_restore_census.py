@@ -2,6 +2,7 @@
 import copy
 import importlib.util
 import json
+import re
 from pathlib import Path
 import unittest
 from types import SimpleNamespace as NS
@@ -44,9 +45,13 @@ class Cursor:
     def __init__(self,connection):self.connection=connection;self.stream=[];self.closed=False
     def execute(self,sql,params=None):
         db=self.connection;db.commands.append((sql,params))
+        if params is not None:
+            # Model driver pyformat parsing, including markers inside SQL quotes.
+            assert len(re.findall(r'%s',sql.replace('%%','')))==len(params)
         if db.fail and db.fail in sql:raise RuntimeError('raw credential must never escape')
         if sql.startswith('DECLARE '):
-            db.maximum=params[0]
+            assert params is None
+            db.maximum=int(re.search(r'octet_length\(value\)<=(\d+)',sql).group(1))
             body=sql.split(' FROM (',1)[1].rsplit(') AS census_values(value)',1)[0]
             key=next((name for name,query in c.CATALOG.items() if query==body),None)
             if key:self.stream=copy.deepcopy(db.catalog[key])
@@ -78,7 +83,7 @@ class Connection:
             self.catalog['relations'].append(dict(schema='public',name=table,kind='r',row_security=False))
             fields=list(rows[0]) if rows else ['id']
             for i,name in enumerate(fields):
-                self.catalog['columns'].append(dict(schema='public',table=table,name=name,position=i+1,type='integer' if name=='id' else 'text',type_schema='pg_catalog',generated=''))
+                self.catalog['columns'].append(dict(schema='public',table=table,name=name,position=i+1,type='integer' if name=='id' else 'text',type_schema='pg_catalog',type_oid=23 if name=='id' else 25,generated='',dropped=False))
         self.catalog['constraints']=[dict(schema='public',table='accounts_user_groups',name='user_fk',type='f',columns=['user_id'],foreign_schema='public',foreign_table='accounts_user',foreign_columns=['id'],definition='FOREIGN KEY (user_id) REFERENCES accounts_user(id)')]
         self.catalog['constraints'] += [dict(schema='public',table=table,name=table+'_pkey',type='p',columns=['id'],definition='PRIMARY KEY (id)') for table in self.data]
         self.catalog['objects']=[dict(catalog='pg_class',type='table',schema='public',name=name,identity='public.'+name) for name in self.data]
@@ -155,13 +160,14 @@ class CensusTests(unittest.TestCase):
             else:changed.manifest['catalog']['columns'].pop()
             with self.assertRaises(c.CensusRejected):c.compare(changed,changed,self.mapping(changed),fingerprint_key=KEY)
     def test_unknown_objects_foreign_tables_rls_generated_custom_types_block_data_reads(self):
-        for kind in ('catalog','foreign','rls','generated','type','global'):
+        for kind in ('catalog','foreign','rls','generated','type','catalog-type','global'):
             self.setUp()
             if kind=='catalog':self.db.catalog['objects'][0]['catalog']='pg_operator'
             elif kind=='foreign':self.db.catalog['relations'][0]['kind']='f'
             elif kind=='rls':self.db.catalog['relations'][0]['row_security']=True
             elif kind=='generated':self.db.catalog['columns'][0]['generated']='v'
             elif kind=='type':self.db.catalog['columns'][0]['type_schema']='unreviewed'
+            elif kind=='catalog-type':self.db.catalog['columns'][0]['type_oid']=20000
             else:self.db.catalog['global_blockers']=[dict(kind='large_objects',count=1)]
             observed=self.collect()
             self.assertGreater(observed.receipt['unsupported_facts'],0);self.assertFalse(observed.receipt['complete_supported_data'])
@@ -194,6 +200,43 @@ class CensusTests(unittest.TestCase):
             else:self.db.catalog['constraints']=[v for v in self.db.catalog['constraints'] if v['type']!='p']
             observed=self.collect()
             with self.assertRaises(c.CensusRejected):c.compare(observed,observed,self.mapping(observed),fingerprint_key=KEY)
+
+    def test_percent_identifiers_are_literal_on_parameter_free_read_wire(self):
+        name='literal%s%table'
+        self.db.data[name]=[dict(id=4)]
+        self.db.catalog['relations'].append(dict(schema='public',name=name,kind='r',row_security=False))
+        self.db.catalog['columns'].append(dict(schema='public',table=name,name='id',position=1,type='integer',
+            type_schema='pg_catalog',type_oid=23,generated='',dropped=False))
+        observed=self.collect()
+        self.assertEqual(observed.manifest['data'][c.relation_key('public',name)]['rows'],1)
+        query,params=next((sql,params) for sql,params in self.db.commands if sql.startswith('DECLARE') and c.quote(name) in sql)
+        self.assertIsNone(params);self.assertIn(c.quote(name),query)
+        c.compare(observed,copy.deepcopy(observed),self.mapping(observed),fingerprint_key=KEY)
+
+    def test_parent_namespace_components_cannot_alias_in_schema_fingerprints(self):
+        self.db.catalog['relations'][0]['parents']=[['a.b','c']]
+        old=self.collect();self.db=Connection();self.db.catalog['relations'][0]['parents']=[['a','b.c']]
+        new=self.collect()
+        with self.assertRaises(c.CensusRejected):c.compare(new,old,self.mapping(old),fingerprint_key=KEY)
+
+    def test_dropped_column_tombstones_are_facts_not_active_row_columns(self):
+        self.db.catalog['columns'].append(dict(schema='public',table='accounts_user',name='....pg.dropped.3....',
+            position=3,type='-',type_schema=None,type_oid=0,generated='',dropped=True))
+        observed=self.collect()
+        self.assertTrue(observed.receipt['complete_supported_data'])
+        self.assertTrue(any(v['dropped'] for v in observed.manifest['catalog']['columns']))
+        c.compare(observed,copy.deepcopy(observed),self.mapping(observed),fingerprint_key=KEY)
+
+    def test_interruption_and_unknown_begin_result_always_attempt_rollback(self):
+        original=copy.deepcopy(self.db.data)
+        self.db.fail='BEGIN'
+        with self.assertRaises(c.CensusRejected):self.collect()
+        self.assertEqual(self.db.commands[-1][0],'ROLLBACK')
+        self.setUp()
+        with patch.object(self.db.cursor_instance,'fetchall',side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):self.collect()
+        self.assertEqual(self.db.commands[-1][0],'ROLLBACK');self.assertTrue(self.db.cursor_instance.closed)
+        self.assertEqual(self.db.data,original)
 
     def test_ambiguous_qualified_relation_names_cannot_overwrite_each_other(self):
         self.assertNotEqual(c.relation_key('a.b','c'),c.relation_key('a','b.c'))

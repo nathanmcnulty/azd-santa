@@ -43,7 +43,8 @@ The private manifest contains:
   scanned under the same snapshot and limits before the real Django loader reads
   them. Migration modules and their dependencies are trusted executable source;
   local fake-loader tests do not qualify real Django behavior.
-- Non-system namespaces, relations, columns/defaults/collations, constraints,
+- Non-system namespaces, relations, columns/defaults/collations (including dropped
+  column tombstones as catalog facts, without pretending to read dropped values), constraints,
   indexes, triggers, rules, row-security policies, types, routine definitions,
   sequence definitions, extensions and database/collation observations. Recursive
   dependency identities expose unsupported catalog classes. This is a supported
@@ -52,12 +53,15 @@ The private manifest contains:
   table, partition, materialized view and sequence, including empty relations and
   duplicate rows. `ONLY` prevents inheritance/partition double counting. Plain
   views retain definitions rather than execute their queries. Quoted relation
-  keys distinguish names containing punctuation. Row values are not retained,
+  keys distinguish names containing punctuation. Read DECLARE statements bind no
+  parameters; only a strictly validated integer limit is embedded, so literal %
+  characters inside quoted identifiers bypass driver pyformat parsing. Row values are not retained,
   except bounded migration metadata. Schema definitions can themselves contain
   secrets, so the entire manifest remains confidential.
 
 No data scan occurs if preflight finds unsupported objects, foreign tables,
-custom column types, generated columns, RLS, unsupported routines/types, large
+custom column types (including normal/user OIDs masquerading inside pg_catalog),
+generated columns, RLS, unsupported routines/types, large
 objects, foreign servers, publications/subscriptions, event triggers or custom
 casts. The private observation retains blocker identities and reports
 `complete_supported_data=false`; comparison rejects it. There is no fallback to

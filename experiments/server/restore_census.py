@@ -94,12 +94,14 @@ class Reader:
     def check(self): need(self.clock()<self.deadline)
     def execute(self,sql,params=None):
         self.check();self.cursor.execute(sql,params);self.check()
-    def read(self,sql,params=(),*,data=False):
+    def read(self,sql,*,data=False):
         self.serial+=1;name=quote('santa_census_'+str(self.serial))
         # The server does not send an oversized value to the client. A complete
         # scan must finish; limits reject, never truncate to a successful census.
-        wrapped='SELECT octet_length(value), CASE WHEN octet_length(value)<=%s THEN value ELSE NULL END FROM ('+sql+') AS census_values(value)'
-        self.execute('DECLARE '+name+' NO SCROLL CURSOR FOR '+wrapped,(self.limits.value_bytes,*params))
+        # Only a validated bounded integer is embedded. No read-query binds:
+        # pyformat parsing would interpret literal '%' inside quoted identifiers.
+        wrapped='SELECT octet_length(value), CASE WHEN octet_length(value)<='+str(self.limits.value_bytes)+' THEN value ELSE NULL END FROM ('+sql+') AS census_values(value)'
+        self.execute('DECLARE '+name+' NO SCROLL CURSOR FOR '+wrapped)
         try:
             while True:
                 self.execute('FETCH FORWARD 32 FROM '+name)
@@ -123,22 +125,22 @@ CATALOG = {
  'relations':"""SELECT json_build_object('schema',n.nspname,'name',c.relname,'kind',c.relkind,
  'owner',pg_get_userbyid(c.relowner),'persistence',c.relpersistence,'options',c.reloptions,'acl',c.relacl,
  'replica_identity',c.relreplident,'populated',c.relispopulated,
- 'parents',ARRAY(SELECT pn.nspname||'.'||pc.relname FROM pg_inherits h JOIN pg_class pc ON pc.oid=h.inhparent JOIN pg_namespace pn ON pn.oid=pc.relnamespace WHERE h.inhrelid=c.oid ORDER BY h.inhseqno),
+ 'parents',ARRAY(SELECT json_build_array(pn.nspname,pc.relname) FROM pg_inherits h JOIN pg_class pc ON pc.oid=h.inhparent JOIN pg_namespace pn ON pn.oid=pc.relnamespace WHERE h.inhrelid=c.oid ORDER BY h.inhseqno),
  'tablespace',(SELECT spcname FROM pg_tablespace WHERE oid=c.reltablespace),
  'row_security',c.relrowsecurity,'force_row_security',c.relforcerowsecurity,'partition',c.relispartition,
  'partition_key',CASE WHEN c.relkind='p' THEN pg_get_partkeydef(c.oid) END,
  'bound',pg_get_expr(c.relpartbound,c.oid),'view',CASE WHEN c.relkind IN ('v','m') THEN pg_get_viewdef(c.oid,false) END)::text
  FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE """+NS,
  'columns':"""SELECT json_build_object('schema',n.nspname,'table',c.relname,'name',a.attname,'position',a.attnum,
- 'type',format_type(a.atttypid,a.atttypmod),'type_schema',tn.nspname,'not_null',a.attnotnull,
+ 'dropped',a.attisdropped,'type_oid',a.atttypid,'type',format_type(a.atttypid,a.atttypmod),'type_schema',tn.nspname,'not_null',a.attnotnull,
  'acl',a.attacl,'options',a.attoptions,'fdw_options',a.attfdwoptions,'storage',a.attstorage,'compression',a.attcompression,'statistics',a.attstattarget,
  'identity',a.attidentity,'generated',a.attgenerated,'default',pg_get_expr(d.adbin,d.adrelid),
- 'collation',CASE WHEN a.attcollation<>0 THEN cn.nspname||'.'||co.collname END)::text
+ 'collation',CASE WHEN a.attcollation<>0 THEN json_build_array(cn.nspname,co.collname) END)::text
  FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace
- JOIN pg_type t ON t.oid=a.atttypid JOIN pg_namespace tn ON tn.oid=t.typnamespace
+ LEFT JOIN pg_type t ON t.oid=a.atttypid LEFT JOIN pg_namespace tn ON tn.oid=t.typnamespace
  LEFT JOIN pg_attrdef d ON d.adrelid=c.oid AND d.adnum=a.attnum
  LEFT JOIN pg_collation co ON co.oid=a.attcollation LEFT JOIN pg_namespace cn ON cn.oid=co.collnamespace
- WHERE a.attnum>0 AND NOT a.attisdropped AND """+NS,
+ WHERE a.attnum>0 AND """+NS,
  'constraints':"""SELECT json_build_object('schema',n.nspname,'name',co.conname,'table',c.relname,
  'type',co.contype,'columns',ARRAY(SELECT a.attname FROM unnest(co.conkey) WITH ORDINALITY k(num,ord) JOIN pg_attribute a ON a.attrelid=co.conrelid AND a.attnum=k.num ORDER BY k.ord),
  'foreign_schema',fn.nspname,'foreign_table',fc.relname,'foreign_columns',ARRAY(SELECT a.attname FROM unnest(co.confkey) WITH ORDINALITY k(num,ord) JOIN pg_attribute a ON a.attrelid=co.confrelid AND a.attnum=k.num ORDER BY k.ord),
@@ -270,8 +272,8 @@ def collect(connection,registry,*,fingerprint_key,limits=Limits(),clock=time.mon
         unsupported += [dict(category='type',identity=relation_key(v['schema'],v['name'])) for v in catalog['types'] if v['kind']!='c' and not (v['kind']=='b' and v['element'] is not None)]
         unsupported += [dict(category='relation',identity=relation_key(r['schema'],r['name'])) for r in catalog['relations'] if r['kind'] not in ('r','p','S','v','m','i','I','c','t')]
         for relation in catalog['relations']:
-            columns=[c for c in catalog['columns'] if c['schema']==relation['schema'] and c['table']==relation['name']]
-            if relation['row_security'] or any(c['type_schema']!='pg_catalog' or c['generated'] for c in columns):
+            columns=[c for c in catalog['columns'] if c['schema']==relation['schema'] and c['table']==relation['name'] and not c['dropped']]
+            if relation['row_security'] or any(c['type_schema']!='pg_catalog' or type(c['type_oid']) is not int or not 0<c['type_oid']<16384 or c['generated'] for c in columns):
                 unsupported.append(dict(category='row_read',identity=relation_key(relation['schema'],relation['name'])))
         data={};applied=[]
         for relation in (() if unsupported else catalog['relations']):
@@ -279,7 +281,7 @@ def collect(connection,registry,*,fingerprint_key,limits=Limits(),clock=time.mon
             if kind not in ('r','p','m','S'):continue
             # Never execute foreign-table wrappers, views, custom type output
             # functions or filtered RLS reads. Unknowns remain private blockers.
-            columns=[c for c in catalog['columns'] if c['schema']==schema and c['table']==table]
+            columns=[c for c in catalog['columns'] if c['schema']==schema and c['table']==table and not c['dropped']]
             qualified=quote(schema)+'.'+quote(table)
             if kind=='S':sql="SELECT json_build_object('last_value',last_value,'is_called',is_called)::text FROM "+qualified
             else:sql='SELECT row_to_json(t)::text FROM '+('' if kind=='m' else 'ONLY ')+qualified+' t'
@@ -361,7 +363,7 @@ def compare(observed,expected,dispositions,*,fingerprint_key):
             table=relation_key('public',model['table']);need(table in all_relations
                 and all_relations[table] in (('r','p') if model['managed'] else ('r','p','v','m')))
             if not model['proxy']:
-                actual={c['name'] for c in observed.manifest['catalog']['columns'] if relation_key(c['schema'],c['table'])==table}
+                actual={c['name'] for c in observed.manifest['catalog']['columns'] if relation_key(c['schema'],c['table'])==table and not c['dropped']}
                 need(actual=={f['column'] for f in model['fields'] if f['local'] and f['concrete'] and f['column'] is not None})
                 constraints=[v for v in observed.manifest['catalog']['constraints'] if relation_key(v['schema'],v['table'])==table]
                 for item in model['fields']:
