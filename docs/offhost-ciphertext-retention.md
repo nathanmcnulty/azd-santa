@@ -1,5 +1,10 @@
 # Optional encrypted ciphertext retention layer
 
+The separate [independent-store creation command](independent-backup-store-deployment.md)
+now supplies default no-cloud planning and explicit Apply/Observe orchestration
+as source/offline implementation. Actual deployment/policy/retention acceptance
+remains separate; the lower-level selector described below never creates resources.
+
 This first layer for [issue85](https://github.com/nathanmcnulty/azd-santa/issues/85)
 provides an independent backup-store template and private Python protocol APIs.
 It does not wire a new administrator command, provision a store, change a subnet,
