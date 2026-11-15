@@ -54,6 +54,17 @@ class EnrollmentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.key.decrypt(bytes([cipher[0] ^ 1]) + cipher[1:], oaep)
 
+    def test_readback_envelope_cannot_export_extra_plaintext_or_wrong_recipient(self):
+        request = self.request()
+        envelope = pilot.seal(request, 'SYNTHETIC_CANARY_123', 3, 7)
+        self.assertEqual(pilot.validate_envelope(envelope, request, 3, 7), envelope)
+        for changes in ({'unexpected_plaintext': 'SYNTHETIC_CANARY_123'},
+                        {'recipient_sha256': '0' * 64}, {'context_sha256': '0' * 64},
+                        {'ciphertext_base64': 'A' * 508}, {'configuration_id': True},
+                        {'enrollment_id': 9}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                pilot.validate_envelope(dict(envelope, **changes), request, 3, 7)
+
     def test_rejects_unbound_malformed_or_broadened_requests(self):
         for changes in ({'source_commit': '0' * 40}, {'serial': '*'},
                         {'hardware_uuid': '00000000-0000-0000-0000-000000000000'},

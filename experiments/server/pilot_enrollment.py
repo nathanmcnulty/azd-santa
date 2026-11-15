@@ -93,11 +93,30 @@ def write_new(path, value):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'wb') as stream:
         stream.write(raw); stream.flush(); os.fsync(stream.fileno())
-    directory = os.open(Path(path).parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    sync_directory(Path(path).parent)
+
+
+def sync_directory(path):
+    directory = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         os.fsync(directory)
     finally:
         os.close(directory)
+
+
+def validate_envelope(envelope, request, configuration_id, enrollment_id):
+    digest, _ = validate(request)
+    need(type(envelope) is dict and set(envelope) == {
+        'scope', 'context_sha256', 'recipient_sha256', 'configuration_id', 'enrollment_id', 'ciphertext_base64'})
+    need(envelope['scope'] == SCOPE and envelope['context_sha256'] == digest
+         and envelope['recipient_sha256'] == hashlib.sha256(base64.b64decode(request['recipient_public_key'])).hexdigest()
+         and type(envelope['configuration_id']) is int and envelope['configuration_id'] == configuration_id
+         and type(envelope['enrollment_id']) is int and envelope['enrollment_id'] == enrollment_id)
+    value = envelope['ciphertext_base64']
+    need(type(value) is str and len(value) == 512)
+    raw = base64.b64decode(value, validate=True)
+    need(len(raw) == 384 and base64.b64encode(raw).decode() == value)
+    return envelope
 
 
 def read_private(path):
@@ -164,6 +183,7 @@ def run(request, checkpoint_root, operation):
     folder = root / digest
     if operation == 'create':
         folder.mkdir(mode=0o700)  # Exclusive durable attempt; do not replay.
+        sync_directory(root)
         private_directory(folder)
         write_new(folder / 'request.json', request)
         transaction, _, _, _, MBU, Secret, Configuration, Enrollment, _, _ = models()
@@ -189,6 +209,4 @@ def run(request, checkpoint_root, operation):
         need(read_private(folder / 'request.json') == request)
     configuration, enrollment, _ = projection(request)
     envelope = read_private(folder / 'sealed.json')
-    need(envelope['scope'] == SCOPE and envelope['context_sha256'] == digest
-         and envelope['configuration_id'] == configuration.pk and envelope['enrollment_id'] == enrollment.pk)
-    return envelope
+    return validate_envelope(envelope, request, configuration.pk, enrollment.pk)
