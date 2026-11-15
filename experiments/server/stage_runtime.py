@@ -76,7 +76,7 @@ def initialize_snapshot_volume(project, configured, run):
         raise ValueError('Native repository ownership was not established')
 
 
-def stage(source, lock_path, destination, image_id):
+def stage(source, lock_path, destination, image_id, *, https_origin=None):
     require_host()
     destination = Path(destination).absolute()
     if destination.exists() or destination.is_symlink():
@@ -97,7 +97,7 @@ def stage(source, lock_path, destination, image_id):
     if labels.get('org.opencontainers.image.revision') != COMMIT or labels.get('io.azd-santa.variant') != 'core-experiment':
         raise ValueError('Built image labels do not match the reviewed core experiment')
     lock = json.loads(Path(lock_path).read_text())
-    prepare(source, image_id, lock, destination, 'core-experiment')
+    prepare(source, image_id, lock, destination, 'core-experiment', https_origin=https_origin)
     config_dir = destination / 'docker-config'
     config_dir.mkdir(mode=0o700)
     environment['DOCKER_CONFIG'] = str(config_dir)

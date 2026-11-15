@@ -50,6 +50,8 @@ def completion(directory, active):
     need(set(value) == {'scope', 'bundle_sha256', 'outputs', 'limitation'} and
          value['scope'] == 'private-azd-install-complete' and value['bundle_sha256'] == active['bundle_sha256'])
     need(all(value['outputs'][key] == item for key, item in active['target'].items()))
+    if 'https_origin' in active:
+        need(value['outputs']['Origin'] == active['https_origin'])
     return raw, value
 
 
@@ -110,7 +112,7 @@ def status(bundle_sha):
 
 
 def run(value):
-    need(os.geteuid() == 0 and set(value) <= {'mode', 'bundle_sha256', 'archive_sha256', 'index', 'count', 'data', 'target'})
+    need(os.geteuid() == 0 and set(value) <= {'mode', 'bundle_sha256', 'archive_sha256', 'index', 'count', 'data', 'target', 'https_origin'})
     os.umask(0o077)
     digest = value['bundle_sha256']; need(re.fullmatch('[a-f0-9]{64}', digest))
     ROOT.mkdir(mode=0o700, exist_ok=True); secure(ROOT)
@@ -119,7 +121,7 @@ def run(value):
         secure(ACTIVE); old = json.loads(ACTIVE.read_bytes())
         need(old['bundle_sha256'] == digest)
         if mode == 'submit':
-            need(old['target'] == value['target']); return status(digest)
+            need(old['target'] == value['target'] and old.get('https_origin') == value.get('https_origin')); return status(digest)
         if mode == 'observe': return status(digest)
     else:
         need(not Path('/etc/systemd/system/azd-santa-runtime.service').exists())
@@ -163,6 +165,10 @@ def run(value):
         need(not command(['docker', '--host', 'unix:///var/run/docker.sock', 'ps', '--all', '--quiet']).strip())
         need(not command(['docker', '--host', 'unix:///var/run/docker.sock', 'volume', 'ls', '--quiet']).strip())
     context = dict(scope='private-azd-install-v1', bundle_sha256=digest, target=value['target'])
+    if 'https_origin' in value:
+        need(type(value['https_origin']) is str and re.fullmatch(
+            r'https://santa-[a-f0-9]{16}-[a-z0-9-]{2,32}-vm\.[a-z0-9]{2,32}\.cloudapp\.azure\.com', value['https_origin']))
+        context['https_origin'] = value['https_origin']
     context_raw = json.dumps(context, sort_keys=True).encode()
     exclusive(selected / 'context.json', context_raw)
     # Cross-process exclusive durable reservation precedes systemd submission.

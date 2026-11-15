@@ -207,3 +207,7 @@ selected private cold-finalization result above does not qualify them.
 `azd down` retains its normal
 destructive infrastructure semantics; stopping/restarting the runtime is not a
 backup or restore qualification.
+
+The default-off [fresh selected HTTPS origin](fresh-https-origin.md) profile binds
+the existing authoritative Azure hostname through fresh configuration and
+completion. It does not update an existing installation or expose a listener.
