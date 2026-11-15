@@ -79,7 +79,15 @@ owned store/network/retention gates remain separate.
 Offline tests use actual local evidence files and in-memory HTTP handlers, not
 sockets or a tenant. They cover fresh-plan drift, exact header/body, token handling,
 lost replies, one PUT, 412/202/redirect/error outcomes, response/cancellation bounds,
-retained endpoint/policy checks and same-handle non-replay. Actual cached-token
-integration, live selected-subnet mutation/readback and power-loss qualification
-remain open. See [the planner](private-storage-endpoint.md) and
+retained endpoint/policy checks and same-handle non-replay.
+
+On 2026-11-15 UTC a bounded read-only preflight against the selected deallocated
+private pilot passed the real ownership/network planner and cached ARM token
+acquisition. The token response matched the selected tenant/subscription and
+remained in memory; no token was printed or written to the evidence. Its observed
+graph digest was
+`8ffd056716d171d972db36e8c51751c6995ba1ab2559a8cf526568c09ef55992`.
+This established that reader/token integration case, with no network PUT.
+Live selected-subnet mutation/readback and power-loss qualification remain open.
+See [the planner](private-storage-endpoint.md) and
 [off-host retention](offhost-ciphertext-retention.md).
