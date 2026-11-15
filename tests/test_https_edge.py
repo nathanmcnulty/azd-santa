@@ -20,8 +20,8 @@ class Edge(unittest.TestCase):
         self.assertNotIn('automation', data['apps']['tls'])
         self.assertEqual(server['protocols'], ['h1'])
         handlers = server['routes'][0]['handle']
-        self.assertEqual([h['handler'] for h in handlers], ['request_body', 'reverse_proxy'])
-        self.assertEqual(handlers[1]['headers']['request']['set']['Host'], ['localhost'])
+        self.assertEqual([h['handler'] for h in handlers], ['request_body', 'headers', 'reverse_proxy'])
+        self.assertEqual(handlers[2]['headers']['request']['set']['Host'], ['localhost'])
         self.assertEqual(data['admin'], {'disabled': True})
         # The original unqualified candidate retains its unconditional hold.
         self.assertEqual(edge.candidate.configuration(facts(), Path('/private/state'))['apps']['http']['servers']['https']['routes'][0]['handle'][1]['status_code'], 503)
@@ -38,7 +38,12 @@ class Edge(unittest.TestCase):
 
     def test_header_trust_and_resource_bounds_are_explicit(self):
         data = edge.configuration(facts(), Path('/private/state'), phase='staging')
-        proxy = data['apps']['http']['servers']['https']['routes'][0]['handle'][1]
+        handlers = data['apps']['http']['servers']['https']['routes'][0]['handle']
+        proxy = handlers[2]
+        self.assertIn('X-Forwarded-*', handlers[1]['request']['delete'])
+        self.assertNotIn('X-Forwarded-*', proxy['headers']['request']['delete'])
+        self.assertIn('X-Forwarded-For', proxy['headers']['request']['delete'])
+        self.assertEqual(proxy['headers']['request']['set']['X-Forwarded-Proto'], ['https'])
         self.assertIn('X-Azd-Santa-Client-IP', proxy['headers']['request']['delete'])
         self.assertEqual(proxy['headers']['request']['set']['Host'], [facts()['Fqdn']])
         self.assertNotIn('X-Forwarded-For', proxy['headers']['request']['set'])

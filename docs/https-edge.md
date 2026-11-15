@@ -34,9 +34,24 @@ Concurrent unrelated firewall writers and arbitrary later root changes are not
 contained by this helper. Failures preserve the restrictive partial state.
 
 Seven offline cases cover configuration, header trust, service bounds and firewall
-preservation/rejection. The pinned Windows Caddy binary provisioned the private
-profile successfully using a synthetic certificate; no listener or ACME request
-was started. Actual Linux rule behavior, connection floods, header enforcement,
-backend fail-closed behavior and service resource limits require private VM
-qualification before public admission. No native Mac or trusted TLS claim follows
-from these source/configuration checks.
+preservation/rejection. An opt-in pinned-binary loopback regression also checks
+the actual headers received by an echo backend. Set `SANTA_CADDY_EXE` to the pinned
+binary when running `tests/test_https_edge_live.py`; no ACME request is made.
+
+On 2026-11-15, the selected Ubuntu pilot started the dedicated unprivileged
+private service, preserved its original backend generation and returned HTTP302
+through synthetic-certificate TLS. Kernel connection qualification accepted16
+simultaneous connections and rejected the next4; systemd resource limits matched
+the rendered unit. This observes configured limits, not stress/CPU containment.
+
+Actual Linux header inspection found that proxy wildcard deletion also erased
+the fixed HTTPS metadata. The correction removes incoming wildcard headers in
+an earlier handler, retains fixed Host/X-Forwarded-Host/X-Forwarded-Proto and
+deletes the proxy-generated X-Forwarded-For. Both the pinned Windows regression
+and a separate Linux loopback echo fixture passed the corrected behavior.
+The running private service remains the original staged version; its old
+configuration and the failed header observation are retained as evidence.
+
+These are private component proofs. Integrated overload/dependency failure,
+renewal/reboot, trusted certificates, operator enrollment and actual Mac sync
+remain unqualified. Public ingress remains closed.

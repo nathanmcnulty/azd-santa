@@ -41,10 +41,16 @@ def configuration(facts, state, *, phase='private', certificate=None, key=None):
     # conservatively shared across this one-Mac pilot, never caller identity.
     headers = upstream['headers']['request']
     headers['delete'].append('X-Azd-Santa-Client-IP')
+    # Caddy applies proxy deletions after sets. Strip caller wildcards before
+    # proxying so they cannot also erase the fixed HTTPS origin metadata.
+    incoming_delete = list(headers['delete'])
+    headers['delete'].remove('X-Forwarded-*')
+    headers['delete'].append('X-Forwarded-For')
     headers['set'].pop('X-Forwarded-For', None)
     headers['set']['Host'] = ['localhost' if phase == 'private' else facts['Fqdn']]
     upstream['transport']['network_proxy'] = {'from': 'none'}
     upstream['transport']['keep_alive'] = {'max_idle_conns': 4, 'max_idle_conns_per_host': 4, 'idle_timeout': '10s'}
+    handlers.insert(1, {'handler': 'headers', 'request': {'delete': incoming_delete}})
     if phase == 'private':
         need(certificate is not None and key is not None)
         certificate, key = PurePosixPath(certificate), PurePosixPath(key)
