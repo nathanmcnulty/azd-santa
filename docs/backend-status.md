@@ -16,18 +16,19 @@ As of 2026-11-15 UTC, these are separate gates:
 
 | Gate | Current evidence | Still required |
 | --- | --- | --- |
-| Automated installation | Fresh six-volume private candidate passed first-attempt cold azd deployment/finalization and unchanged-source rerun; seven running containers verified | Recovery faults and supported upgrade lifecycle |
+| Automated installation | Fresh six-volume private candidate passed cold deployment/finalization and unchanged-source rerun; a fresh hostname-enabled candidate also passed cold azd installation/finalization with seven containers | Recovery faults and supported upgrade lifecycle |
 | Reboot persistence | New six-volume admission/worker image preserved all seven container IDs and selected synthetic database state across reboot;24 post-reboot HTTP requests passed | Held requests, database tails, failed dependencies, delayed jobs and retry exhaustion |
 | Credential rotation | Earlier selected private server passed all76 observations | Repeat on the new candidate; supported admin lifecycle and Intune/native delivery |
-| Admission and proxy | Source-bound hosted Redis passed37 fenced Lua families; private Linux TLS returned302; host cap accepted16/rejected4 connections; corrected forwarding headers passed pinned Linux/Windows binary regressions | Integrated HTTP overload/failure/recovery, stress containment, native retries and public TLS |
+| Admission and proxy | Hosted Redis passed37 fenced Lua families; host cap accepted16/rejected4 connections; fresh private TLS passed24 synthetic sync requests, capacity429, Redis503/recovery200 and body413/header431 cases | Sustained-load containment, held-work/dependency fault matrix, native retries and public TLS |
 | Worker shutdown | Actual standalone Linux TERM/forkserver idle, held and forced-deadline cases passed | Real Kombu/broker callback and acknowledgement behavior in the selected image |
 | Backup | One private synthetic stack completed native snapshot, worker drain, encrypted capture and original-runtime resume; independent Storage deployment succeeded and its protected configuration was selected | Off-host transfer, independent byte verification, portable keys/images, full restore and failure qualification; deployment observer normalization fix remains #102 |
 | Restore | Authority/encryption inventory; ciphertext authentication and bounded offline secret-rewrap primitives with actual synthetic crypto tests | Strict extraction, complete schema/row census, isolated application restoration, current-authority reconciliation and complete fault testing |
 | Operator access | Private application-level MFA and recovery tests on earlier selected images | Trusted browser flow, customer enrollment and controlled recovery |
-| Native Mac | Intune baseline and one-device pilot are separate from server tests | Actual sync, rules, events, rotation and recovery on the selected Mac in Monitor mode |
+| Native Mac | Recent managed-device check-in; Intune reports package installed and returns five baseline profile records; existing successful health capture is stale | Fresh endpoint health; actual sync, rules, events, rotation and recovery on the selected Mac in Monitor mode |
 | Container Apps | Tracked comparison requirements | Equivalent full backend deployment, persistence/failure tests and measured cost comparison |
 
 Detailed evidence: [private installation](private-vm-installation.md),
+[fresh hostname/TLS policy loop](fresh-https-qualification.md),
 [rotation](credential-rotation-qualification.md), [Redis Lua](admission-redis-qualification.md),
 [worker signals](worker-posix-qualification.md), [backup](cold-backup.md) and
 [restore design](restore-quarantine-design.md). Historical receipts remain bound

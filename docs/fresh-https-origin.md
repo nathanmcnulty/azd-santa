@@ -47,3 +47,8 @@ preservation/non-replay, stage propagation and selected cached-facts integration
 They do not prove Azure DNS/IMDS delivery, a built image, trusted TLS, browser MFA,
 native Mac synchronization or ingress/load safety. Those remain separate actual
 pilot acceptance; no cloud/authentication/guest operation was performed here.
+
+Subsequent [fresh private qualification](fresh-https-qualification.md) passed cold
+azd installation/finalization, actual image/settings readback and24 synthetic
+policy/event requests through loopback TLS. Trusted public TLS, browser MFA,
+integrated admission faults and native Mac acceptance remain open.
