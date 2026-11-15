@@ -23,12 +23,14 @@ As of 2026-11-15 UTC, these are separate gates:
 | Worker shutdown | Actual standalone Linux TERM/forkserver idle, held and forced-deadline cases passed | Real Kombu/broker callback and acknowledgement behavior in the selected image |
 | Backup | One private synthetic stack completed native snapshot, worker drain, encrypted capture and original-runtime resume; independent Storage deployment succeeded and its protected configuration was selected | Off-host transfer, independent byte verification, portable keys/images, full restore and failure qualification; deployment observer normalization fix remains #102 |
 | Restore | Authority/encryption inventory; ciphertext authentication and bounded offline secret-rewrap primitives with actual synthetic crypto tests | Strict extraction, complete schema/row census, isolated application restoration, current-authority reconciliation and complete fault testing |
-| Operator access | Private application-level MFA and recovery tests on earlier selected images | Trusted browser flow, customer enrollment and controlled recovery |
+| Operator access | Private application-level MFA/recovery tests; selected HTTPS pilot completed human password/TOTP enrollment and administrator login through a source-IP-restricted window, then restored deny-all ingress | Automated customer setup and controlled recovery on the current candidate; deferred Entra Easy Auth roadmap #108 |
+| Hostname TLS | Selected Azure hostname passed staging/production issuance; ordinary Windows and Linux trust verified the held endpoint; same certificate survived service restart; original deny policy restored | Renewal, DNS retirement/rate constraints, automated customer deployment and actual browser/Mac acceptance |
 | Native Mac | Recent managed-device check-in; Intune reports package installed and returns five baseline profile records; existing successful health capture is stale | Fresh endpoint health; actual sync, rules, events, rotation and recovery on the selected Mac in Monitor mode |
 | Container Apps | Tracked comparison requirements | Equivalent full backend deployment, persistence/failure tests and measured cost comparison |
 
 Detailed evidence: [private installation](private-vm-installation.md),
 [fresh hostname/TLS policy loop](fresh-https-qualification.md),
+[Azure-hostname certificate trials](azure-hostname-tls-qualification.md),
 [rotation](credential-rotation-qualification.md), [Redis Lua](admission-redis-qualification.md),
 [worker signals](worker-posix-qualification.md), [backup](cold-backup.md) and
 [restore design](restore-quarantine-design.md). Historical receipts remain bound
@@ -55,3 +57,8 @@ or wider rollout, while deferring additional generic recovery machinery until
 the bounded native pilot demonstrates the core experience. Reuse the VM and
 existing Redis, keep idle test VMs deallocated, and include storage/recovery
 costs in the eventual comparison.
+
+Administrator sign-in should move toward Entra Easy Auth rather than separate
+application password/OTP enrollment. [Roadmap #108](https://github.com/nathanmcnulty/azd-santa/issues/108)
+records the deferred evaluation for the VM and Container Apps options; no Easy
+Auth integration or tenant authentication changes have been investigated yet.
