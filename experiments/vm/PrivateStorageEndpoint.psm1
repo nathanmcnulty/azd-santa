@@ -76,7 +76,8 @@ function New-SantaPrivateStorageEndpointPlan {
         Assert-Network ($configs.Count -eq 1 -and $configs[0].id -ieq ($ids.nic+'/ipConfigurations/primary') -and
             $configs[0].properties.subnet.id -ieq $ids.subnet)
         $net=$before.vnet.properties
-        Assert-NetworkKeys $net @('provisioningState','resourceGuid','addressSpace','subnets','virtualNetworkPeerings','dhcpOptions','enableDdosProtection','enableVmProtection')
+        Assert-NetworkKeys $net @('provisioningState','resourceGuid','addressSpace','subnets','virtualNetworkPeerings','dhcpOptions','enableDdosProtection','enableVmProtection','privateEndpointVNetPolicies')
+        if($net.ContainsKey('privateEndpointVNetPolicies')) { Assert-Network ($net.privateEndpointVNetPolicies -ceq 'Disabled') }
         Assert-NetworkKeys $net.addressSpace @('addressPrefixes')
         Assert-Network (@($net.addressSpace.addressPrefixes).Count -eq 1 -and $net.addressSpace.addressPrefixes[0] -ceq '10.247.0.0/24')
         foreach($key in @('virtualNetworkPeerings')) { if($net.ContainsKey($key)) { Assert-Network (@($net[$key]).Count -eq 0) } }

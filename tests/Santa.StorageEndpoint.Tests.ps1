@@ -15,7 +15,7 @@ Describe 'Private owned-subnet Storage endpoint plans' {
                 $rows[$nic].properties+=@{virtualMachine=@{id=$vm};ipConfigurations=@(@{id="$nic/ipConfigurations/primary";properties=@{subnet=@{id=$subnet}}})}
                 $rows[$subnet].properties+=@{addressPrefix='10.247.0.0/27';defaultOutboundAccess=$false;networkSecurityGroup=@{id=$nsg}
                     ipConfigurations=@(@{id="$nic/ipConfigurations/primary"});delegations=@();privateEndpointNetworkPolicies='Disabled';privateLinkServiceNetworkPolicies='Enabled'}
-                $rows[$vnet].properties+=@{addressSpace=@{addressPrefixes=@('10.247.0.0/24')};subnets=@($rows[$subnet]);virtualNetworkPeerings=@();enableDdosProtection=$false;enableVmProtection=$false;dhcpOptions=@{dnsServers=@()}}
+                $rows[$vnet].properties+=@{addressSpace=@{addressPrefixes=@('10.247.0.0/24')};subnets=@($rows[$subnet]);virtualNetworkPeerings=@();enableDdosProtection=$false;enableVmProtection=$false;privateEndpointVNetPolicies='Disabled';dhcpOptions=@{dnsServers=@()}}
                 $rows[$nsg].properties.securityRules=@(@{name='deny-all-inbound';properties=@{priority=100;direction='Inbound';access='Deny';protocol='*';sourcePortRange='*';destinationPortRange='*';sourceAddressPrefix='*';destinationAddressPrefix='*'}})
                 @{rows=$rows;group=$group;vm=$vm;nic=$nic;vnet=$vnet;subnet=$subnet;nsg=$nsg;arguments=@{TenantId='22222222-2222-4222-8222-222222222222';SubscriptionId=$sub;EnvironmentName='synthetic';VmInstanceId='33333333-3333-4333-8333-333333333333'}}
             }
@@ -71,11 +71,13 @@ Describe 'Private owned-subnet Storage endpoint plans' {
             }
         }
         It 'rejects unknown or unrelated network shapes before returning a proposal' -ForEach @(
-            @{change='vnet-property'},@{change='subnet-property'},@{change='second-subnet'},@{change='peer'},@{change='route'},@{change='dns'},@{change='endpoint-property'},@{change='global'},@{change='provisioning'},@{change='nsg'},@{change='identity'},@{change='tag'},@{change='etag'},@{change='nic-owner'},@{change='missing-membership'},@{change='shared-subnet'},@{change='typed-egress'},@{change='case-global'}
+            @{change='vnet-property'},@{change='subnet-property'},@{change='second-subnet'},@{change='peer'},@{change='route'},@{change='dns'},@{change='endpoint-property'},@{change='global'},@{change='provisioning'},@{change='nsg'},@{change='identity'},@{change='tag'},@{change='etag'},@{change='nic-owner'},@{change='missing-membership'},@{change='shared-subnet'},@{change='typed-egress'},@{change='case-global'},@{change='vnet-private-policy'},@{change='vnet-null-private-policy'}
         ) {
             $f=$script:f
             switch($change) {
                 vnet-property {$f.rows[$f.vnet].properties.flowTimeoutInMinutes=10}
+                vnet-private-policy {$f.rows[$f.vnet].properties.privateEndpointVNetPolicies='Enabled'}
+                vnet-null-private-policy {$f.rows[$f.vnet].properties.privateEndpointVNetPolicies=$null}
                 subnet-property {$f.rows[$f.subnet].properties.unknownProperty='preserve me'}
                 second-subnet {$f.rows[$f.vnet].properties.subnets+=@{id='unrelated'}}
                 peer {$f.rows[$f.vnet].properties.virtualNetworkPeerings=@(@{id='unrelated'})}

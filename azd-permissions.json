@@ -31,7 +31,7 @@
         },
         {
           "path": "experiments/vm/PrivateStorageEndpoint.psm1",
-          "sha256": "49d71ec3c98fd8212a0ce3c0985e0f91ff1e94f88af014d908b928d49c6e89a6"
+          "sha256": "34db373583a7ace65a63b76f5d6e01fde4c8d2580537b75075d4189553b25242"
         }
       ]
     },
