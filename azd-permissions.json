@@ -8,6 +8,48 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "principal": "Explicit selected cached Azure CLI user (existing rights only)",
+      "phase": "deployment",
+      "feature": "pilot-enrollment-transport",
+      "defaultEnabled": false,
+      "scope": "One exact bound private pilot VM and one explicit serial/hardware UUID only",
+      "rationale": "Default Plan has no cloud calls. Explicit Create reuses read-only host attestation and one recipient-sealed enrollment worker; exclusive local intent precedes one bounded Run Command. Optional same-invocation Observe cannot create. Full Monitor profile is written owner-private without console credential exposure. No new scopes, grants, authentication, operator reset or MDM assignment.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "experiments/server/PilotEnrollmentTransport.psm1",
+          "sha256": "d0e463e852136ca6d092e03eadada1696487ac9ef6d61fb682f7a5d6c265914e"
+        },
+        {
+          "path": "experiments/server/Invoke-SantaPilotEnrollment.ps1",
+          "sha256": "b962acd94377afc3ddde0a302af7b327126961f8e2dd7623f391f65dfdc56ac9"
+        },
+        {
+          "path": "experiments/server/PilotEnrollmentProfile.cs",
+          "sha256": "203e0a000c11b096c54e1c6a753b713ae910e8acf8a391928b6a41f1b9ebf3a0"
+        },
+        {
+          "path": "experiments/server/pilot_enrollment_host.py",
+          "sha256": "a7f208f323100a20a5fe4e9a98c07a72f6ed95f4a1100817de705adec822fefb"
+        },
+        {
+          "path": "experiments/server/pilot_enrollment.py",
+          "sha256": "8194305b0e6eb1f59845b00a2dff8e9327e972b4a50228c2024c43a746469513"
+        },
+        {
+          "path": "experiments/server/SetupTransport.psm1",
+          "sha256": "8ffe65711792b9a9ab42ac4083b44b66060c2db7a7af4c70f25b4e0c24450219"
+        },
+        {
+          "path": "experiments/server/HttpsEndpoint.psm1",
+          "sha256": "b548c7161c9db5efa35199ca6c12fc430b9393c272b1b0d762fd433c2be65b9d"
+        }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
       "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/providers/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Resources/subscriptions/resourceGroups/write; Microsoft.Resources/deployments/read; Microsoft.Resources/deployments/write; Microsoft.Resources/deployments/validate/action; Microsoft.Resources/deployments/whatIf/action; Microsoft.Storage/checkNameAvailability/read; Microsoft.Storage/storageAccounts/write; Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/blobServices/write; Microsoft.Storage/storageAccounts/blobServices/containers/write; Microsoft.Storage/storageAccounts/blobServices/containers/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/virtualNetworks/subnets/joinViaServiceEndpoint/action; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read",
       "principal": "Explicit selected cached independent backup-store deployment operator (existing rights only)",
       "phase": "deployment",
@@ -251,7 +293,7 @@
       "rationale": "Source-pinned read-only host observer verifies selected initialized runtime and machine-produces a nonsecret installation receipt and local operator binding. No setup mutation, cloud deployment, service restart, marker initialization, grant or authentication flow is performed by finalization; the actual installer/hook remains a separate gate.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/SetupTransport.psm1", "sha256": "970b3112ebb0b385e14d534297f21d848c79c683a8f98da2bb55d8fc638aaaa8" },
+        { "path": "experiments/server/SetupTransport.psm1", "sha256": "8ffe65711792b9a9ab42ac4083b44b66060c2db7a7af4c70f25b4e0c24450219" },
         { "path": "experiments/server/installation_readback.py", "sha256": "78ee746115226404f1239febf5cc2c9a90dc0de0ffff3a93484779161bb887dd" },
         { "path": "experiments/server/operator_setup_host.py", "sha256": "00b09980283d5ed4b09e0c7dcbc7e70baa31b40c8466c2b692b1cdcec04f67a2" }
       ]
@@ -267,7 +309,7 @@
       "scope": "Exact selected tenant/subscription, environment and tagged private pilot RG/VM only",
       "rationale": "Generate a local operator binding from a trusted checksum-pinned selected installation receipt after reusing read-only account/group/immutable-VM preflight. This function does not invoke Run Command, authenticate, mutate azd state or grant permissions; receipt producer and live qualification remain separate gates.",
       "evidenceState": "code",
-      "evidence": [{ "path": "experiments/server/SetupTransport.psm1", "sha256": "970b3112ebb0b385e14d534297f21d848c79c683a8f98da2bb55d8fc638aaaa8" }]
+      "evidence": [{ "path": "experiments/server/SetupTransport.psm1", "sha256": "8ffe65711792b9a9ab42ac4083b44b66060c2db7a7af4c70f25b4e0c24450219" }]
     },
     {
       "resource": "Azure Resource Manager",
@@ -281,7 +323,7 @@
       "rationale": "Optional operator setup checks cached selected account/group/VM, then sends a hash-pinned stdlib host program to verify private runtime bindings and invoke the installed sealed operator command or ciphertext-only readback. It creates no grants and enables no azd hook; runtime checks are not live acceptance evidence.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/SetupTransport.psm1", "sha256": "970b3112ebb0b385e14d534297f21d848c79c683a8f98da2bb55d8fc638aaaa8" },
+        { "path": "experiments/server/SetupTransport.psm1", "sha256": "8ffe65711792b9a9ab42ac4083b44b66060c2db7a7af4c70f25b4e0c24450219" },
         { "path": "experiments/server/Invoke-SantaOperatorSetup.ps1", "sha256": "cf7d4e36a2dea3a44e5342deb1bbd5b6402250a7495e8165fbf2f9cc09b25e49" },
         { "path": "experiments/server/operator_setup_host.py", "sha256": "00b09980283d5ed4b09e0c7dcbc7e70baa31b40c8466c2b692b1cdcec04f67a2" }
       ]
@@ -603,6 +645,7 @@
     }
   ],
   "gaps": [
+    "Pilot enrollment transport is source/offline only. Stored factor/last-login checks are not current human MFA proof. One local intent plus one Run Command submission does not prove device delivery, actual ORM creation or exactly-once distributed execution. Same-invocation Observe retains its ephemeral key only; after process exit, preserve uncertain state and reconcile rather than select a fresh output path or recreate enrollment. No new grant or MDM assignment is supplied. See docs/pilot-enrollment-transport.md.",
     "$134f43bb5407b256f853c422edff85b723631f77e0dbee177be4c03f9585bd12e renders profiles/units without cloud calls. Its explicit restrictive firewall command needs selected Linux root/CAP_NET_ADMIN authority; maintained remote service/account installation and NSG activation are not implemented by this component. No Azure/Graph grant or new paid service is added. Private Linux connection/resource/header/admission proof, public TLS/MFA, reboot and real Mac acceptance remain separate gates; direct pilot source budgeting is conservatively shared, not client attribution.",
     "The default-off fresh HTTPS origin profile reuses existing cached endpoint graph reads and binds one selected Azure hostname through context, guest IMDS-region validation, rendered configuration and completion. It adds no grant, existing-runtime migration, DNS write, ingress, proxy or certificate service. Direct admission remains unchanged; actual fresh image/guest delivery, trusted edge headers/TLS, MFA and native one-Mac acceptance remain unqualified. See docs/fresh-https-origin.md.",
     "Independent backup-store creation orchestration is source/offline only: no actual ARM token, validate/what-if, provider-policy acceptance, deployment/hash parity or protected post-selection is proven. One application PUT is not atomic multi-resource create-only CAS or exactly-once distributed effects. Missing prerequisites are rejected without grants/remediation; unknown submission is preserved for exact Observe, never automatically replayed. Retention/data capability, lifecycle and current-authority restore remain separate gates.",

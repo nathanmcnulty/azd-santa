@@ -11,3 +11,4 @@
 *.yml text eol=lf
 *.mobileconfig text eol=lf
 *.tmpl text eol=lf
+experiments/server/PilotEnrollmentProfile.cs text eol=lf

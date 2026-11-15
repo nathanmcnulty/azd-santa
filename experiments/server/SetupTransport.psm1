@@ -72,18 +72,19 @@ function Invoke-SantaSetupAzJson {
 function Get-SantaPrivateVmDeploymentTarget {
     [CmdletBinding()]
     param([Parameter(Mandatory)][guid]$SubscriptionId,
-        [Parameter(Mandatory)][ValidatePattern('^[a-z0-9-]{2,32}$')][string]$EnvironmentName)
+        [Parameter(Mandatory)][ValidatePattern('^[a-z0-9-]{2,32}$')][string]$EnvironmentName, [scriptblock]$ReadAzure)
+    $read = if ($ReadAzure) { $ReadAzure } else { { param($Arguments) Invoke-SantaSetupAzJson -Arguments $Arguments } }
     $b = @{ SubscriptionId = $SubscriptionId.ToString(); EnvironmentName = $EnvironmentName
         ResourceGroup = "rg-azd-santa-vm-$EnvironmentName"; VmName = 'vm-santa-lab' }
     $b.VmId = "/subscriptions/$($b.SubscriptionId)/resourceGroups/$($b.ResourceGroup)/providers/Microsoft.Compute/virtualMachines/$($b.VmName)"
-    $account = Invoke-SantaSetupAzJson @('account', 'show', '--subscription', $b.SubscriptionId)
+    $account = & $read -Arguments @('account', 'show', '--subscription', $b.SubscriptionId)
     $guidPattern = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
     if ($account.id -ine $b.SubscriptionId -or $account.tenantId -cnotmatch $guidPattern -or $account.state -cne 'Enabled') { throw 'Cached selected enabled subscription unavailable.' }
-    $group = Invoke-SantaSetupAzJson @('group', 'show', '--subscription', $b.SubscriptionId, '--name', $b.ResourceGroup)
+    $group = & $read -Arguments @('group', 'show', '--subscription', $b.SubscriptionId, '--name', $b.ResourceGroup)
     if ($group.id -ine "/subscriptions/$($b.SubscriptionId)/resourceGroups/$($b.ResourceGroup)" -or
         $group.tags.'azd-solution' -cne 'azd-santa' -or $group.tags.purpose -cne 'synthetic-vm-lab' -or
         $group.tags.'azd-env-name' -cne $b.EnvironmentName) { throw 'Selected group is not the tagged private pilot.' }
-    $vm = Invoke-SantaSetupAzJson @('vm', 'show', '--subscription', $b.SubscriptionId, '--resource-group', $b.ResourceGroup, '--name', $b.VmName)
+    $vm = & $read -Arguments @('vm', 'show', '--subscription', $b.SubscriptionId, '--resource-group', $b.ResourceGroup, '--name', $b.VmName)
     if ($vm.id -ine $b.VmId -or $vm.vmId -cnotmatch $guidPattern -or $vm.provisioningState -cne 'Succeeded' -or
         $vm.tags.'azd-solution' -cne 'azd-santa' -or $vm.tags.purpose -cne 'synthetic-vm-lab' -or
         $vm.tags.'azd-env-name' -cne $b.EnvironmentName) { throw 'Selected VM identity/tags/provisioning binding failed.' }
@@ -92,9 +93,11 @@ function Get-SantaPrivateVmDeploymentTarget {
 }
 
 function Assert-SantaSetupAzureTarget {
-    param([object]$Request)
+    param([object]$Request, [scriptblock]$ReadAzure)
     $b = $Request.Binding
-    $actual = Get-SantaPrivateVmDeploymentTarget -SubscriptionId $b.SubscriptionId -EnvironmentName $b.EnvironmentName
+    $selection = @{ SubscriptionId=$b.SubscriptionId; EnvironmentName=$b.EnvironmentName }
+    if ($ReadAzure) { $selection.ReadAzure=$ReadAzure }
+    $actual = Get-SantaPrivateVmDeploymentTarget @selection
     foreach ($name in @('TenantId', 'SubscriptionId', 'ResourceGroup', 'VmName', 'VmId', 'VmInstanceId')) {
         if ($actual[$name] -ine $b[$name]) { throw 'Selected cached ARM target differs from expected deployment binding.' }
     }
