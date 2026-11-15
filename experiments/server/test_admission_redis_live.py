@@ -19,7 +19,7 @@ import time
 import types
 
 PINS = {'santa_admission.py': 'ebe2abef0cb9786f677a08dacf96b27acd944fcdd4e1465afa5c74701249629b',
-        'operator_mfa.py': '31ea35a3417108b2f1bb2698f9115dc65a12bbc43064cf296917ccad128404e1'}
+        'operator_mfa.py': '759206c03387e3166878623a9456d3b8d42a12149f706e4707968cf9377e6a43'}
 LABEL = 'santa-admission-lua-v1'
 FAILURE_KINDS = frozenset(('redis_rejection', 'command_exit', 'malformed_json',
                            'output_limit', 'invariant', 'timeout', 'internal_error'))
