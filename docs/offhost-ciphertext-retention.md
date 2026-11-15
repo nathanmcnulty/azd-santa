@@ -234,3 +234,5 @@ redacted/duplicate/oversized bridge input. The full offline suite then passed al
 251 Pester checks on PowerShell7.6.9/Pester6.2.0; template validation, unchanged
 MONITOR profiles and the canonical permission schema also passed. These are
 synthetic observations and local subprocess tests, with no live Azure requests.
+
+The [confidential source capability relay](blob-capability-relay.md) now supplies a typed one-capture recipient envelope and durable once-only guest job protocol. It does not supply cached Azure orchestration or live transfer/retention/restore acceptance.
