@@ -230,7 +230,7 @@
       "rationale": "Nested VM postprovision validates the selected account/group/VM outputs and schedules two-hour shutdown for that exact VM, including host-only mode. When SANTA_PRIVATE_BACKEND_INSTALL=true, it additionally transports bounded pinned sources, submits one durable privileged fresh-install job and observes it before nonmutating finalization. SANTA_PRIVATE_HTTPS_ORIGIN=true optionally consumes the existing selected cached HTTPS endpoint reader for a fresh origin-bound profile only. No root Intune hook, network admission, tenant grant or operator reset is added; actual complete ARM/hook/cold-install delivery remains unqualified.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "298869280d5a6f302fe2db3d1cfa0a718632332138a793c7380683414bfe4bb0" },
+        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "4d8e11f20af8476e40b98f2ab48b8eadd854729a5eafbdc30a222be4ad298126" },
         { "path": "experiments/vm/Install-PrivateBackend.ps1", "sha256": "33c620439f5abadef688f4a6f0477e80e4676986beac0cb6d43b975c092320d5" },
         { "path": "experiments/server/private_install.py", "sha256": "02c02f7c5dea94a2bff9200a225cbb07ddcc062c2bc512027ea80da4abb38f60" },
         { "path": "experiments/server/private_install_transport.py", "sha256": "38695ddeee431c111339aeaa7210f4a0a79d2bf9702f2076d7fe9fa559c972ef" },
