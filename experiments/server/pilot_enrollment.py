@@ -146,7 +146,7 @@ def projection(request):
     enrollment = Enrollment.objects.get(configuration=configuration)
     secret = Secret.objects.get(pk=enrollment.secret_id)
     need(secret.meta_business_unit_id == mbu.pk and secret.serial_numbers == [request['serial']]
-         and secret.udids == [request['hardware_uuid']] and secret.quota == 1
+         and secret.udids == [str(uuid.UUID(request['hardware_uuid']))] and secret.quota == 1
          and secret.revoked_at is None and secret.expired_at is None
          and secret.request_count in (0, 1))
     machines = list(Machine.objects.filter(enrollment=enrollment).values('serial_number', 'hardware_uuid'))
@@ -176,7 +176,9 @@ def run(request, checkpoint_root, operation):
             mbu = MBU.objects.create(name=name)
             mbu.create_enrollment_business_unit()
             secret = Secret.objects.create(meta_business_unit=mbu, serial_numbers=[request['serial']],
-                                           udids=[request['hardware_uuid']], quota=1)
+                                           # Zentral normalizes sync URL UUIDs to lowercase
+                                           # before its case-sensitive secret UDID check.
+                                           udids=[str(uuid.UUID(request['hardware_uuid']))], quota=1)
             secret.full_clean()
             enrollment = Enrollment.objects.create(configuration=configuration, secret=secret)
             # Ciphertext is persisted before commit; observe verifies the DB
