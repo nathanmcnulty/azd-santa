@@ -1,0 +1,203 @@
+{
+  "scope": "Santa-source-head-archive",
+  "capturedUtc": "2026-11-15T08:13:16.271930+00:00",
+  "archiveRefs": [
+    {
+      "source": "codex/correct-profile-status-wording",
+      "commit": "eea91851350e7973c0d5d99b8db5c61bf183198c",
+      "remoteRef": "refs/heads/codex/archive-20261115/correct-profile-status-wording"
+    },
+    {
+      "source": "codex/fix-configuration-payload-uuid",
+      "commit": "a63ad1cd87ca5aba9de386c968219ea70a60ef0e",
+      "remoteRef": "refs/heads/codex/archive-20261115/fix-configuration-payload-uuid"
+    },
+    {
+      "source": "codex/intune-profile-status",
+      "commit": "06711325309b7187f1ac43c65a94aa4fb9c30948",
+      "remoteRef": "refs/heads/codex/archive-20261115/intune-profile-status"
+    },
+    {
+      "source": "codex/phase1-hardening",
+      "commit": "8009411687be6db5213e9bfd3aebc1889a58f1bf",
+      "remoteRef": "refs/heads/codex/archive-20261115/phase1-hardening"
+    },
+    {
+      "source": "codex/pilot-device-evidence",
+      "commit": "7fb7339c4b26a0025484714367d58f08c1719369",
+      "remoteRef": "refs/heads/codex/archive-20261115/pilot-device-evidence"
+    },
+    {
+      "source": "codex/santa-admission-20261107",
+      "commit": "19316c9382804713a4d5e53d5604eff90a44de24",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-admission-20261107"
+    },
+    {
+      "source": "codex/santa-admission-anchor-20261107",
+      "commit": "74d920dda2ca52b399743dde1f5224b0f0026dcc",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-admission-anchor-20261107"
+    },
+    {
+      "source": "codex/santa-admission-fence-live-20261107",
+      "commit": "68e69c4019062449d60d17cfacbea8c36436bf2f",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-admission-fence-live-20261107"
+    },
+    {
+      "source": "codex/santa-admission-live-20261107",
+      "commit": "a9f405208385d501a3f98835cdcc40c859e1bc6c",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-admission-live-20261107"
+    },
+    {
+      "source": "codex/santa-automatic-admission-recovery-20261107",
+      "commit": "f4324804c5aad6d58e70bc186850d78f3f1f6982",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-automatic-admission-recovery-20261107"
+    },
+    {
+      "source": "codex/santa-backlog-preservation-20261115",
+      "commit": "80845986173dbfd82d68669138391de27f1c6e9e",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-backlog-preservation-20261115"
+    },
+    {
+      "source": "codex/santa-blob-verifier-relay-20261115",
+      "commit": "4b7fadb0448298d175e80457f8babe68876dd76d",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-blob-verifier-relay-20261115"
+    },
+    {
+      "source": "codex/santa-core-image-20261106",
+      "commit": "393f58d6715ea6c82a21320a5e892dc98a564cad",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-core-image-20261106"
+    },
+    {
+      "source": "codex/santa-db-role-split-20261106",
+      "commit": "ef8d062b6c1be317e825f5ba17a18f996e2fb069",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-db-role-split-20261106"
+    },
+    {
+      "source": "codex/santa-db-runtime-stage-20261106",
+      "commit": "f79130f208c51e93bf89a43623f9d1241f6c7986",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-db-runtime-stage-20261106"
+    },
+    {
+      "source": "codex/santa-fresh-https-origin-20261115",
+      "commit": "f38c55f11a5610f35c509790fc18a5313d55a35c",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-fresh-https-origin-20261115"
+    },
+    {
+      "source": "codex/santa-https-proxy-20261107",
+      "commit": "2a4d1bad58505aa0d5c2ef5bfbb0690521f6cd9b",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-https-proxy-20261107"
+    },
+    {
+      "source": "codex/santa-live-zentral-probe-20261106",
+      "commit": "fc2736e17ebc877991e4dbee1414e06e9b750a10",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-live-zentral-probe-20261106"
+    },
+    {
+      "source": "codex/santa-mfa-restart-replay-20261106",
+      "commit": "4bfbe6ccad16895cdc127606e15e72aa0377b708",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-mfa-restart-replay-20261106"
+    },
+    {
+      "source": "codex/santa-operator-recovery-20261106",
+      "commit": "bbdf5686cd98558cd3b8fad9ef199eb0931dcfa4",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-operator-recovery-20261106"
+    },
+    {
+      "source": "codex/santa-pilot-enrollment-20261115",
+      "commit": "7d97fd463b7e04861a286957a85cd8c3b259750a",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-pilot-enrollment-20261115"
+    },
+    {
+      "source": "codex/santa-private-azd-install-20261106",
+      "commit": "7cd14c9fd171e67cdddea2e57671bdafd1bc59c7",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-private-azd-install-20261106"
+    },
+    {
+      "source": "codex/santa-profile-qualification-20261106",
+      "commit": "d92ea815eb900fd552479b6aa20c64e570493a82",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-profile-qualification-20261106"
+    },
+    {
+      "source": "codex/santa-qualification-admission-20261107",
+      "commit": "7fe7280a212da27d430cb4066bfb5b1ccb19a1df",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-qualification-admission-20261107"
+    },
+    {
+      "source": "codex/santa-recovery-runtime-fixture-20261106",
+      "commit": "4382f3df6e2632c8717168e28bb96f112965ceaf",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-recovery-runtime-fixture-20261106"
+    },
+    {
+      "source": "codex/santa-redis-ci-20261107",
+      "commit": "6ca919207c3a5df93804bfd339a74f2023e87008",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-redis-ci-20261107"
+    },
+    {
+      "source": "codex/santa-redis-durability-20261106",
+      "commit": "6a215bff9b93f7a3b882ab6744ca785643ae9071",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-redis-durability-20261106"
+    },
+    {
+      "source": "codex/santa-request-limits-20261106",
+      "commit": "edcd05a5c3fda18073122d1b698b7520c4f2f026",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-request-limits-20261106"
+    },
+    {
+      "source": "codex/santa-rotation-harness-20261107",
+      "commit": "a1b0fccc4a979005d586621639c93cc0e54703b7",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-rotation-harness-20261107"
+    },
+    {
+      "source": "codex/santa-runtime-service-20261106",
+      "commit": "925c02ed3560018dc44a208efd8e8b97d979c746",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-runtime-service-20261106"
+    },
+    {
+      "source": "codex/santa-sealed-setup-20261106",
+      "commit": "2b3a2c8607515db78baf552cf07ca2d20d72d623",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-sealed-setup-20261106"
+    },
+    {
+      "source": "codex/santa-service-secrets-20261106",
+      "commit": "057a20be74a5ad75abf86ac7cb6788ee8171c54a",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-service-secrets-20261106"
+    },
+    {
+      "source": "codex/santa-setup-binding-20261106",
+      "commit": "b40dcf9b0d08251d1a65855381ee444890f3d6f4",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-setup-binding-20261106"
+    },
+    {
+      "source": "codex/santa-setup-host-20261106",
+      "commit": "ce107ed5a66c596b374fd566258b4818ae60be10",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-setup-host-20261106"
+    },
+    {
+      "source": "codex/santa-setup-transport-20261106",
+      "commit": "855014a7f75e31953ae602842139565957180711",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-setup-transport-20261106"
+    },
+    {
+      "source": "codex/santa-worker-shutdown-20261107",
+      "commit": "cb43c1e7aaeefffce395b7dd58d9f30f7fbaf270",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-worker-shutdown-20261107"
+    },
+    {
+      "source": "codex/santa-zentral-eval-20261106",
+      "commit": "2061e4aac0e87b5f16bb610835f3ffa366fd8df9",
+      "remoteRef": "refs/heads/codex/archive-20261115/santa-zentral-eval-20261106"
+    },
+    {
+      "source": "worktree-review-private-azd-client-20261106",
+      "commit": "34a49055474d8a00bc8472fe5f98b6f032cd6e9f",
+      "remoteRef": "refs/heads/codex/archive-20261115/worktree-review-private-azd-client-20261106"
+    },
+    {
+      "source": "worktree-review-recovery-fixture-20261106",
+      "commit": "81423d84c86d7313f968a15c4ab25e5724c75b47",
+      "remoteRef": "refs/heads/codex/archive-20261115/worktree-review-recovery-fixture-20261106"
+    }
+  ],
+  "remainingUnpublishedBranchCommits": 0,
+  "limitations": "Source Git objects only; private runtime credentials, diagnostic artifacts and deployed data are not included."
+}
