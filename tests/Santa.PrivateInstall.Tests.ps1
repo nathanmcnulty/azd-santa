@@ -152,8 +152,8 @@ Describe 'Optional private VM azd installation' {
             }
             Should -Invoke Complete-SantaBackendInstallation -Times 1 -Exactly -ParameterFilter { $InstallationOutputs.Origin -ceq $script:origin }
         }
-        It 'rejects ambiguous origin opt-in before shutdown or installation' {
-            $script:values.SANTA_PRIVATE_HTTPS_ORIGIN = 'https://evil.invalid'
+        It 'rejects ambiguous origin opt-in before shutdown or installation' -ForEach @(@{value='https://evil.invalid'},@{value=$true}) {
+            $script:values.SANTA_PRIVATE_HTTPS_ORIGIN = $value
             { Invoke-PrivateVmAzdHook postprovision } | Should -Throw '*must be true or false*'
             Should -Invoke Invoke-PrivateAzure -Times 0 -Exactly
             Should -Invoke Complete-SantaBackendInstallation -Times 0 -Exactly
