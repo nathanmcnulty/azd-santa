@@ -110,17 +110,18 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
-      "permission": "Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/blobServices/containers/read; Microsoft.Storage/storageAccounts/listServiceSas/action; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "permission": "Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/blobServices/containers/read; Microsoft.Storage/storageAccounts/listServiceSas/action; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Compute/virtualMachines/runCommand/action",
       "principal": "Explicit selected cached ARM operator; source and independent verifier receive only private exact-blob capabilities",
       "phase": "runtime",
       "feature": "offhost-ciphertext-retention",
       "defaultEnabled": false,
       "scope": "Exact independently owned Storage account/container/blob and verified solution VM instance/NIC/subnet/NSG bindings; one source target and a different selected owned verifier",
-      "rationale": "The private protocol component rechecks supplied cached-ARM selection before an exact listServiceSas request and handles short-lived HTTPS create-only/read-only capabilities without account-key retrieval or role assignment. listServiceSas is powerful account-level authority; code blob restriction does not narrow that RBAC action. The typed source relay adds recipient crypto, a once-only journal and strict manager/cgroup terminal checks; actual cached ARM delivery and guest terminal behavior remain integration gates. Blob byte verification does not authenticate the envelope, retain images/portable keys, establish current authority or restore applications.",
+      "rationale": "The private cached-CLI callback reuses the existing selector for fresh independent RG/VM/network readbacks and one exact listServiceSas request and handles short-lived HTTPS create-only/read-only capabilities without account-key retrieval or role assignment. listServiceSas is powerful account-level authority; code blob restriction does not narrow that RBAC action. The typed source relay adds recipient crypto, a once-only journal and strict manager/cgroup terminal checks; actual cached ARM delivery and guest terminal behavior remain integration gates. Blob byte verification does not authenticate the envelope, retain images/portable keys, establish current authority or restore applications.",
       "evidenceState": "code",
       "evidence": [
         { "path": "experiments/server/blob_retention.py", "sha256": "f5aa619725104fa3a4bbe174a7ea4ceb236d9eab68675b8730d90984cb3e1818" },
-        { "path": "experiments/server/blob_capability_relay.py", "sha256": "eb6a5eee83ededf08e78c6203aeb7babc8e36129cf836f2af7ef80be0f6a9a1c" }
+        { "path": "experiments/server/blob_capability_relay.py", "sha256": "eb6a5eee83ededf08e78c6203aeb7babc8e36129cf836f2af7ef80be0f6a9a1c" },
+        { "path": "experiments/server/private_arm_adapter.py", "sha256": "5da1bd9c26fe0fead5c1b1c75197dfbd4a2df0ef5de5ab2fd0162ea6b52fbdc4" }
       ]
     },
     {
@@ -457,6 +458,7 @@
     }
   ],
   "gaps": [
+    "The private cached ARM Python callback adds explicit bounded cached-CLI acquisition, exact graph GETs and a single in-memory exact-blob SAS POST attempt. Offline controlled protocol tests are not actual token/API/RBAC/minting proof. No token export, auth fallback, grant or policy/key operation is provided. Durable cross-process operator attempt reconciliation and full confidential Run Command orchestration remain unimplemented; OS DNS/CLI internals remain trusted deadline prerequisites. See docs/private-cached-arm.md.",
     "The confidential exact-capture source-VM Blob relay adds local recipient crypto and a once-only guest upload journal only. It requires fresh existing cached ARM ownership/target selection and exact create-only SAS minting outside the envelope. No ARM token, backup private key, new grant, policy change or Azure orchestration is supplied. Actual selected-VM cryptography41/Linux descriptor tests and a read-only installed-capture/IMDS/cgroup preflight passed; actual upload service/Run Command delivery, create-only PUT and separate verifier download remain unqualified; envelopes and receipts are not authority. See docs/blob-capability-relay.md.",
     "Issue #90 supplies default-off new canonical VM network Storage endpoint wiring and a GET-only ownership/ETag/preservation-aware existing-network plan. No existing subnet/VNet write, automatic azd adoption, provider-enforced conditional mutation, endpoint delivery or retention/restore acceptance is qualified. A raw Bicep deployment is create-or-update and can erase unprovided endpoint arrays; existing changes require current independently selected authority and fresh plan consumption/revalidation. Source subnet disappearance still requires explicit restricted-firewall reconciliation; no operator-network modification, public-IP fallback or grant is added.",
     "The restore-census primitive observes an already-open isolated PostgreSQL connection and reviewed Django registry only. It adds no Azure/Graph grant, connection/authentication, restore, row transformation or activation. Controlled SQL/registry adapters do not prove real Django/PostgreSQL18 catalog compatibility, isolated database coverage, sequence quiescence, trusted source/image/authority or native restoration. See docs/restore-census.md.",
