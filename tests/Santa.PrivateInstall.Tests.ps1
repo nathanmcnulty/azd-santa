@@ -132,6 +132,32 @@ Describe 'Optional private VM azd installation' {
             Should -Invoke Complete-SantaBackendInstallation -Times 1
             Should -Invoke Invoke-PrivateAzd -Times 1 -ParameterFilter { $Arguments[1] -eq 'set' -and $Arguments[2] -eq 'SANTA_OPERATOR_BINDING_PATH' }
         }
+        It 'binds only authoritative selected HTTPS facts into fresh submission and completion' {
+            $script:values.SANTA_PRIVATE_HTTPS_ORIGIN = 'true'
+            $script:origin = 'https://santa-1111111111114111-synthetic-vm.westus2.cloudapp.azure.com'
+            Mock Get-SantaHttpsEndpointFacts { @{ Fqdn = $script:origin.Substring(8) } }
+            Mock Invoke-PrivateAzure { @{} }
+            Mock New-PrivateSourceBundle { [pscustomobject]@{ Sha256 = 'a'*64; ArchiveSha256 = 'b'*64; Chunks = @('AAAA') } }
+            Mock Send-PrivateInstallCommand { param($Target,$Command)
+                if ($Command.mode -eq 'observe') { return @{ scope='private-azd-install-observation'; state='not-installed'; completion=$null } }
+                if ($Command.mode -eq 'chunk') { return @{ scope='private-azd-install-chunk'; index=0; count=1 } }
+                $Command.https_origin | Should -BeExactly $script:origin
+                @{ scope='private-azd-install-observation'; unit='azd-santa-install-aaaaaaaaaaaaaaaa.service'; completion=@{
+                    scope='private-azd-install-complete'; bundle_sha256='a'*64; outputs=@{}+$script:target+@{Origin=$script:origin} } }
+            }
+            Invoke-PrivateVmAzdHook postprovision
+            Should -Invoke Get-SantaHttpsEndpointFacts -Times 1 -Exactly -ParameterFilter {
+                $TenantId -eq $script:target.TenantId -and $SubscriptionId -eq $script:target.SubscriptionId -and
+                $VmInstanceId -eq $script:target.VmInstanceId -and $EnvironmentName -eq 'synthetic'
+            }
+            Should -Invoke Complete-SantaBackendInstallation -Times 1 -Exactly -ParameterFilter { $InstallationOutputs.Origin -ceq $script:origin }
+        }
+        It 'rejects ambiguous origin opt-in before shutdown or installation' {
+            $script:values.SANTA_PRIVATE_HTTPS_ORIGIN = 'https://evil.invalid'
+            { Invoke-PrivateVmAzdHook postprovision } | Should -Throw '*must be true or false*'
+            Should -Invoke Invoke-PrivateAzure -Times 0 -Exactly
+            Should -Invoke Complete-SantaBackendInstallation -Times 0 -Exactly
+        }
         It 'keeps maximum chunk commands below the packet bound and requires their exact receipt' {
             Mock Invoke-PrivateAzure { param($Arguments)
                 $script = [IO.File]::ReadAllText($Arguments[-1].Substring(1))

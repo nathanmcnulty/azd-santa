@@ -39,7 +39,12 @@ def json_text(value):
     return json.dumps(value, indent=2, sort_keys=True) + '\n'
 
 
-def prepare(source, image, lock, destination, variant='upstream-evaluation', *, app_profile=None):
+def prepare(source, image, lock, destination, variant='upstream-evaluation', *, app_profile=None, https_origin=None):
+    if https_origin is not None and (type(https_origin) is not str or not re.fullmatch(
+            r'https://santa-[a-f0-9]{16}-[a-z0-9-]{2,32}-vm\.[a-z0-9]{2,32}\.cloudapp\.azure\.com', https_origin)):
+        raise ValueError('Canonical selected HTTPS origin required')
+    if https_origin is not None and variant != 'core-experiment':
+        raise ValueError('Fresh HTTPS origin requires the maintained core profile')
     if variant not in ('upstream-evaluation', 'core-experiment'):
         raise ValueError('Unknown evaluation image variant')
     if app_profile is None:
@@ -79,6 +84,12 @@ def prepare(source, image, lock, destination, variant='upstream-evaluation', *, 
         'POSTGRES_PASSWORD': '{{ env:POSTGRES_PASSWORD }}',
         'CELERY_BROKER_URL': '{{ env:ZENTRAL_QUEUE_URL }}',
     })
+    if https_origin is not None:
+        host = https_origin.removeprefix('https://')
+        # Pinned upstream api_base_url/APIDict derive HTTPS/tls_hostname from fqdn.
+        config['api']['fqdn'] = host
+        config['django'].update(ALLOWED_HOSTS=['localhost', '127.0.0.1', host],
+            CSRF_TRUSTED_ORIGINS=[https_origin], AZD_SANTA_HTTPS_ORIGIN=https_origin)
     config['queues'] = {'backend': 'zentral.core.queues.backends.kombu',
                         'backend_url': '{{ env:ZENTRAL_QUEUE_URL }}'}
     # Keep the upstream supported Redis cache, notifications and ES store. This
