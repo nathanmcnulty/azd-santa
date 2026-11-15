@@ -8,6 +8,32 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/virtualNetworks/subnets/write",
+      "principal": "Explicit current cached ARM operator with existing selected-subnet authority, not a workload identity",
+      "phase": "deployment",
+      "feature": "optional-private-vm-storage-endpoint-update",
+      "defaultEnabled": false,
+      "scope": "Exact selected owned canonical subnet and VM instance only, conditional on fresh target/network/ETag checks",
+      "rationale": "Explicit Apply reserves one local attempt, invokes fresh preservation-aware selection, captures cached ARM token only in memory, repeats selection and issues one direct If-Match subnet PUT without proxy/redirect/retry. GET-only same-handle observation cannot replay or infer a lost response. No Bicep/VNet/NSG/VM write, role/provider grant, credential persistence or ingress change. Bounded shared CLI capture is integrated offline; actual cached-token acquisition, selected-network readback and outer invocation containment remain separate required gates.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "experiments/vm/PrivateStorageEndpointUpdate.psm1",
+          "sha256": "aa3fe97def8c437cd4657920299dfbae51a9e2b21b259c52ffc18431999f88f8"
+        },
+        {
+          "path": "experiments/vm/PrivateStorageEndpoint.psm1",
+          "sha256": "34db373583a7ace65a63b76f5d6e01fde4c8d2580537b75075d4189553b25242"
+        },
+        {
+          "path": "experiments/server/HttpsEndpoint.psm1",
+          "sha256": "b548c7161c9db5efa35199ca6c12fc430b9393c272b1b0d762fd433c2be65b9d"
+        }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
       "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/virtualNetworks/write; Microsoft.Network/virtualNetworks/subnets/write",
       "principal": "Explicit selected optional VM deployment operator using existing cached authority; no runtime identity grant",
       "phase": "deployment",
@@ -79,7 +105,7 @@
       "evidence": [
         {
           "path": "experiments/server/BackupStoreSelection.psm1",
-          "sha256": "c33df90520c4921868bbd69449cde3bf365060c3efb96aa10b4e9e265d8b7ba2"
+          "sha256": "9e6b14153d46d6b7799718deb87aa50e3c1146ded1db13801926595dbcf11f4b"
         },
         {
           "path": "experiments/server/backup_store_selection.py",
@@ -87,7 +113,7 @@
         },
         {
           "path": "experiments/server/HttpsEndpoint.psm1",
-          "sha256": "f19748db7f3d7deea96182e21d93205c4bf56a8e16c477405bcfa4d1e4c28b12"
+          "sha256": "b548c7161c9db5efa35199ca6c12fc430b9393c272b1b0d762fd433c2be65b9d"
         }
       ]
     },
@@ -137,7 +163,7 @@
       "evidence": [
         {
           "path": "experiments/server/HttpsEndpoint.psm1",
-          "sha256": "f19748db7f3d7deea96182e21d93205c4bf56a8e16c477405bcfa4d1e4c28b12"
+          "sha256": "b548c7161c9db5efa35199ca6c12fc430b9393c272b1b0d762fd433c2be65b9d"
         },
         {
           "path": "experiments/server/New-SantaHttpsCandidate.ps1",
@@ -457,6 +483,7 @@
     }
   ],
   "gaps": [
+    "The guarded existing-subnet setter now integrates bounded per-call CLI/token capture. HTTP/body cancellation, fresh readback and flushed once-only local evidence are source/offline checks, not overall invocation deadline, total CLI/OS memory containment, filesystem power-loss durability or live selected-network acceptance. Copied receipts do not authorize writes; lost responses remain unknown and cannot trigger automatic replacement attempts. A separate empty-network ETag probe does not qualify raw Bicep CAS, atomic multi-resource selection, off-host retention or restore.",
     "The confidential exact-capture source-VM Blob relay adds local recipient crypto and a once-only guest upload journal only. It requires fresh existing cached ARM ownership/target selection and exact create-only SAS minting outside the envelope. No ARM token, backup private key, new grant, policy change or Azure orchestration is supplied. Actual selected-VM cryptography41/Linux descriptor tests and a read-only installed-capture/IMDS/cgroup preflight passed; actual upload service/Run Command delivery, create-only PUT and separate verifier download remain unqualified; envelopes and receipts are not authority. See docs/blob-capability-relay.md.",
     "Issue #90 supplies default-off new canonical VM network Storage endpoint wiring and a GET-only ownership/ETag/preservation-aware existing-network plan. No existing subnet/VNet write, automatic azd adoption, provider-enforced conditional mutation, endpoint delivery or retention/restore acceptance is qualified. A raw Bicep deployment is create-or-update and can erase unprovided endpoint arrays; existing changes require current independently selected authority and fresh plan consumption/revalidation. Source subnet disappearance still requires explicit restricted-firewall reconciliation; no operator-network modification, public-IP fallback or grant is added.",
     "The restore-census primitive observes an already-open isolated PostgreSQL connection and reviewed Django registry only. It adds no Azure/Graph grant, connection/authentication, restore, row transformation or activation. Controlled SQL/registry adapters do not prove real Django/PostgreSQL18 catalog compatibility, isolated database coverage, sequence quiescence, trusted source/image/authority or native restoration. See docs/restore-census.md.",
