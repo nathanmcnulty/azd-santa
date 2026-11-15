@@ -30,8 +30,10 @@ class ActualHeaders(unittest.TestCase):
                     else 'a563843e11cbce39c557bd429ebb787d56f49d51d9bbb3292cd9b36b37a60cdf')
         self.assertEqual(hashlib.sha256(binary.read_bytes()).hexdigest(), expected)
 
+        calls = []
         class Echo(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
+                calls.append(1)
                 body = json.dumps(dict(self.headers)).encode()
                 self.send_response(200)
                 self.send_header('Content-Length', str(len(body)))
@@ -101,6 +103,38 @@ class ActualHeaders(unittest.TestCase):
                 self.assertEqual(headers['x-forwarded-proto'], 'https')
                 for header in ('x-forwarded-for', 'x-forwarded-unknown', 'forwarded', 'x-azd-santa-client-ip', 'x-auth-user'):
                     self.assertNotIn(header, headers)
+                self.assertEqual(len(calls), 1)
+                process.terminate()
+                process.wait(timeout=10)
+                # Actual handler proof uses a synthetic certificate on loopback;
+                # it neither contacts ACME nor qualifies public certificate trust.
+                held = edge.held_configuration(facts(), '/private', phase='staging')
+                held['storage'] = config['storage']
+                held['logging'] = config['logging']
+                held['apps']['tls'] = config['apps']['tls']
+                held_server = held['apps']['http']['servers']['https']
+                held_server['listen'] = ['127.0.0.1:' + str(port)]
+                held_server['automatic_https']['disable_certificates'] = True
+                path.write_text(json.dumps(held))
+                process = subprocess.Popen([str(binary), 'run', '--config', str(path)],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                deadline = time.monotonic() + 10
+                while True:
+                    try:
+                        raw = socket.create_connection(('127.0.0.1', port), timeout=2)
+                        break
+                    except OSError:
+                        if process.poll() is not None or time.monotonic() > deadline:
+                            self.fail('Held loopback Caddy failed to start')
+                        time.sleep(.05)
+                with ctx.wrap_socket(raw, server_hostname=host) as connection:
+                    connection.sendall(('GET / HTTP/1.1\r\nHost: ' + host + '\r\nConnection: close\r\n\r\n').encode())
+                    response = http.client.HTTPResponse(connection)
+                    response.begin()
+                    self.assertEqual(response.status, 503)
+                    self.assertEqual(response.getheader('Retry-After'), '60')
+                    self.assertEqual(response.read(1024), b'Application admission held closed.\n')
+                self.assertEqual(len(calls), 1)
             finally:
                 if process.poll() is None:
                     process.terminate()

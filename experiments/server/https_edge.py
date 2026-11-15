@@ -68,6 +68,21 @@ def configuration(facts, state, *, phase='private', certificate=None, key=None):
     return data
 
 
+def held_configuration(facts, state, *, phase='staging'):
+    """Certificate qualification only: no route can reach the application."""
+    need(phase in ('staging', 'production'))
+    data = configuration(facts, state, phase=phase)
+    routes = data['apps']['http']['servers']['https']['routes']
+    # Remove the proxy entirely, rather than depending on handler fallthrough.
+    routes[0]['handle'] = [{
+        'handler': 'static_response', 'status_code': 503,
+        'body': 'Application admission held closed.\n',
+        'headers': {'Retry-After': ['60'], 'Cache-Control': ['no-store']},
+        'close': True}]
+    need('reverse_proxy' not in json.dumps(data))
+    return data
+
+
 def unit_text(binary, config, state, *, port=8443):
     rules(port)
     paths = [str(PurePosixPath(value)) for value in (binary, config, state)]
@@ -98,13 +113,59 @@ def firewall_unit_text(script, *, port=8443):
     need(re.fullmatch(r'/opt/azd-santa-https/[A-Za-z0-9/_.-]+/https_edge.py', str(script))
          and '..' not in PurePosixPath(script).parts)
     return '\n'.join(('[Unit]', 'Description=Santa restrictive TLS connection cap',
-        'After=network-online.target docker.service',
+        'Requires=systemd-tmpfiles-setup.service',
+        'After=systemd-tmpfiles-setup.service network-online.target docker.service',
         '[Service]', 'Type=oneshot', 'RemainAfterExit=yes',
         'ExecStart=/usr/bin/python3 -I -B ' + str(script) + ' --ensure-firewall ' + str(port),
         'TimeoutStartSec=60', 'NoNewPrivileges=yes', 'ProtectSystem=strict',
         'ReadWritePaths=/run/xtables.lock',
         'ProtectHome=yes', 'PrivateTmp=yes', 'CapabilityBoundingSet=CAP_NET_ADMIN',
         'MemoryMax=64M', 'TasksMax=16', 'LimitNOFILE=64', ''))
+
+
+def lock_tmpfiles_text():
+    # f creates without truncation. /run is volatile across cold starts.
+    return 'f /run/xtables.lock 0600 root root -\n'
+
+
+def certificate_ingress_candidate(facts, nsg, subnet):
+    """Pure, conditional-write candidate for one held-application TLS pilot.
+
+    The caller must freshly verify ARM ownership and the held guest service;
+    these input objects and this return value confer no authority to write.
+    """
+    candidate.validate_facts(facts)
+    base = facts['VmId'].split('/providers/')[0] + '/providers/Microsoft.Network/'
+    nsg_id, subnet_id = base + 'networkSecurityGroups/nsg-santa-lab', base + 'virtualNetworks/vnet-santa-lab/subnets/host'
+    need(nsg['id'].lower() == nsg_id.lower() and subnet['id'].lower() == subnet_id.lower())
+    need(nsg['tags'].get('azd-solution') == 'azd-santa'
+         and nsg['tags'].get('purpose') == 'synthetic-vm-lab'
+         and nsg['tags'].get('azd-env-name') == facts['EnvironmentName'])
+    etag = nsg['etag']
+    need(type(etag) is str and 1 <= len(etag) <= 256 and not any(c in etag for c in '\r\n'))
+    props = nsg['properties']; network = subnet['properties']
+    need(props['provisioningState'] == network['provisioningState'] == 'Succeeded')
+    need(not props.get('networkInterfaces') and len(props['subnets']) == 1
+         and props['subnets'][0]['id'].lower() == subnet_id.lower())
+    need(network['networkSecurityGroup']['id'].lower() == nsg_id.lower()
+         and len(network['ipConfigurations']) == 1
+         and network['ipConfigurations'][0]['id'].lower() == facts['IpConfigurationId'].lower())
+    need(set(props) <= {'provisioningState', 'resourceGuid', 'securityRules', 'defaultSecurityRules', 'subnets', 'networkInterfaces'})
+    owned = props['securityRules']; need(len(owned) == 1 and owned[0]['name'] == 'deny-all-inbound')
+    deny = owned[0]['properties']
+    expected = dict(priority=100, direction='Inbound', access='Deny', protocol='*',
+                    sourcePortRange='*', destinationPortRange='*', sourceAddressPrefix='*', destinationAddressPrefix='*')
+    empty_arrays = {'sourceAddressPrefixes', 'destinationAddressPrefixes', 'sourcePortRanges', 'destinationPortRanges'}
+    need(all(deny.get(key) == value for key, value in expected.items())
+         and all(deny[key] == [] for key in empty_arrays if key in deny)
+         and set(deny) <= set(expected) | empty_arrays | {'provisioningState', 'description'})
+    blocked = dict(expected, priority=110)
+    if 'description' in deny: blocked['description'] = deny['description']
+    allowed = dict(expected, priority=100, access='Allow', protocol='Tcp', destinationPortRange='443')
+    body = dict(location=nsg['location'], tags=copy.deepcopy(nsg['tags']), properties={'securityRules': [
+        {'name': 'allow-santa-tls-challenge', 'properties': allowed},
+        {'name': 'deny-all-inbound', 'properties': blocked}]})
+    return {'resource_id': nsg_id, 'if_match': etag, 'body': body}
 
 
 def rules(port):
