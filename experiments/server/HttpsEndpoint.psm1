@@ -14,6 +14,12 @@ function Invoke-SantaEndpointProcess {
     foreach($argument in $Arguments) { $start.ArgumentList.Add($argument) }
     $start.UseShellExecute=$false;$start.CreateNoWindow=$true
     $start.RedirectStandardInput=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
+    # Per-child only: cached token reads must not inherit opt-in CLI file logs,
+    # telemetry or hidden tool installation/upgrades. Never alter user config.
+    foreach($pair in @{AZURE_LOGGING_ENABLE_LOG_FILE='false';AZURE_CORE_COLLECT_TELEMETRY='false'
+        AZURE_EXTENSION_USE_DYNAMIC_INSTALL='no';AZURE_AUTO_UPGRADE_ENABLE='no'}.GetEnumerator()) {
+        $start.Environment[$pair.Key]=$pair.Value
+    }
     $process=[Diagnostics.Process]::new();$process.StartInfo=$start;$started=$false
     $watch=[Diagnostics.Stopwatch]::StartNew()
     try {

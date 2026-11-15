@@ -8,6 +8,21 @@ Describe 'Bounded cached operator process reader' {
             $result=Invoke-SantaEndpointProcess -FileName $script:python -Arguments @('-I','-c',$code) -InputText 'ordinary-data' -TimeoutSeconds 5
             ($result | ConvertFrom-Json).input | Should -BeExactly 'ordinary-data'
         }
+        It 'forces sensitive CLI settings only in the owned child environment' {
+            $keys=@('AZURE_LOGGING_ENABLE_LOG_FILE','AZURE_CORE_COLLECT_TELEMETRY','AZURE_EXTENSION_USE_DYNAMIC_INSTALL','AZURE_AUTO_UPGRADE_ENABLE')
+            $before=@{};foreach($key in $keys){$before[$key]=[Environment]::GetEnvironmentVariable($key)}
+            try {
+                foreach($key in $keys){[Environment]::SetEnvironmentVariable($key,'inherited-unsafe-value','Process')}
+                $code='import os,json;print(json.dumps({k:os.getenv(k) for k in ("AZURE_LOGGING_ENABLE_LOG_FILE","AZURE_CORE_COLLECT_TELEMETRY","AZURE_EXTENSION_USE_DYNAMIC_INSTALL","AZURE_AUTO_UPGRADE_ENABLE")}))'
+                $result=Invoke-SantaEndpointProcess -FileName $script:python -Arguments @('-I','-c',$code)
+                $values=$result|ConvertFrom-Json -AsHashtable
+                $values.AZURE_LOGGING_ENABLE_LOG_FILE|Should -BeExactly 'false'
+                $values.AZURE_CORE_COLLECT_TELEMETRY|Should -BeExactly 'false'
+                $values.AZURE_EXTENSION_USE_DYNAMIC_INSTALL|Should -BeExactly 'no'
+                $values.AZURE_AUTO_UPGRADE_ENABLE|Should -BeExactly 'no'
+                foreach($key in $keys){[Environment]::GetEnvironmentVariable($key)|Should -BeExactly 'inherited-unsafe-value'}
+            } finally {foreach($key in $keys){[Environment]::SetEnvironmentVariable($key,$before[$key],'Process')}}
+        }
         It 'kills and reaps its exact timed-out child without returning its output' {
             $pidFile=Join-Path $TestDrive 'child.pid'
             $code='import os,sys,time;from pathlib import Path;Path(sys.argv[1]).write_text(str(os.getpid()));time.sleep(30)'
