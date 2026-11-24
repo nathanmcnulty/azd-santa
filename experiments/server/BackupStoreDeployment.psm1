@@ -21,6 +21,65 @@ function Store-Normalize($Value) {
 }
 function Store-Json($Value) { ConvertTo-Json -InputObject (Store-Normalize $Value) -Depth 48 -Compress }
 function Store-Hash([string]$Text) { [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Text))) }
+function Copy-StoreComparisonValue($Value) {
+    if($Value -is [Collections.IDictionary]) {
+        $copy=[ordered]@{}
+        foreach($key in @($Value.Keys | Sort-Object -CaseSensitive)) { $copy[[string]$key]=Copy-StoreComparisonValue $Value[$key] }
+        return ,$copy
+    }
+    if($Value -is [array]) { $items=@(foreach($item in $Value) { Copy-StoreComparisonValue $item });return ,$items }
+    $Value
+}
+function Normalize-StoreTemplateDeclarationTypes($Template) {
+    foreach($sectionName in @('parameters','outputs')) {
+        if(-not $Template.Contains($sectionName)) { continue }
+        $section=$Template[$sectionName]
+        Assert-StoreDeployment ($section -is [Collections.IDictionary])
+        foreach($name in @($section.Keys)) {
+            $declaration=$section[$name]
+            Assert-StoreDeployment ($declaration -is [Collections.IDictionary] -and $declaration.Contains('type') -and
+                $declaration.type -is [string])
+            $typeName=$declaration.type.ToLowerInvariant()
+            $allowedTypes=if($sectionName -ceq 'parameters') {
+                @('string','securestring','int','bool','object','secureobject','array')
+            } else { @('string','int','bool','object','array') }
+            Assert-StoreDeployment ($allowedTypes -ccontains $typeName)
+            $declaration.type=$typeName
+        }
+    }
+}
+function Assert-StoreTemplateMatches($SubmittedTemplate,$ObservedTemplate) {
+    Assert-StoreDeployment ($SubmittedTemplate -is [Collections.IDictionary] -and $ObservedTemplate -is [Collections.IDictionary])
+    $submitted=Copy-StoreComparisonValue $SubmittedTemplate
+    $observed=Copy-StoreComparisonValue $ObservedTemplate
+    $hasSubmittedGenerator=$false;$submittedGenerator=$null
+    if($submitted.Contains('metadata')) {
+        Assert-StoreDeployment ($submitted.metadata -is [Collections.IDictionary])
+        if($submitted.metadata.Contains('_generator')) {
+            $submittedGenerator=$submitted.metadata._generator
+            Assert-StoreDeployment ($submittedGenerator -is [Collections.IDictionary] -and $submittedGenerator.Contains('templateHash') -and
+                $null -ne $submittedGenerator.templateHash -and $submittedGenerator.templateHash -isnot [bool] -and
+                $submittedGenerator.templateHash -isnot [Collections.IDictionary] -and $submittedGenerator.templateHash -isnot [array])
+            $hasSubmittedGenerator=$true
+            $submitted.metadata.Remove('_generator')
+        }
+    }
+    if($observed.Contains('metadata')) {
+        Assert-StoreDeployment ($observed.metadata -is [Collections.IDictionary])
+        if($observed.metadata.Contains('_generator')) {
+            Assert-StoreDeployment ($hasSubmittedGenerator -and (Store-Json $observed.metadata._generator) -ceq (Store-Json $submittedGenerator))
+            $observed.metadata.Remove('_generator')
+        }
+    }
+    if($hasSubmittedGenerator) {
+        foreach($copy in @($submitted,$observed)) {
+            if($copy.Contains('metadata') -and $copy.metadata.Count -eq 0) { $copy.Remove('metadata') }
+        }
+    }
+    Normalize-StoreTemplateDeclarationTypes $submitted
+    Normalize-StoreTemplateDeclarationTypes $observed
+    Assert-StoreDeployment ((Store-Json $submitted) -ceq (Store-Json $observed))
+}
 function Invoke-StoreAzure([string[]]$Arguments,[int]$TimeoutSeconds=30) {
     & $script:reader {param($a,$seconds) Invoke-SantaEndpointAzJson -Arguments $a -TimeoutSeconds $seconds} $Arguments $TimeoutSeconds
 }
@@ -223,7 +282,10 @@ function Observe-StoreDeployment($Plan,[string]$Directory,[string]$Python='pytho
     Assert-StoreDeployment ($status -cin @('Accepted','Running','Succeeded','Failed','Canceled'))
     $selection=$null
     if($status -ceq 'Succeeded') {
-        Assert-StoreDeployment ($deployment.properties.templateHash -ceq $template.metadata._generator.templateHash)
+        $templateHash=$deployment.properties.templateHash
+        Assert-StoreDeployment ($null -ne $templateHash -and $templateHash -isnot [bool] -and
+            $templateHash -isnot [Collections.IDictionary] -and $templateHash -isnot [array] -and ([string]$templateHash -match '^\d+$'))
+        Assert-StoreTemplateMatches $template $deployment.properties.template
         $selection=Get-SantaBackupStoreSelection @s -ReadArm -Python $Python
     }
     $after=Invoke-StoreAzure @('account','show','--subscription',$s.SubscriptionId)

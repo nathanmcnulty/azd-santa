@@ -61,7 +61,7 @@
       "evidence": [
         {
           "path": "experiments/server/BackupStoreDeployment.psm1",
-          "sha256": "e4478bc1eca31ad5fcfecb685901657f2b7dcbce40992fc328f5c819b9d7a7e0"
+          "sha256": "5e82f747a0c6cf07f820ea2cbd77b677aa41ef7850ce5993450e8211c5bff5e2"
         },
         {
           "path": "experiments/server/Invoke-SantaBackupStoreDeployment.ps1",
