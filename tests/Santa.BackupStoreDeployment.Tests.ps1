@@ -57,11 +57,26 @@ Describe 'Fresh independent backup-store creation orchestration' {
                 if($Arguments[0] -eq 'account') {
                     return @{id=$script:selectionArgs.SubscriptionId;tenantId=$script:selectionArgs.TenantId;state='Enabled';environmentName='AzureCloud'}
                 }
-                if($Arguments[2] -eq 'show') {
+                if($Arguments[0] -eq 'deployment' -and $Arguments[1] -eq 'sub' -and $Arguments[2] -eq 'export') {
+                    $Arguments[3] | Should -BeExactly '--subscription'
+                    $Arguments[4] | Should -BeExactly $script:selectionArgs.SubscriptionId
+                    $Arguments[5] | Should -BeExactly '--name'
+                    $Arguments[6] | Should -BeExactly $plan.deploymentName
+                    if($script:exportFault -ceq 'denied') { throw 'synthetic-raw-export-error-not-for-output' }
+                    if($script:exportFault -ceq 'missing') { return $null }
+                    if($script:exportFault -ceq 'rest-envelope') { return @{template=$script:exportTemplate} }
+                    return $script:exportTemplate
+                }
+                if($Arguments[0] -eq 'deployment' -and $Arguments[1] -eq 'sub' -and $Arguments[2] -eq 'show') {
                     $observedParameters=(Read-StoreRecord (Join-Path $script:directory 'parameters.json')).parameters
                     if($script:parameterPayloadFault -ceq 'changed-value') { $observedParameters.backupStoreName.value='different-store-name' }
                     if($script:parameterPayloadFault -ceq 'extra-parameter') { $observedParameters.unexpected=@{value='unexpected'} }
-                    $properties=[ordered]@{provisioningState=$script:status;template=$script:exportTemplate;parameters=$observedParameters}
+                    if($script:parameterPayloadFault -ceq 'renamed-parameter') {
+                        $entry=$observedParameters['backupStoreName']
+                        $observedParameters.Remove('backupStoreName')
+                        $observedParameters['BackupStoreName']=$entry
+                    }
+                    $properties=[ordered]@{provisioningState=$script:status;parameters=$observedParameters}
                     if($script:serverTemplateHashFault -cne 'missing') { $properties.templateHash=$script:serverTemplateHash }
                     return @{id="/subscriptions/$($plan.selection.SubscriptionId)/providers/Microsoft.Resources/deployments/$($plan.deploymentName)"
                         name=$plan.deploymentName;properties=$properties}
@@ -73,7 +88,7 @@ Describe 'Fresh independent backup-store creation orchestration' {
             $script:directory=Join-Path $TestDrive ([guid]::NewGuid().ToString('N'));$script:status='Succeeded'
             $script:submittedTemplate=New-StoreTemplateFixture
             $script:exportTemplate=New-StoreArmTemplateProjection $script:submittedTemplate
-            $script:serverTemplateHash='15050816737742618192';$script:serverTemplateHashFault='';$script:parameterPayloadFault='';$script:selectionReadCount=0
+            $script:serverTemplateHash='15050816737742618192';$script:serverTemplateHashFault='';$script:parameterPayloadFault='';$script:exportFault='';$script:selectionReadCount=0
             $script:preflight=@{contextSha256='a'*64;subnets=@('/selected/subnet');networkObservations=@('b'*64)}
             Mock Get-SantaBackupStoreSelection {
                 if($ReadArm) { $script:selectionReadCount++ }
@@ -111,6 +126,7 @@ Describe 'Fresh independent backup-store creation orchestration' {
             Should -Invoke Invoke-StoreAzure -Times 0 -Exactly -ParameterFilter {$Arguments[0] -eq 'deployment' -and $Arguments[2] -eq 'create'}
             Should -Invoke Invoke-StoreAzure -Times 1 -Exactly -ParameterFilter {$Arguments[2] -eq 'validate' -and $TimeoutSeconds -eq 180 -and $Arguments -contains 'Provider'}
             Should -Invoke Get-SantaBackupStoreSelection -Times 1 -Exactly -ParameterFilter {$ReadArm}
+            Should -Invoke Invoke-StoreAzure -Times 1 -Exactly -ParameterFilter {$Arguments[0] -eq 'deployment' -and $Arguments[1] -eq 'sub' -and $Arguments[2] -eq 'export' -and $Arguments[3] -eq '--subscription' -and $Arguments[4] -eq $script:selectionArgs.SubscriptionId -and $Arguments[5] -eq '--name'}
             $intent=Read-StoreRecord (Join-Path $script:directory 'intent.json')
             $intent.planSha256 | Should -Match '^[a-f0-9]{64}$'
         }
@@ -118,7 +134,7 @@ Describe 'Fresh independent backup-store creation orchestration' {
             @{fault='firewall'},@{fault='parameter-default'},@{fault='extra-property'},@{fault='missing-property'},
             @{fault='extra-root-field'},@{fault='resource-type-case'},@{fault='generator-mismatch'},
             @{fault='unsupported-output-type'},@{fault='malformed-template'},@{fault='missing-template'},
-            @{fault='parameter-value'},@{fault='extra-deployed-parameter'}
+            @{fault='parameter-value'},@{fault='extra-deployed-parameter'},@{fault='renamed-deployed-parameter'}
         ) {
             $null=Invoke-SantaBackupStoreDeployment @script:selectionArgs -Action Apply -StateDirectory $script:directory
             $script:serverTemplateHash='7648908632598025806'
@@ -138,9 +154,103 @@ Describe 'Fresh independent backup-store creation orchestration' {
                 'missing-template' { $script:exportTemplate=$null }
                 'parameter-value' { $script:parameterPayloadFault='changed-value' }
                 'extra-deployed-parameter' { $script:parameterPayloadFault='extra-parameter' }
+                'renamed-deployed-parameter' { $script:parameterPayloadFault='renamed-parameter' }
             }
             { Invoke-SantaBackupStoreDeployment -Action Observe -StateDirectory $script:directory } | Should -Throw '*No submission was attempted*'
             $script:selectionReadCount | Should -Be 1
+        }
+        It 'rejects nested case-colliding template keys in either insertion order before normalization' {
+            foreach($reverse in @($false,$true)) {
+                $observed=Copy-StoreTemplateFixture $script:submittedTemplate
+                $properties=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+                $keys=if($reverse){@('SupportsHttpsTrafficOnly','supportsHttpsTrafficOnly')}else{@('supportsHttpsTrafficOnly','SupportsHttpsTrafficOnly')}
+                $values=if($reverse){@($false,$true)}else{@($true,$false)}
+                $properties.Add($keys[0],$values[0]);$properties.Add($keys[1],$values[1])
+                $observed.resources[0].properties=$properties
+                { Assert-StoreTemplateMatches $script:submittedTemplate $observed } | Should -Throw
+            }
+        }
+        It 'normalizes only exact canonical metadata and declaration type keys' {
+            $metadataAlias=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+            foreach($key in $script:submittedTemplate.Keys) {
+                $actualKey=if($key -ceq 'metadata'){'Metadata'}else{[string]$key}
+                $metadataAlias.Add($actualKey,$script:submittedTemplate[$key])
+            }
+            { Assert-StoreTemplateMatches $script:submittedTemplate $metadataAlias } | Should -Throw
+
+            $typeAlias=Copy-StoreTemplateFixture $script:submittedTemplate
+            $typeDeclaration=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+            foreach($key in $typeAlias.parameters.location.Keys) {
+                $actualKey=if($key -ceq 'type'){'Type'}else{[string]$key}
+                $typeDeclaration.Add($actualKey,$typeAlias.parameters.location[$key])
+            }
+            $typeAlias.parameters.location=$typeDeclaration
+            { Assert-StoreTemplateMatches $script:submittedTemplate $typeAlias } | Should -Throw
+        }
+        It 'accepts the exact reviewed prior source manifest only for Observe and keeps the persisted plan hash strict' {
+            function New-TestHistoricalState([string]$Directory,[bool]$WrongPlanHash) {
+                $null=New-Item -ItemType Directory -Path $Directory
+                $plan=New-SantaBackupStoreDeploymentPlan @script:selectionArgs
+                $plan.sourceHashes=Get-StoreReviewedPriorSourceHashes
+                $planPath=Join-Path $Directory 'plan.json'
+                Write-StoreRecord $planPath $plan
+                $templatePath=Join-Path $Directory 'template.json'
+                Write-StoreRecord $templatePath $script:submittedTemplate
+                $parameters=[ordered]@{parameters=[ordered]@{
+                    location=[ordered]@{value=$plan.selection.Location}
+                    backupResourceGroupName=[ordered]@{value=$plan.selection.BackupResourceGroupName}
+                    backupStoreName=[ordered]@{value=$plan.selection.BackupStoreName}
+                    ownershipId=[ordered]@{value=$plan.selection.OwnershipId}
+                    ownedSubnetResourceIds=[ordered]@{value=@('/selected/subnet')}
+                }}
+                $parametersPath=Join-Path $Directory 'parameters.json'
+                Write-StoreRecord $parametersPath $parameters
+                $planHash=Store-Hash (Store-Json $plan)
+                if($WrongPlanHash) { $planHash='0'*64 }
+                $intent=[ordered]@{
+                    scope='independent-backup-store-submission-intent-v1'
+                    planSha256=$planHash
+                    deploymentName=$plan.deploymentName
+                    templateSha256=(Get-FileHash $templatePath -Algorithm SHA256).Hash.ToLowerInvariant()
+                    parametersSha256=(Get-FileHash $parametersPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                }
+                Write-StoreRecord (Join-Path $Directory 'intent.json') $intent
+            }
+            $badDirectory=$script:directory
+            New-TestHistoricalState $badDirectory $true
+            $script:directory=$badDirectory
+            $failure=$null
+            try { $null=Invoke-SantaBackupStoreDeployment -Action Observe -StateDirectory $script:directory }
+            catch { $failure=$_.Exception.Message }
+            $failure | Should -BeOfType [string]
+            $failure | Should -Match 'No submission was attempted'
+
+            $goodDirectory=Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+            New-TestHistoricalState $goodDirectory $false
+            $script:directory=$goodDirectory
+            $result=Invoke-SantaBackupStoreDeployment -Action Observe -StateDirectory $script:directory
+            $result.state | Should -BeExactly 'Succeeded'
+            $result.Contains('template') | Should -BeFalse
+            Should -Invoke Send-StoreDeployment -Times 0 -Exactly
+        }
+        It 'rejects arbitrary historical source changes and keeps Apply on the current source manifest' {
+            $plan=New-SantaBackupStoreDeploymentPlan @script:selectionArgs
+            $plan.sourceHashes=Get-StoreReviewedPriorSourceHashes
+            { Assert-StorePlan $plan } | Should -Throw
+            $plan.sourceHashes['../backup-store/store.bicep']='0000000000000000000000000000000000000000000000000000000000000000'
+            { Assert-StorePlan $plan -AllowReviewedPriorSources } | Should -Throw
+        }
+        It 'fails closed on unavailable, denied or REST-envelope template exports' -ForEach @(
+            @{fault='denied'},@{fault='missing'},@{fault='rest-envelope'}
+        ) {
+            $null=Invoke-SantaBackupStoreDeployment @script:selectionArgs -Action Apply -StateDirectory $script:directory
+            $script:exportFault=$fault
+            $failure=$null
+            try { $null=Invoke-SantaBackupStoreDeployment -Action Observe -StateDirectory $script:directory }
+            catch { $failure=$_.Exception.Message }
+            $failure | Should -BeOfType [string]
+            $failure | Should -Match 'No submission was attempted'
+            $failure | Should -Not -Match 'synthetic-raw-export-error-not-for-output'
         }
         It 'rejects missing, null, nonscalar and malformed service template hashes' -ForEach @(
             @{fault='missing'},@{fault='null'},@{fault='array'},@{fault='object'},@{fault='boolean'},@{fault='nondigit'}
@@ -179,6 +289,7 @@ Describe 'Fresh independent backup-store creation orchestration' {
             $script:status='Failed'
             $result=Invoke-SantaBackupStoreDeployment @script:selectionArgs -Action Apply -StateDirectory $script:directory
             $result.state | Should -BeExactly 'Failed';$result.selection | Should -BeNullOrEmpty
+            Should -Invoke Invoke-StoreAzure -Times 0 -Exactly -ParameterFilter {$Arguments[2] -eq 'export'}
             Should -Invoke Get-SantaBackupStoreSelection -Times 0 -Exactly -ParameterFilter {$ReadArm}
         }
         It 'rejects modified local parameters before Observe reads ARM' {

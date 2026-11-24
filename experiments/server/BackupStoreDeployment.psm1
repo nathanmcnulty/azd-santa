@@ -21,6 +21,24 @@ function Store-Normalize($Value) {
 }
 function Store-Json($Value) { ConvertTo-Json -InputObject (Store-Normalize $Value) -Depth 48 -Compress }
 function Store-Hash([string]$Text) { [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Text))) }
+function Find-StoreExactKey($Dictionary,[string]$Name) {
+    if($Dictionary -isnot [Collections.IDictionary]) { return $null }
+    foreach($key in $Dictionary.Keys) {
+        if($key -is [string] -and [StringComparer]::Ordinal.Equals([string]$key,$Name)) { return [string]$key }
+    }
+    return $null
+}
+function Assert-StoreNoCaseCollisions($Value) {
+    if($Value -is [Collections.IDictionary]) {
+        $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        foreach($key in $Value.Keys) {
+            Assert-StoreDeployment ($key -is [string] -and $seen.Add([string]$key))
+            Assert-StoreNoCaseCollisions $Value[$key]
+        }
+    } elseif($Value -is [array]) {
+        foreach($item in $Value) { Assert-StoreNoCaseCollisions $item }
+    }
+}
 function Copy-StoreComparisonValue($Value) {
     if($Value -is [Collections.IDictionary]) {
         $copy=[ordered]@{}
@@ -30,50 +48,93 @@ function Copy-StoreComparisonValue($Value) {
     if($Value -is [array]) { $items=@(foreach($item in $Value) { Copy-StoreComparisonValue $item });return ,$items }
     $Value
 }
+function Test-StoreSourceHashesMatch($Actual,$Expected) {
+    if($Actual -isnot [Collections.IDictionary] -or $Expected -isnot [Collections.IDictionary] -or $Actual.Count -ne $Expected.Count) { return $false }
+    foreach($expectedKey in $Expected.Keys) {
+        $matches=@()
+        foreach($actualKey in $Actual.Keys) {
+            if($actualKey -isnot [string]) { return $false }
+            if([StringComparer]::Ordinal.Equals([string]$actualKey,[string]$expectedKey)) { $matches+=,[string]$actualKey }
+        }
+        if($matches.Count -ne 1) { return $false }
+        $actualValue=$Actual[$matches[0]]
+        if($actualValue -isnot [string] -or $actualValue -cne $Expected[$expectedKey]) { return $false }
+    }
+    return $true
+}
+function Get-StoreReviewedPriorSourceHashes {
+    # Exact complete source manifest from reviewed Santa main 65de1abcd36d7d47beace4fddc3cf19eeb169e96.
+    # Only explicit Observe may accept it for an existing intent; Apply always requires current sources.
+    [ordered]@{
+        'BackupStoreDeployment.psm1'='e4478bc1eca31ad5fcfecb685901657f2b7dcbce40992fc328f5c819b9d7a7e0'
+        'Invoke-SantaBackupStoreDeployment.ps1'='bcb995d8700bd46107282d3364c4c87e5f4589278566a7e1d807d154fcb55d80'
+        'BackupStoreSelection.psm1'='9e6b14153d46d6b7799718deb87aa50e3c1146ded1db13801926595dbcf11f4b'
+        'backup_store_selection.py'='3934eeb139470803086ecbbeba26ed20a2c982c5bd4125a4b88d6e4e2ccd6bdc'
+        'blob_retention.py'='f5aa619725104fa3a4bbe174a7ea4ceb236d9eab68675b8730d90984cb3e1818'
+        'HttpsEndpoint.psm1'='b548c7161c9db5efa35199ca6c12fc430b9393c272b1b0d762fd433c2be65b9d'
+        'SealedSetup.psm1'='47a54386d2222b30b3aad92a7fb06758c53abd65530dc705bdcac1bacc556877'
+        '../vm/PrivateStorageEndpoint.psm1'='34db373583a7ace65a63b76f5d6e01fde4c8d2580537b75075d4189553b25242'
+        '../backup-store/main.bicep'='a4e0e2b6e930b0f79d93ab0f77047dd962aa7bdfc99885732634857279d8e11e'
+        '../backup-store/store.bicep'='ae6d29b913905beed2949fdbf4c885202c4f68bdfbacdf8c31ef00e208a08d64'
+    }
+}
 function Normalize-StoreTemplateDeclarationTypes($Template) {
     foreach($sectionName in @('parameters','outputs')) {
-        if(-not $Template.Contains($sectionName)) { continue }
-        $section=$Template[$sectionName]
+        $sectionKey=Find-StoreExactKey $Template $sectionName
+        if($null -eq $sectionKey) { continue }
+        $section=$Template[$sectionKey]
         Assert-StoreDeployment ($section -is [Collections.IDictionary])
         foreach($name in @($section.Keys)) {
             $declaration=$section[$name]
-            Assert-StoreDeployment ($declaration -is [Collections.IDictionary] -and $declaration.Contains('type') -and
-                $declaration.type -is [string])
-            $typeName=$declaration.type.ToLowerInvariant()
+            $typeKey=Find-StoreExactKey $declaration 'type'
+            Assert-StoreDeployment ($declaration -is [Collections.IDictionary] -and $null -ne $typeKey -and
+                $declaration[$typeKey] -is [string])
+            $typeName=$declaration[$typeKey].ToLowerInvariant()
             $allowedTypes=if($sectionName -ceq 'parameters') {
                 @('string','securestring','int','bool','object','secureobject','array')
             } else { @('string','int','bool','object','array') }
             Assert-StoreDeployment ($allowedTypes -ccontains $typeName)
-            $declaration.type=$typeName
+            $declaration[$typeKey]=$typeName
         }
     }
 }
 function Assert-StoreTemplateMatches($SubmittedTemplate,$ObservedTemplate) {
     Assert-StoreDeployment ($SubmittedTemplate -is [Collections.IDictionary] -and $ObservedTemplate -is [Collections.IDictionary])
+    Assert-StoreNoCaseCollisions $SubmittedTemplate
+    Assert-StoreNoCaseCollisions $ObservedTemplate
     $submitted=Copy-StoreComparisonValue $SubmittedTemplate
     $observed=Copy-StoreComparisonValue $ObservedTemplate
     $hasSubmittedGenerator=$false;$submittedGenerator=$null
-    if($submitted.Contains('metadata')) {
-        Assert-StoreDeployment ($submitted.metadata -is [Collections.IDictionary])
-        if($submitted.metadata.Contains('_generator')) {
-            $submittedGenerator=$submitted.metadata._generator
-            Assert-StoreDeployment ($submittedGenerator -is [Collections.IDictionary] -and $submittedGenerator.Contains('templateHash') -and
-                $null -ne $submittedGenerator.templateHash -and $submittedGenerator.templateHash -isnot [bool] -and
-                $submittedGenerator.templateHash -isnot [Collections.IDictionary] -and $submittedGenerator.templateHash -isnot [array])
+    $submittedMetadataKey=Find-StoreExactKey $submitted 'metadata'
+    if($null -ne $submittedMetadataKey) {
+        $submittedMetadata=$submitted[$submittedMetadataKey]
+        Assert-StoreDeployment ($submittedMetadata -is [Collections.IDictionary])
+        $submittedGeneratorKey=Find-StoreExactKey $submittedMetadata '_generator'
+        if($null -ne $submittedGeneratorKey) {
+            $submittedGenerator=$submittedMetadata[$submittedGeneratorKey]
+            $templateHashKey=Find-StoreExactKey $submittedGenerator 'templateHash'
+            Assert-StoreDeployment ($submittedGenerator -is [Collections.IDictionary] -and $null -ne $templateHashKey -and
+                $null -ne $submittedGenerator[$templateHashKey] -and $submittedGenerator[$templateHashKey] -isnot [bool] -and
+                $submittedGenerator[$templateHashKey] -isnot [Collections.IDictionary] -and $submittedGenerator[$templateHashKey] -isnot [array])
             $hasSubmittedGenerator=$true
-            $submitted.metadata.Remove('_generator')
+            $submittedMetadata.Remove($submittedGeneratorKey)
         }
     }
-    if($observed.Contains('metadata')) {
-        Assert-StoreDeployment ($observed.metadata -is [Collections.IDictionary])
-        if($observed.metadata.Contains('_generator')) {
-            Assert-StoreDeployment ($hasSubmittedGenerator -and (Store-Json $observed.metadata._generator) -ceq (Store-Json $submittedGenerator))
-            $observed.metadata.Remove('_generator')
+    $observedMetadataKey=Find-StoreExactKey $observed 'metadata'
+    if($null -ne $observedMetadataKey) {
+        $observedMetadata=$observed[$observedMetadataKey]
+        Assert-StoreDeployment ($observedMetadata -is [Collections.IDictionary])
+        $observedGeneratorKey=Find-StoreExactKey $observedMetadata '_generator'
+        if($null -ne $observedGeneratorKey) {
+            $observedGenerator=$observedMetadata[$observedGeneratorKey]
+            Assert-StoreDeployment ($hasSubmittedGenerator -and (Store-Json $observedGenerator) -ceq (Store-Json $submittedGenerator))
+            $observedMetadata.Remove($observedGeneratorKey)
         }
     }
     if($hasSubmittedGenerator) {
         foreach($copy in @($submitted,$observed)) {
-            if($copy.Contains('metadata') -and $copy.metadata.Count -eq 0) { $copy.Remove('metadata') }
+            $metadataKey=Find-StoreExactKey $copy 'metadata'
+            if($null -ne $metadataKey -and $copy[$metadataKey].Count -eq 0) { $copy.Remove($metadataKey) }
         }
     }
     Normalize-StoreTemplateDeclarationTypes $submitted
@@ -137,9 +198,12 @@ function New-SantaBackupStoreDeploymentPlan {
         deploymentName="santa-backup-$suffix";sourceHashes=(Store-Sources)
         cloudWrite=$false;retentionProven=$false;restoreAccepted=$false}
 }
-function Assert-StorePlan($Plan,[string]$Python='python') {
-    Assert-StoreDeployment ($Plan.scope -ceq 'independent-backup-store-deployment-plan-v1' -and
-        (Store-Json $Plan.sourceHashes) -ceq (Store-Json (Store-Sources)))
+function Assert-StorePlan($Plan,[string]$Python='python',[switch]$AllowReviewedPriorSources) {
+    $sourceMatch=Test-StoreSourceHashesMatch $Plan.sourceHashes (Store-Sources)
+    if($AllowReviewedPriorSources) {
+        $sourceMatch=$sourceMatch -or (Test-StoreSourceHashesMatch $Plan.sourceHashes (Get-StoreReviewedPriorSourceHashes))
+    }
+    Assert-StoreDeployment ($Plan.scope -ceq 'independent-backup-store-deployment-plan-v1' -and $sourceMatch)
     $s=$Plan.selection;$owner=[guid]$s.OwnershipId;$suffix=$owner.ToString('N')
     Assert-StoreDeployment ($s.BackupResourceGroupName -ceq "rg-santa-backup-$suffix" -and
         $s.BackupStoreName -ceq ('stsb'+$suffix.Substring(0,20)) -and $Plan.deploymentName -ceq "santa-backup-$suffix")
@@ -255,8 +319,8 @@ function Send-StoreDeployment($Plan,$Template,$Parameters,[string]$AccessToken,[
         if($response){$response.Dispose()};$request.Dispose();$cancel.Dispose();$client.Dispose();$AccessToken=$null
     }
 }
-function Observe-StoreDeployment($Plan,[string]$Directory,[string]$Python='python') {
-    Assert-StorePlan $Plan $Python
+function Observe-StoreDeployment($Plan,[string]$Directory,[string]$Python='python',[switch]$AllowReviewedPriorSources) {
+    Assert-StorePlan $Plan $Python -AllowReviewedPriorSources:$AllowReviewedPriorSources
     $intent=Read-StoreRecord (Join-Path $Directory 'intent.json')
     Assert-StoreDeployment ($intent.scope -ceq 'independent-backup-store-submission-intent-v1' -and
         $intent.planSha256 -ceq (Store-Hash (Store-Json $Plan)) -and $intent.deploymentName -ceq $Plan.deploymentName)
@@ -271,12 +335,21 @@ function Observe-StoreDeployment($Plan,[string]$Directory,[string]$Python='pytho
     $deployment=Invoke-StoreAzure @('deployment','sub','show','--subscription',$s.SubscriptionId,'--name',$Plan.deploymentName)
     $id="/subscriptions/$($s.SubscriptionId)/providers/Microsoft.Resources/deployments/$($Plan.deploymentName)"
     Assert-StoreDeployment ($deployment.id -ieq $id -and $deployment.name -ceq $Plan.deploymentName)
-    Assert-StoreDeployment ($deployment.properties.parameters.Count -eq $parameters.parameters.Count)
+    $observedParameters=$deployment.properties.parameters
+    Assert-StoreDeployment ($observedParameters -is [Collections.IDictionary] -and $parameters.parameters -is [Collections.IDictionary] -and
+        $observedParameters.Count -eq $parameters.parameters.Count)
+    Assert-StoreNoCaseCollisions $observedParameters
+    Assert-StoreNoCaseCollisions $parameters.parameters
     foreach($key in $parameters.parameters.Keys) {
-        $actual=$deployment.properties.parameters[$key]
-        Assert-StoreDeployment ($null -ne $actual -and @($actual.Keys | Where-Object {$_ -cnotin @('type','value')}).Count -eq 0 -and
-            (Store-Json $actual.value) -ceq (Store-Json $parameters.parameters[$key].value))
-        if($actual.Contains('type')) { Assert-StoreDeployment ($actual.type -ieq $template.parameters[$key].type) }
+        $actualKey=Find-StoreExactKey $observedParameters $key
+        Assert-StoreDeployment ($null -ne $actualKey)
+        $actual=$observedParameters[$actualKey]
+        $valueKey=Find-StoreExactKey $actual 'value'
+        Assert-StoreDeployment ($null -ne $valueKey -and @($actual.Keys | Where-Object {$_ -cnotin @('type','value')}).Count -eq 0 -and
+            (Store-Json $actual[$valueKey]) -ceq (Store-Json $parameters.parameters[$key].value))
+        if($actual.Contains('type')) {
+            Assert-StoreDeployment ($actual.type -is [string] -and $actual.type -ieq $template.parameters[$key].type)
+        }
     }
     $status=$deployment.properties.provisioningState
     Assert-StoreDeployment ($status -cin @('Accepted','Running','Succeeded','Failed','Canceled'))
@@ -285,7 +358,10 @@ function Observe-StoreDeployment($Plan,[string]$Directory,[string]$Python='pytho
         $templateHash=$deployment.properties.templateHash
         Assert-StoreDeployment ($null -ne $templateHash -and $templateHash -isnot [bool] -and
             $templateHash -isnot [Collections.IDictionary] -and $templateHash -isnot [array] -and ([string]$templateHash -match '^\d+$'))
-        Assert-StoreTemplateMatches $template $deployment.properties.template
+        # show exposes templateHash/templateLink, not the submitted template.
+        # Export the named subscription deployment; this is a read-only CLI operation.
+        $exportedTemplate=Invoke-StoreAzure @('deployment','sub','export','--subscription',$s.SubscriptionId,'--name',$Plan.deploymentName)
+        Assert-StoreTemplateMatches $template $exportedTemplate
         $selection=Get-SantaBackupStoreSelection @s -ReadArm -Python $Python
     }
     $after=Invoke-StoreAzure @('account','show','--subscription',$s.SubscriptionId)
@@ -306,7 +382,7 @@ function Invoke-SantaBackupStoreDeployment {
             Assert-StoreDeployment ([bool]$StateDirectory)
             $StateDirectory=[IO.Path]::GetFullPath($StateDirectory)
             & $script:privateFiles {param($p) Assert-SantaPrivateDestination $p} (Join-Path $StateDirectory ('check-'+[guid]::NewGuid().ToString('N')))
-            return Observe-StoreDeployment (Read-StoreRecord (Join-Path $StateDirectory 'plan.json')) $StateDirectory $Python
+            return Observe-StoreDeployment (Read-StoreRecord (Join-Path $StateDirectory 'plan.json')) $StateDirectory $Python -AllowReviewedPriorSources
         } catch { throw 'Backup-store Observe failed or is unknown; preserve the same state directory and inspect that exact deployment. No submission was attempted.' }
     }
     $arguments=@{TenantId=$TenantId;SubscriptionId=$SubscriptionId;Location=$Location;SourceEnvironment=$SourceEnvironment;SourceVmInstanceId=$SourceVmInstanceId}
