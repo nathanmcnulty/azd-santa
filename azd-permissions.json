@@ -50,18 +50,18 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
-      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/providers/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Resources/subscriptions/resourceGroups/write; Microsoft.Resources/deployments/read; Microsoft.Resources/deployments/write; Microsoft.Resources/deployments/validate/action; Microsoft.Resources/deployments/whatIf/action; Microsoft.Storage/checkNameAvailability/read; Microsoft.Storage/storageAccounts/write; Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/blobServices/write; Microsoft.Storage/storageAccounts/blobServices/containers/write; Microsoft.Storage/storageAccounts/blobServices/containers/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/virtualNetworks/subnets/joinViaServiceEndpoint/action; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/providers/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Resources/subscriptions/resourceGroups/write; Microsoft.Resources/deployments/read; Microsoft.Resources/deployments/write; Microsoft.Resources/deployments/validate/action; Microsoft.Resources/deployments/whatIf/action; Microsoft.Resources/deployments/exportTemplate/action; Microsoft.Storage/checkNameAvailability/read; Microsoft.Storage/storageAccounts/write; Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/blobServices/write; Microsoft.Storage/storageAccounts/blobServices/containers/write; Microsoft.Storage/storageAccounts/blobServices/containers/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/virtualNetworks/subnets/joinViaServiceEndpoint/action; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read",
       "principal": "Explicit selected cached independent backup-store deployment operator (existing rights only)",
       "phase": "deployment",
       "feature": "independent-backup-store-creation",
       "defaultEnabled": false,
       "scope": "Generated fresh independent resource group/storage/deployment in the selected subscription; exact selected source and optional verifier owned subnets only",
-      "rationale": "Default is a no-cloud plan. Explicit Apply verifies cached context, fresh generated names, provider/region and actual owned successful regional Storage endpoints, validates/what-ifs the existing template, repeats preflight and writes exclusive local intent before one fixed-ARM application PUT using an in-memory cached token. Observe never submits. No provider registration, network/policy remediation, role grant, SAS/key request, automatic replay or deletion is performed; control-plane races and actual Azure acceptance remain gaps.",
+      "rationale": "Default is a no-cloud plan. Explicit Apply verifies cached context, fresh generated names, provider/region and actual owned successful regional Storage endpoints, validates/what-ifs the existing template, repeats preflight and writes exclusive local intent before one fixed-ARM application PUT using an in-memory cached token. Observe never submits; on Succeeded it reads the exact selected subscription deployment through az deployment sub export, which requires Microsoft.Resources/deployments/exportTemplate/action. Export is read-only; an unavailable, denied or malformed export fails closed. No provider registration, network/policy remediation, role grant, SAS/key request, automatic replay or deletion is performed; control-plane races and actual Azure acceptance remain gaps.",
       "evidenceState": "code",
       "evidence": [
         {
           "path": "experiments/server/BackupStoreDeployment.psm1",
-          "sha256": "e4478bc1eca31ad5fcfecb685901657f2b7dcbce40992fc328f5c819b9d7a7e0"
+          "sha256": "b14e6381fe6078bcdc06a45d943e901e03035a3086b70e8ea9daab58957fe7a0"
         },
         {
           "path": "experiments/server/Invoke-SantaBackupStoreDeployment.ps1",

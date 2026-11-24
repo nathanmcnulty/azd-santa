@@ -27,6 +27,13 @@ Describe 'Current permission evidence inventory' {
         }
     }
 
+    It 'documents the backup-store history export permission without granting it' {
+        $requirement = @($manifest.requirements | Where-Object { $_.feature -ceq 'independent-backup-store-creation' })
+        $requirement.Count | Should -BeExactly 1
+        ($requirement[0].permission -split '; ') | Should -Contain 'Microsoft.Resources/deployments/exportTemplate/action'
+        $requirement[0].defaultEnabled | Should -BeFalse
+        $requirement[0].rationale | Should -Match 'Observe never submits; on Succeeded it reads the exact selected subscription deployment through az deployment sub export'
+    }
     It 'inventories the exact current declared Graph scope set for <feature>' -ForEach @(
         @{ feature = 'intune-package-publication'; path = 'scripts/Invoke-SantaIntunePackage.ps1' }
         @{ feature = 'intune-profile-publication'; path = 'scripts/Invoke-SantaIntuneProfiles.ps1' }
