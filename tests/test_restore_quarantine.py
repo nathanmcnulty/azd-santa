@@ -23,6 +23,7 @@ import cold_backup as producer
 import native_snapshot as native
 import restore_cipher
 import restore_quarantine as quarantine
+import retained_image_compatibility as compatibility
 
 
 def digest(raw): return hashlib.sha256(raw).hexdigest()
@@ -181,6 +182,54 @@ class Quarantine(unittest.TestCase):
             (sealed[:-1]+bytes([sealed[-1]^1]), digest(sealed[:-1]+bytes([sealed[-1]^1])), self.key),
             (sealed, '0'*64, self.key), (sealed, digest(sealed), wrong)):
             with self.assertRaises(Exception): restore_cipher.authenticate(io.BytesIO(data), len(data), expected, key, maximum=4*quarantine.CHUNK)
+
+    def test_bounded_prefix_is_released_after_full_authentication(self):
+        raw = self.plaintext()
+        sealed = self.seal(raw)
+        receipt, prefix = restore_cipher.authenticate_prefix(io.BytesIO(sealed), len(sealed), digest(sealed), self.key,
+            maximum=4*quarantine.CHUNK, seconds=30, prefix_limit=777)
+        self.assertEqual(prefix, raw[:777])
+        self.assertEqual(receipt['plaintext_bytes'], len(raw))
+        self.assertTrue(receipt['plaintext_released'])
+        altered = sealed[:-1] + bytes([sealed[-1] ^ 1])
+        with self.assertRaises(Exception):
+            restore_cipher.authenticate_prefix(io.BytesIO(altered), len(altered), digest(altered), self.key,
+                maximum=4*quarantine.CHUNK, seconds=30, prefix_limit=777)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'Linux private descriptor paths')
+    def test_collects_only_compatibility_and_refuses_bad_seals_or_first_member(self):
+        raw = self.plaintext()
+        with tempfile.TemporaryDirectory(dir=Path.home()) as folder:
+            source = Path(folder) / 'backup.sealed'
+            destination = Path(folder) / 'compatibility.json'
+            sealed = self.seal(raw)
+            def rename_first(info, data):
+                if info.name == 'backup/compatibility.json':
+                    info.name = 'backup/wrong.json'
+                return [(info, data)]
+            changed = self.rewrite(raw, rename_first)
+            damaged = sealed[:-1] + bytes([sealed[-1] ^ 1])
+            source.touch(mode=0o600)
+            for content, expected in ((damaged, digest(damaged)), (sealed, '0'*64)):
+                source.write_bytes(content)
+                with self.assertRaises(Exception):
+                    compatibility.collect(source, expected, self.key, destination)
+                self.assertFalse(destination.exists())
+            bad_member = self.seal(changed)
+            source.write_bytes(bad_member)
+            with self.assertRaises(quarantine.QuarantineRejected):
+                compatibility.collect(source, digest(bad_member), self.key, destination)
+            self.assertFalse(destination.exists())
+            source.write_bytes(sealed)
+            receipt = compatibility.collect(source, digest(sealed), self.key, destination)
+            with tarfile.open(fileobj=io.BytesIO(raw)) as archive:
+                original = archive.extractfile('backup/compatibility.json').read()
+            self.assertEqual(destination.read_bytes(), original)
+            self.assertEqual(receipt['compatibility_sha256'], digest(original))
+            self.assertFalse(receipt['restore_accepted'])
+            self.assertEqual(set(Path(folder).iterdir()), {source, destination})
+            with self.assertRaises(FileExistsError):
+                compatibility.collect(source, digest(sealed), self.key, destination)
 
     def test_traversal_absolute_alias_and_unknown_root_reject(self):
         raw = self.plaintext()

@@ -16,7 +16,7 @@ PATHS = tuple(sorted(('LICENSE', 'THIRD_PARTY_NOTICES.md', 'third_party/santa-20
         SERVER + name for name in (
             'cold_backup.py', 'native_snapshot.py', 'restore_cipher.py', 'restore_quarantine.py',
             'restore_census.py', 'secret_rewrap.py', 'retention_image_inventory.py',
-            'retained_image_inventory_command.py', 'retained_image_archive.py',
+            'retained_image_inventory_command.py', 'retained_image_compatibility.py', 'retained_image_archive.py',
             'retained_image_export.py', 'retained_image_export_job.py', 'retained_image_export_command.py',
             'retained_image_readback.py',
             'retained_image_parts.py',

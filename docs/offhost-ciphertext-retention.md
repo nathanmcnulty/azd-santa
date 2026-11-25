@@ -272,6 +272,22 @@ still require qualification.
 
 ### Run a selected image transfer
 
+On the independent Linux recovery host, use the retained native ciphertext
+and its independently obtained SHA-256 to recover the compatibility record.
+Keep the recipient's private DER key and output in an owner-private
+directory on that host.
+
+```bash
+python3 ./experiments/server/retained_image_compatibility.py \
+  --ciphertext "$ciphertext" --ciphertext-sha256 "$ciphertextSha" \
+  --recipient-key "$recipientPrivateDer" --output "$authenticatedCompatibility"
+```
+
+The command reads and authenticates the complete seal before parsing the
+bounded first archive member. It writes only the verified
+`compatibility.json` and prints its SHA-256 for the next command. Full
+archive validation and application restore remain separate checks.
+
 To collect a fresh source inventory, use
 `experiments/server/retained_image_inventory_command.py`. It verifies the
 independently authenticated `compatibility.json` and requires its source VM
