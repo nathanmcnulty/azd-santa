@@ -20,6 +20,8 @@ import test_blob_retention as fixtures
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+DiskState=relay.State
+
 class MemoryState:
     stores={}
     def __init__(self,selected,create=False):
@@ -57,6 +59,43 @@ class Relay(unittest.TestCase):
         for p in self.patches:p.start();self.addCleanup(p.stop)
     def identity(self,target):
         relay.need(target==self.source);return self.boot
+
+    @unittest.skipUnless(sys.platform=='linux','Actual Linux private directory and boot replacement guards required')
+    def test_expired_unsubmitted_offer_is_archived_once_on_a_different_boot(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as folder,patch.object(relay,'ROOT',Path(folder)), \
+                patch.object(relay,'State',DiskState):
+            arguments=('source',self.source,self.record,self.fixture.blob)
+            old=relay.create_offer(*arguments,apply=True,lifetime=10)
+            digest=relay.sha(relay.encoded(old))
+            original=Path(folder)/'blob-relay-v1'/self.selected
+            saved={path.name:path.read_bytes() for path in original.iterdir()}
+            archive=original.with_name(self.selected+'.unsubmitted-'+digest)
+            self.boot='66666666-6666-4666-8666-666666666666'
+            with self.assertRaises(relay.RelayRejected):
+                relay.create_offer(*arguments,apply=True,replacement=digest)
+            self.now=old['expires']
+            new_boot=self.boot
+            self.boot=old['boot_id']
+            with self.assertRaises(relay.RelayRejected):
+                relay.create_offer(*arguments,apply=True,replacement=digest)
+            self.boot=new_boot
+            with self.assertRaises(relay.RelayRejected):
+                relay.create_offer(*arguments,apply=True,replacement='0'*64)
+            with DiskState(self.selected) as state:
+                state.write('submit-intent.json',b'possible submission')
+            with self.assertRaises(relay.RelayRejected):
+                relay.create_offer(*arguments,apply=True,replacement=digest)
+            self.assertFalse(archive.exists())
+            self.assertEqual((original/'submit-intent.json').read_bytes(),b'possible submission')
+            (original/'submit-intent.json').unlink()
+            new=relay.create_offer(*arguments,apply=True,replacement=digest)
+            self.assertEqual(new['boot_id'],new_boot)
+            self.assertNotEqual(new['kid_sha256'],old['kid_sha256'])
+            self.assertEqual({path.name:path.read_bytes() for path in archive.iterdir()},saved)
+            with self.assertRaises(relay.RelayRejected):
+                relay.create_offer(*arguments,apply=True,replacement=digest)
+            self.assertEqual((original/'offer.json').read_bytes(),relay.encoded(new))
+
     def capture(self,environment,target,record):
         relay.need(environment=='source' and target==self.source and record==self.record);return copy.deepcopy(self.proof)
     def read_file(self,path,*args,**kwargs):

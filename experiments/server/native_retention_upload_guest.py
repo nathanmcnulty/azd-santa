@@ -94,8 +94,10 @@ selected = relay.blob.Blob(**config['blob'])
 environment = target.vm_id.split('/')[4].removeprefix('rg-azd-santa-vm-')
 operation = relay.selection(environment, target, record)
 action = request['action']
-if request == {'action': 'offer'}:
-    offer = relay.create_offer(environment, target, record, selected, apply=True)
+if action == 'offer' and set(request) <= {'action', 'replace_unsubmitted_offer_sha256'}:
+    replacement = request.get('replace_unsubmitted_offer_sha256')
+    relay.need('replace_unsubmitted_offer_sha256' not in request or type(replacement) is str)
+    offer = relay.create_offer(environment, target, record, selected, apply=True, replacement=replacement)
     result = {'state': 'offered', 'offer': offer}
 elif action == 'submit' and set(request) == {'action', 'packet', 'offer_sha256'}:
     result = relay.submit(operation, request['offer_sha256'], request['packet'], apply=True)
@@ -132,7 +134,7 @@ def dispatch(raw, request_raw):
     with ExitStack() as stack:
         parent, leaf = blob.parent(folder, stack)
         created = False
-        if request == {'action': 'offer'}:
+        if request.get('action') == 'offer':
             try:
                 os.mkdir(leaf, 0o700, dir_fd=parent)
                 os.fsync(parent)
