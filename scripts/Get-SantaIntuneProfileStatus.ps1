@@ -3,6 +3,8 @@
 param(
     [Parameter(Mandatory)][string] $TenantId,
     [Parameter(Mandatory)][string] $ExpectedAccount,
+    [ValidateSet('Default','NormalBrowser')][string] $AuthenticationMode = 'Default',
+    [string] $GraphClientId,
     [Parameter(Mandatory)][string] $ExpectedDeviceName,
     [string] $ReceiptPath = (Join-Path (Split-Path -Parent $PSScriptRoot) '.azure/azd-santa/intune-profiles-receipt.json'),
     [string] $OutputPath = (Join-Path (Split-Path -Parent $PSScriptRoot) '.azure/azd-santa/intune-profile-status.json')
@@ -10,6 +12,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSScriptRoot 'Santa.GraphSession.psm1') -Force
 $root = Split-Path -Parent $PSScriptRoot
 Import-Module (Join-Path $PSScriptRoot 'Santa.Template.psm1') -Force
 
@@ -84,16 +87,8 @@ if ([string]::IsNullOrWhiteSpace([string] $receipt.pilotGroup.memberId)) {
 }
 
 $requiredScopes = @('DeviceManagementConfiguration.Read.All','DeviceManagementManagedDevices.Read.All','Device.Read.All','Group.Read.All')
-$context = Get-MgContext -ErrorAction SilentlyContinue
-if (-not $context -or $context.TenantId -ne $TenantId -or @($requiredScopes | Where-Object { $_ -notin $context.Scopes }).Count -gt 0) {
-    Connect-MgGraph -TenantId $TenantId -Scopes $requiredScopes -ContextScope CurrentUser -NoWelcome
-    $context = Get-MgContext
-}
-if ($context.TenantId -ne $TenantId) { throw "Authenticated tenant '$($context.TenantId)' does not match '$TenantId'." }
-if ($context.Account -ine $ExpectedAccount) { throw "Authenticated account '$($context.Account)' does not match '$ExpectedAccount'." }
-foreach ($requiredScope in $requiredScopes) {
-    if ($requiredScope -notin $context.Scopes) { throw "Missing required delegated scope '$requiredScope'." }
-}
+$context = Initialize-SantaGraphSession -TenantId $TenantId -ExpectedAccount $ExpectedAccount -Scopes $requiredScopes -ContextScope CurrentUser -ProbeUri "/v1.0/groups/$($receipt.pilotGroup.id)?`$select=id" -AuthenticationMode $AuthenticationMode -GraphClientId $GraphClientId
+
 $graphEnvironment = @(Get-MgEnvironment | Where-Object Name -CEQ $context.Environment)
 if ($graphEnvironment.Count -ne 1) { throw "The selected Graph environment '$($context.Environment)' is unavailable." }
 $graphBaseUri = [uri] $graphEnvironment[0].GraphEndpoint

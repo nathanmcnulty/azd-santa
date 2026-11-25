@@ -86,3 +86,13 @@ The assessment run on PowerShell 7.6.6 passed the registered offline validator a
 all 55 Pester tests (39 existing and 16 compatibility tests), with zero failures,
 skips or not-run tests. Generated profiles remained unchanged. Publication and
 independent review are separate gates; this result does not claim component adoption.
+
+## Issue #34 reconciliation
+
+The 0.1.1 adoption deferral remains in force. The separately reviewed
+[Santa session adapter](graph-session-recovery.md) preserves both existing
+lifetimes, reuses valid contexts and automatically connects when none exists.
+It does not change persistent WAM preferences. It never explicitly requests device
+code, but accepts the SDK's fallback and valid delegated DeviceCode contexts under
+the operator's chosen automatic-login policy. The immutable coordinator fixture
+and lock remain unchanged. Native host sign-in remains a separate validation gate.
