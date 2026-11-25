@@ -120,9 +120,15 @@ private manifest remain confidential. Use the same retained key for comparison.
 
 Offline tests use controlled SQL/registry/loader adapters to exercise transaction
 order, rollback/redaction, exact coverage, changes, unsupported objects and
-limits. The Linux check runs the exact excluded-reference query using the pinned
-PostgreSQL 18 image with Docker networking disabled. It checks a plain table and
-references to a synthetic routine, collation and operator class. The full
-collector still needs qualification with the pinned database, real Django
-registry and migration loader inside a non-listening disposable destination.
-Full administrator/device reissue and application/native postflight remain open.
+limits. The Linux check uses the pinned PostgreSQL 18 image with Docker networking
+disabled. It checks the exact excluded-reference query and runs the full
+collector through a private Unix socket with Django 5.2.18 and psycopg2-binary
+2.9.11. The test pins those versions to the reviewed
+[Zentral constraints](https://github.com/zentralopensource/zentral/blob/88e67b3ce49033aab028029937a6e14f7c489073/requirements_constraints.txt).
+The fixture uses Django's real auth and contenttypes migrations and synthetic
+Santa app labels and models. It checks migration graph and applied rows, exact
+comparison and duplicate rows, quoted identifiers, column tombstones, raw
+transaction refusal, statement timeout, interruption, and rollback. The database
+and input data are disposable. The complete Zentral app registry and restored
+application data still require separate qualification, along with administrator
+and device reissue and native postflight.
