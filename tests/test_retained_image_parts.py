@@ -57,6 +57,15 @@ class PartsTests(unittest.TestCase):
             self.assemble(raw, {})
         self.assertEqual(self.target.read_bytes(), self.ciphertext)
 
+    def test_streamed_part_hashes_match_independent_plan_across_write_boundaries(self):
+        output = io.BytesIO()
+        writer = parts.PlannedOutput(output)
+        for start, stop in ((0, 7), (7, 2049), (2049, 2304)):
+            value = self.ciphertext[start:stop]
+            self.assertEqual(writer.write(value), len(value))
+        self.assertEqual(output.getvalue(), self.ciphertext)
+        self.assertEqual(writer.manifest(self.completion, operation=self.operation), self.plan())
+
     def test_corrupt_truncated_or_extended_source_does_not_get_a_plan(self):
         for data in (b'x' + self.ciphertext[1:], self.ciphertext[:-1], self.ciphertext + b'x'):
             with self.assertRaises(parts.PartsRejected):

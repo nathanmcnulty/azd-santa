@@ -40,20 +40,21 @@ inventory = {'scope': 'azd-santa-retention-image-inventory-v1', 'platform': 'lin
              'images': {'core': {'id': image}}}
 maximum = 1024 * 1024
 inventory_sha256 = hashlib.sha256(encoded(inventory)).hexdigest()
+operation = uuid.uuid4().hex
 result = export_image(directory, inventory, 'core', public, maximum=maximum,
                       inventory_sha256=inventory_sha256,
-                      recipient_sha256=hashlib.sha256(public).hexdigest())
+                      recipient_sha256=hashlib.sha256(public).hexdigest(), operation=operation)
 completion = encoded(result)
 completion_sha256 = hashlib.sha256(completion).hexdigest()
 readback = directory.parent / 'readback'
 readback.mkdir(mode=0o700)
 copy = readback / 'image.sealed'
-operation = uuid.uuid4().hex
 # Simulate object transfer only with the bounded disposable fixture. The
 # maintained planner/assembler read binary streams and never stage part files.
 objects = {}
 with (directory / 'image.sealed').open('rb') as source:
-    manifest = plan(source, completion, completion_sha256=completion_sha256, operation=operation)
+    manifest = (directory / 'parts.json').read_bytes()
+    assert manifest == plan(source, completion, completion_sha256=completion_sha256, operation=operation)
     for part in json.loads(manifest)['parts']:
         source.seek(part['offset'])
         objects[part['object']] = source.read(part['bytes'])

@@ -163,6 +163,19 @@ receipt that binds the intent, plaintext image archive, and ciphertext hashes an
 sizes. The receipt must be captured via a trusted producer channel before it can
 be used as independent provenance. Anyone with the public key can encrypt bytes.
 
+When an operation ID is supplied, the exporter records part hashes as it writes
+ciphertext and commits the part manifest before publishing completion. It
+does not reread the ciphertext to produce the manifest or create separate part
+files. The uploader still independently checks the selected ciphertext before
+its first write to Blob.
+
+`retained_image_export_job.py` reserves the operation on the selected guest
+after checking its Azure VM identity. It gives the operator a completion
+record and bounded manifest pages with a shared SHA-256 pin. A failed export
+preserves its reservation and cannot publish a complete receipt. The current
+guest contract still needs an Azure invocation and receipt adapter. The
+encrypted image stays on the source VM for the existing upload workflow.
+
 The envelope reuses the native RSA-OAEP and AES-GCM implementation. A separate
 encrypted image marker and intent precede the Docker tar bytes. The image receipt
 and payload are separate from native database capture and Blob transfer.
