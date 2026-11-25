@@ -52,8 +52,8 @@ class UserProxy(User):
 def reject(operation):
     try:
         operation()
-    except census.CensusRejected:
-        return
+    except census.CensusRejected as error:
+        return error
     raise AssertionError('Expected the restore census to reject the fixture')
 
 
@@ -92,7 +92,11 @@ def run(root):
         assert models['accounts.user_groups']['auto_created']
         assert 'contenttypes.contenttype' in models
         migrations = baseline.manifest['migrations']
-        assert ('accounts', '0001_initial') in {(r['app'], r['name']) for r in migrations['applied']}
+        applied = {(r['app'], r['name']) for r in migrations['applied']}
+        with db.cursor() as cursor:
+            cursor.execute('SELECT app, name FROM django_migrations')
+            assert applied == set(cursor.fetchall())
+        assert ('accounts', '0001_initial') in applied
         graph = {tuple(row['node']): row['parents'] for row in migrations['graph']}
         assert graph['auth', '0002_alter_permission_name_max_length'] == [['auth', '0001_initial']]
         relations = baseline.manifest['catalog']['columns']
@@ -112,7 +116,18 @@ def run(root):
         idle = db.Database.extensions.TRANSACTION_STATUS_IDLE
         assert raw.get_transaction_status() == idle
         with patch.dict(census.CATALOG, {'schemas': "SELECT 'null'::text FROM pg_sleep(2)"}):
-            reject(lambda: observe(limits=census.Limits(statement_ms=50)))
+            error = reject(lambda: observe(limits=census.Limits(statement_ms=50)))
+        while error is not None and not isinstance(error, db.Database.errors.QueryCanceled):
+            error = error.__context__
+        assert isinstance(error, db.Database.errors.QueryCanceled)
+        assert raw.get_transaction_status() == idle
+        with patch.object(census.Reader, 'read', side_effect=KeyboardInterrupt):
+            try:
+                observe()
+            except KeyboardInterrupt:
+                pass
+            else:
+                raise AssertionError('Interrupt did not propagate')
         assert raw.get_transaction_status() == idle
         with raw.cursor() as cursor:
             cursor.execute('BEGIN')
