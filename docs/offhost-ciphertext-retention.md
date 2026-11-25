@@ -138,10 +138,25 @@ selections fail. The inventory carries the capture generation, runtime manifest
 digest and source commit so later retention can bind the same selection.
 
 Treat the capture document and inventory as private. Image exports may include
-restricted source or configuration, and a successful inventory provides no
-authority to publish or load them. Exact image exports, the verified restore
-tooling inventory, encryption, transfer, and destination-side byte and image
-verification are separate work tracked in [issue #97](https://github.com/nathanmcnulty/azd-santa/issues/97).
+restricted source or configuration. `experiments/server/retained_image_archive.py`
+checks an owned, stable, seekable plaintext Docker export against the archive
+length, SHA-256 and local image ID from an independently authenticated receipt.
+It caps each image archive at 16 GiB, streams the complete byte check, and rejects
+wrong platforms, tagged or multiple images, missing layers, and conflicting OCI
+metadata. It reads the image configuration and archive metadata without extracting
+layers. Classic Docker identifies images by the configuration digest, while the
+containerd image store can identify a single-platform image by its OCI manifest
+digest. The verifier checks the selected identity against the corresponding
+hashed bytes and binds both to the same configuration. A multi-platform index
+as the selected ID requires separate qualification. Use an outer wall-clock
+deadline to bound blocking disk I/O.
+
+The Ubuntu test exports a disposable `linux/amd64` image by immutable ID,
+removes only that fixture image, verifies the archive, loads it, and reads back
+the same image ID and platform without starting a container. The verifier
+reports archive verification only. Encrypted export, the reviewed restore
+tooling inventory, authenticated transfer, and independent live acceptance
+remain in [issue #97](https://github.com/nathanmcnulty/azd-santa/issues/97).
 
 The optional VM creation-time Storage endpoint setting and GET-only existing
 network proposal are described in [private Storage endpoint wiring](private-storage-endpoint.md).
