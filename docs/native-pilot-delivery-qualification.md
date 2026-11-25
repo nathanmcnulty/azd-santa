@@ -173,3 +173,22 @@ execution evidence separate.
 
 This uses the [Defender RunScript Args parameter](https://learn.microsoft.com/en-us/defender-endpoint/api/run-live-response)
 and the [Santa 2026.8 read-only rule lookup](https://github.com/northpolesec/santa/blob/2026.8/Source/santactl/Commands/SNTCommandRule.mm).
+
+### Controlled execution and rollback
+
+Select the `santa-native-execution-fixture` artifact from a successful
+`Validate Santa template` push run for the reviewed `main` commit. The
+macOS job builds an ad hoc signed universal executable, verifies both slices,
+and checks its baseline marker. The fixture prints one line and exits. The tar
+file preserves the execute bit and includes the source commit and executable
+SHA-256. Compare both with the selected run before deriving a rule or delivering
+the file to the pilot Mac.
+
+Keep the existing synthetic-hash receipt as historical evidence. Use the
+fixture's own hash for a separate binary rule on the selected Monitor
+configuration. Capture the successful marker before the rule is installed.
+Then capture the same hash's rule receipt, observed execution decision and
+matching backend event. After removing that test rule and syncing, verify the
+rule is absent and the same bytes print the marker again. The hosted build
+verifies the fixture only. Santa enforcement, upload and rollback require
+evidence from the selected pilot.
