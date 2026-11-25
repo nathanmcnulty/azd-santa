@@ -150,12 +150,15 @@ application data still require separate qualification, along with administrator
 and device reissue and native postflight.
 
 The Linux fixture also stops the synthetic cluster and checks the clean
-shutdown through `pg_controldata`. It mounts the source volume read-only, copies
-the full data directory through a PAX tar stream to a fresh volume and starts
-PostgreSQL directly in a separate network-disabled container. The restricted
-role compares the restored rows, sequence state, schema and Django migrations
+shutdown through `pg_controldata`. It mounts the source volume read-only and
+seals the full PostgreSQL directory with Santa's cold backup writer. Synthetic
+metadata and sentinels stand in for the other services. The fixture authenticates
+and extracts the archive into private quarantine, copies only the quarantined
+PostgreSQL directory to a fresh volume and starts PostgreSQL directly in a
+separate network-disabled container. The restricted role compares the restored
+rows, sequence state, schema and Django migrations
 with the pre-shutdown census. It then changes a synthetic row and confirms the
-comparison rejects the changed state. This covers a physical PostgreSQL
-restore of the fixture. Qualification of Santa's encrypted archive, the full
-Zentral stack and current authority remains separate.
+comparison rejects the changed state. This covers the encrypted archive path
+and physical PostgreSQL restore for the fixture. Authentication of the retained
+pilot archive, the complete Zentral stack and current authority remain open.
 [PostgreSQL file-system-level backup](https://www.postgresql.org/docs/18/backup-file.html)

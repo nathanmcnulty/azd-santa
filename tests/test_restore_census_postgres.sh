@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 
 image="$(python -c 'import json; print(json.load(open("experiments/server/dependency-images.lock.json"))["postgres"])')"
 [[ "$image" =~ ^postgres@sha256:[0-9a-f]{64}$ ]]
-fixture_root="$(mktemp -d)"
+fixture_root="$(mktemp -d "$HOME/.santa-census.XXXXXXXX")"
 container=''
 restored_container=''
 source_volume=''
@@ -25,7 +25,7 @@ mkdir -m 1777 "$fixture_root/socket"
 python -m venv "$fixture_root/venv"
 fixture_python="$fixture_root/venv/bin/python"
 "$fixture_python" -m pip install --only-binary=:all: \
-  Django==5.2.18 psycopg2-binary==2.9.11 asgiref==3.8.1 sqlparse==0.6.0
+  Django==5.2.18 psycopg2-binary==2.9.11 asgiref==3.8.1 sqlparse==0.6.0 cryptography==50.0.0
 start_database() {
   local volume="$1"
   shift
@@ -109,16 +109,23 @@ docker stop --timeout 15 "$container" >/dev/null
 docker run --rm --name "$copy_name" --network none --read-only --memory 256m --cpus 1 --pids-limit 32 \
   --env LC_ALL=C \
   --mount "type=volume,source=$source_volume,target=/capture,readonly,volume-nocopy" \
-  --mount "type=volume,source=$restored_volume,target=/restored,volume-nocopy" \
   --entrypoint /bin/bash "$image" -euo pipefail -c '
     test ! -e /capture/fixture/postmaster.pid
-    test -z "$(ls -A /restored)"
     pg_controldata /capture/fixture | grep -Ex "Database cluster state:[[:space:]]+shut down" >/dev/null
-    size="$(du -sm /capture)"
+    size="$(du -sm --apparent-size /capture)"
     test "${size%%[[:space:]]*}" -le 192
-    tar --format=pax --numeric-owner -C /capture -cpf - fixture |
-      tar --numeric-owner --same-owner --same-permissions -C /restored -xpf -
-    cmp /capture/fixture/global/pg_control /restored/fixture/global/pg_control
+    tar --format=pax --numeric-owner -C /capture -cpf - fixture
+  ' | env -i HOME="$fixture_root" PATH="$PATH" LC_ALL=C.UTF-8 \
+    "$fixture_python" tests/seal_restore_census_fixture.py "$fixture_root"
+
+docker run --rm --name "$copy_name" --network none --read-only --memory 256m --cpus 1 --pids-limit 32 \
+  --mount "type=bind,source=$fixture_root/quarantine/contents/volumes/postgres_data,target=/quarantined,readonly" \
+  --mount "type=volume,source=$restored_volume,target=/restored,volume-nocopy" \
+  --entrypoint /bin/bash "$image" -euo pipefail -c '
+    test -z "$(ls -A /restored)"
+    install -d -m 0700 /restored/fixture
+    cp -R --no-preserve=ownership /quarantined/. /restored/fixture/
+    chown -R postgres:postgres /restored/fixture
   '
 
 # Start postgres directly. A missing or incomplete restored directory fails
