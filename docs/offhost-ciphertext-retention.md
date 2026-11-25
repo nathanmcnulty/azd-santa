@@ -177,9 +177,22 @@ file and leaves no plaintext path. The staging filesystem needs space for one
 archive and protection appropriate for confidential data. A trusted isolated host
 and an outer I/O deadline remain caller prerequisites.
 
-The Ubuntu test exports a disposable `linux/amd64` image, independently verifies
-a ciphertext copy, and loads the verified descriptor. It reads back the same
-image ID without starting a container.
+`experiments/server/retained_image_parts.py` plans ordered 512 MiB ciphertext
+parts under `image-artifacts/<operation>/<index>.sealed-part`, with at most 33
+parts per image. The plan binds the producer completion digest and the full
+ciphertext length and SHA-256. Per-part lengths and SHA-256 support independent
+readback, while per-part MD5 is available for transport integrity. Generation
+reads at most 1 MiB at a time and creates no local part files. A receiver checks
+the independently retained manifest and producer completion digests, streams
+the validated object sequence to an exclusive new file, and verifies the full
+length and SHA-256 before reporting success. An interrupted or invalid attempt
+preserves partial output for inspection. Open each part through an exact-object
+reader and apply an outer I/O deadline. The multipart image protocol does not
+change native capture or its 2 GiB cap.
+
+The Ubuntu test exports a disposable `linux/amd64` image, reassembles a
+ciphertext copy from a synthetic object store, authenticates it, and loads the
+verified descriptor. It reads back the same image ID without starting a container.
 
 Retain an independently reviewed recovery toolset with
 `experiments/server/restore_tooling_bundle.py`. Its `build` command accepts a
