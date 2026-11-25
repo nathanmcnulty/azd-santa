@@ -147,3 +147,8 @@ restored_container="$(start_database "$restored_volume" --user postgres --entryp
 wait_database "$restored_container"
 env -i HOME="$fixture_root" PATH="$PATH" LC_ALL=C.UTF-8 \
   "$fixture_python" tests/run_restore_census_django.py "$fixture_root" --verify-restored
+
+docker exec "$restored_container" createdb --host /fixture-socket --username postgres \
+  azd_recovery_aaaaaaaaaaaaaaaaaaaaaaaa
+env -i HOME="$fixture_root" PATH="$PATH" LC_ALL=C.UTF-8 \
+  "$fixture_python" tests/run_restore_authority_transaction.py "$fixture_root"

@@ -110,6 +110,25 @@ before passing them to the planner.
 [Pinned Zentral realm session model](https://github.com/zentralopensource/zentral/blob/88e67b3ce49033aab028029937a6e14f7c489073/server/realms/models.py#L299)
 [Pinned Zentral time settings](https://github.com/zentralopensource/zentral/blob/88e67b3ce49033aab028029937a6e14f7c489073/server/server/settings.py#L218)
 
+The transaction adapter in `experiments/server/restore_authority_transaction.py`
+supports an already-isolated PostgreSQL 18 recovery database over a local Unix
+socket. The caller supplies two open connections, the independently selected
+database identity, the reviewed census, and exclusive control of application
+and maintenance writers. The adapter checks both sessions against the same
+database OID, cluster, server start, role and socket. One session locks the
+eight authority tables while the second reruns the full read-only census.
+Preview returns a digest. Apply rechecks that digest before updating every
+planned row in one transaction and verifies the resulting projections before
+commit. Unsupported table structure, other target clients, drift or a failed
+write stop the operation. An uncertain commit requires inspection.
+[PostgreSQL table lock semantics](https://www.postgresql.org/docs/18/sql-lock.html)
+
+The hosted fixture covers the eight dispositions, preservation of unrelated
+fields, rejection of a stale review, and rollback when the final table
+rejects a write. This adapter neither controls external writer isolation nor
+admits listeners or reissues credentials. The complete Zentral registry,
+external authority, and live restored-service tests remain separate.
+
 ## Signing rotation and secret recoverability
 
 The separate [offline secret-rewrap primitive](offline-secret-rewrap.md) now
