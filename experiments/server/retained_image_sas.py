@@ -33,8 +33,9 @@ def sync_directory(path):
 class IssuedBatch:
     """Private in-process result. The trusted caller delivers each token to its selected VM."""
 
-    def __init__(self, target, permission, manifest_sha256, tokens):
+    def __init__(self, target, permission, manifest_sha256, tokens, *, account_id):
         self.target, self.permission, self.manifest_sha256 = target, permission, manifest_sha256
+        self.account_id = account_id
         self._tokens = tokens
         self._lock = threading.Lock()
 
@@ -122,7 +123,8 @@ class ImageSasIssuer(arm.CachedStoreObservation):
             arm.require(blob.encoded(self._context()) == blob.encoded(self._context_initial))
             write_record(journal / 'issued.json', {'state': 'issued', 'objects': len(tokens)})
             sync_directory(journal)
-            return IssuedBatch(self._target, self._permission, self._pins['manifest_sha256'], tokens)
+            return IssuedBatch(self._target, self._permission, self._pins['manifest_sha256'], tokens,
+                               account_id=self._selection.store.blob.account_id)
         except Exception:
             # A journal with intent but no completion needs inspection, even
             # when only some responses were received. Nothing can be replayed.
