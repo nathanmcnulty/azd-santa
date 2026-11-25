@@ -45,7 +45,7 @@ class Quarantine(unittest.TestCase):
         cls.key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
         cls.public = cls.key.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
 
-    def fixture(self, folder, *, maximum_bytes=4*quarantine.CHUNK, maximum_files=1000):
+    def fixture(self, folder, *, maximum_bytes=4*quarantine.CHUNK, maximum_files=1000, capture_snapshot=None):
         base = Path(folder); control = quarantine.ROOT + '/private-runtime-synthetic/runtime-service'
         runtime = str(Path(control).parent).replace('\\', '/')
         source = quarantine.ROOT + '/installers/' + 'a'*64
@@ -79,9 +79,13 @@ class Quarantine(unittest.TestCase):
             maximum_files=maximum_files, seconds=1800, queue_inventory=[], backup_program_sha256=quarantine.PROGRAMS['cold_backup.py'],
             storage_sha256='d'*64, worker_instance={}))
         request_hash = digest(contents[control + '/backup-request.json'])
-        plan = native.plan(request_hash, 'b'*32, 'C'*22, '9.2.1', ['santa-events'], 1)
-        observed = json.loads((ROOT / 'tests/fixtures/server/native-snapshot-es921-success.json').read_bytes())
-        observed['snapshots'][0]['metadata'] = {'azd_santa_binding_sha256': request_hash, 'azd_santa_plan_sha256': native.sha(plan)}
+        repository = None
+        if capture_snapshot is None:
+            plan = native.plan(request_hash, 'b'*32, 'C'*22, '9.2.1', ['santa-events'], 1)
+            observed = json.loads((ROOT / 'tests/fixtures/server/native-snapshot-es921-success.json').read_bytes())
+            observed['snapshots'][0]['metadata'] = {'azd_santa_binding_sha256': request_hash, 'azd_santa_plan_sha256': native.sha(plan)}
+        else:
+            plan, observed, repository = capture_snapshot(request_hash)
         receipt = native.completed_snapshot(observed, plan)
         native_raw = producer.encoded(receipt)
         selection = dict(scope='azd-santa-native-cold-backup-selection-v1', target=target,
@@ -107,6 +111,9 @@ class Quarantine(unittest.TestCase):
             controls[name] = path; control_hashes[name] = digest(raw)
             local = base / ('control-' + str(i)); local.write_bytes(raw); roots[name] = local
         for root in sorted(quarantine.DATA_ROOTS):
+            if root == 'elasticsearch_snapshot_repository' and repository is not None:
+                roots[root] = repository
+                continue
             local = base / root.replace('/', '-'); local.mkdir(); roots[root] = local
             if root == 'elasticsearch_snapshot_repository':
                 for name in ('snap-' + receipt['snapshot_uuid'] + '.dat', 'meta-' + receipt['snapshot_uuid'] + '.dat', 'index-0'):

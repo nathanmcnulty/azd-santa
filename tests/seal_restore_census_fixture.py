@@ -1,4 +1,4 @@
-"""Seal and quarantine a disposable PostgreSQL cluster inside the synthetic Santa fixture."""
+"""Seal, quarantine and validate PostgreSQL and Elasticsearch fixture data."""
 
 import hashlib
 from pathlib import Path, PurePosixPath
@@ -7,6 +7,7 @@ import tarfile
 import time
 
 from test_restore_quarantine import Quarantine, producer, quarantine
+import elastic_restore_fixture as elastic
 
 MAXIMUM = 192 * 1024**2
 MAXIMUM_FILES = 10000
@@ -39,7 +40,9 @@ def run(root):
     fixture = Quarantine()
     controls = root / 'fixture-controls'
     controls.mkdir(mode=0o700)
-    roots, compatibility = fixture.fixture(controls, maximum_bytes=MAXIMUM, maximum_files=MAXIMUM_FILES)
+    roots, compatibility = fixture.fixture(
+        controls, maximum_bytes=MAXIMUM, maximum_files=MAXIMUM_FILES,
+        capture_snapshot=lambda binding: elastic.capture(root, binding))
     roots['volumes/postgres_data'] = cluster
     capture = root / 'sealed'
     capture.mkdir(mode=0o700)
@@ -63,6 +66,8 @@ def run(root):
     quarantined = destination / 'contents' / 'volumes' / 'postgres_data'
     assert hashlib.sha256((quarantined / 'global/pg_control').read_bytes()).digest() == control_digest
     print('Santa sealed and authenticated the cold PostgreSQL fixture into quarantine')
+    repository = destination / 'contents' / 'elasticsearch_snapshot_repository'
+    elastic.restore(root, repository, compatibility['native_snapshot']['plan'])
 
 
 if __name__ == '__main__':
