@@ -87,8 +87,8 @@ def configure(root):
 def reject(operation):
     try:
         operation()
-    except transaction.TransactionRejected:
-        return
+    except transaction.TransactionRejected as error:
+        return error
     raise AssertionError('Expected the authority transaction to reject this attempt')
 
 
@@ -144,7 +144,10 @@ def run(root):
         preview = invoke(expected, dispositions)
         assert not preview['performs_mutation'] and not preview['authority_updates_committed']
         assert sum(preview['planned_rows'].values()) == 8
-        reject(lambda: invoke(expected, dispositions, apply=True, plan_digest=preview['plan_digest']))
+        failure = reject(lambda: invoke(expected, dispositions, apply=True, plan_digest=preview['plan_digest']))
+        constraint_failure = failure.__context__.__cause__
+        assert isinstance(constraint_failure, writer.Database.errors.CheckViolation)
+        assert constraint_failure.diag.constraint_name == 'test_deny_quarantine'
         assert census.compare(observe(), expected, dispositions, fingerprint_key=KEY)['exact_match']
 
         with writer.cursor() as cursor:
