@@ -226,6 +226,7 @@
       "evidenceState": "code",
       "evidence": [
         { "path": "experiments/server/blob_retention.py", "sha256": "f5aa619725104fa3a4bbe174a7ea4ceb236d9eab68675b8730d90984cb3e1818" },
+        { "path": "experiments/server/native_retention_verifier.py", "sha256": "391e27c9d13d382d2431e480a78fb2a1277b204b989074427f4fd43cbc7d40b7" },
         { "path": "experiments/server/blob_capability_relay.py", "sha256": "eb6a5eee83ededf08e78c6203aeb7babc8e36129cf836f2af7ef80be0f6a9a1c" },
         { "path": "experiments/server/private_arm_adapter.py", "sha256": "69a8abfdbe60e0826a7e000a092794ec4bb32425522fc06d41ce1f64da22e82f" }
       ]
