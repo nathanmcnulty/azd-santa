@@ -33,7 +33,7 @@ start_database() {
     --env PGDATA=/var/lib/postgresql/fixture \
     --mount "type=volume,source=$volume,target=/var/lib/postgresql,volume-nocopy" \
     --mount "type=bind,source=$fixture_root/socket,target=/fixture-socket" \
-    "$@" "$image" -c listen_addresses= -c unix_socket_directories=/fixture-socket
+    "$@" "$image" -c listen_addresses= -c unix_socket_directories=/var/run/postgresql,/fixture-socket
 }
 
 # Wait for the actual postgres process, since initdb also starts a temporary
