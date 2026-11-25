@@ -24,7 +24,7 @@ version_output="$(/usr/local/bin/santactl version 2>&1)" || {
   fail 'santactl version failed.'
 }
 printf '%s\n' "$version_output"
-printf '%s\n' "$version_output" | /usr/bin/grep -Fq -- "$expected_version" || fail 'Installed Santa version did not match the expected release.'
+/usr/bin/grep -Fq -- "$expected_version" <<< "$version_output" || fail 'Installed Santa version did not match the expected release.'
 
 printf '\n== Santa status ==\n'
 status_output="$(/usr/local/bin/santactl status 2>&1)" || {
@@ -32,7 +32,7 @@ status_output="$(/usr/local/bin/santactl status 2>&1)" || {
   fail 'santactl status failed.'
 }
 printf '%s\n' "$status_output"
-printf '%s\n' "$status_output" | /usr/bin/grep -Eiq 'Mode[[:space:]]*\|[[:space:]]*Monitor' || fail 'Santa was not in Monitor mode.'
+/usr/bin/grep -Eiq 'Mode[[:space:]]*\|[[:space:]]*Monitor' <<< "$status_output" || fail 'Santa was not in Monitor mode.'
 
 printf '\n== Santa doctor ==\n'
 set +e
@@ -40,10 +40,13 @@ doctor_output="$(/usr/local/bin/santactl doctor 2>&1)"
 doctor_exit=$?
 set -e
 printf '%s\n' "$doctor_output"
-printf '%s\n' "$doctor_output" | /usr/bin/grep -Fq '[+] System Integrity Protection is enabled' || fail 'Santa doctor did not confirm System Integrity Protection.'
-printf '%s\n' "$doctor_output" | /usr/bin/grep -Fq '[+] No configuration errors detected' || fail 'Santa doctor reported a configuration error.'
-if [[ $doctor_exit -ne 0 ]]; then
-  printf '%s\n' "$doctor_output" | /usr/bin/grep -Fq '[+] Sync is disabled' || fail 'santactl doctor reported an unexpected failure.'
+/usr/bin/grep -Fq '[+] System Integrity Protection is enabled' <<< "$doctor_output" || fail 'Santa doctor did not confirm System Integrity Protection.'
+/usr/bin/grep -Fq '[+] No configuration errors detected' <<< "$doctor_output" || fail 'Santa doctor reported a configuration error.'
+
+sync_timed_out=false
+if [[ $doctor_exit -ne 0 ]] && /usr/bin/grep -Fq '[-] Failed to retrieve preflight data: Request timed out' <<< "$doctor_output"; then
+  sync_timed_out=true
+  printf 'syncPreflight=timed-out\n'
 fi
 
 printf '\n== Endpoint Security extension ==\n'
@@ -56,6 +59,13 @@ santa_extension_line="$(printf '%s\n' "$extension_output" | /usr/bin/grep -F 'co
 [[ -n "$santa_extension_line" ]] || fail 'Santa Endpoint Security extension was absent.'
 [[ "$santa_extension_line" != *$'\n'* ]] || fail 'Multiple Santa Endpoint Security extension rows were found.'
 [[ "$santa_extension_line" == *'ZMCG7MLDV9'* && "$santa_extension_line" == *'[activated enabled]'* ]] || fail 'Santa Endpoint Security extension did not have the expected Team ID and active state.'
+printf 'endpointSecurity=active\n'
+
+# Preserve local extension evidence even when the separate sync probe fails.
+if [[ $doctor_exit -ne 0 ]]; then
+  [[ "$sync_timed_out" == false ]] || fail 'Santa sync preflight timed out.'
+  /usr/bin/grep -Fq '[+] Sync is disabled' <<< "$doctor_output" || fail 'santactl doctor reported an unexpected failure.'
+fi
 
 printf '\nresult=passed\n'
 printf 'evidenceBoundary=Local Santa health only; this does not prove Intune delivery, sync receipt, or controlled rule behavior.\n'

@@ -21,6 +21,7 @@ jobs:
         run: |
           /bin/zsh -n ./scripts/Test-SantaEndpoint.sh
           /bin/bash -n ./scripts/live-response/Get-SantaHealth.sh
+          /bin/bash ./tests/Test-SantaHealth.sh
           /bin/bash -n ./scripts/live-response/Get-SantaProfileState.sh
           /bin/bash -n ./experiments/server/bootstrap-host.sh
           /bin/bash -n ./experiments/server/diagnose-host.sh
@@ -81,6 +82,11 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: timeout 90s bash tests/test_retained_image_docker.sh
+
+      - name: Verify local Santa health evidence during sync timeout
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash tests/Test-SantaHealth.sh
 
       - name: Generate and validate offline artifacts
         run: |
