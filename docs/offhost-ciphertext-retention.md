@@ -127,6 +127,22 @@ byte verification; download and compare with the separately retained expected SH
 
 ## Recovery artifacts and remaining integration
 
+`experiments/server/retention_image_inventory.py` implements the image selection
+for a separate retention contract. It checks the exact compatibility document
+from an authenticated native capture and the reviewed dependency lock against
+independently pinned SHA-256 values. It then verifies Docker image observations
+keyed by immutable local image ID. For the current `linux/amd64` host selection,
+the three core services must share one exact ID and each of the four dependencies
+must match its own ID and pinned registry digest. Incomplete and unexpected
+selections fail. The inventory carries the capture generation, runtime manifest
+digest and source commit so later retention can bind the same selection.
+
+Treat the capture document and inventory as private. Image exports may include
+restricted source or configuration, and a successful inventory provides no
+authority to publish or load them. Exact image exports, the verified restore
+tooling inventory, encryption, transfer, and destination-side byte and image
+verification are separate work tracked in [issue #97](https://github.com/nathanmcnulty/azd-santa/issues/97).
+
 The optional VM creation-time Storage endpoint setting and GET-only existing
 network proposal are described in [private Storage endpoint wiring](private-storage-endpoint.md).
 They do not apply an existing-network change or close live retention/restore gates.
