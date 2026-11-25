@@ -25,9 +25,10 @@ def broker(root, data, suffix, user, password):
     name = 'ci' + root.name + '-rabbit-' + suffix
     environment = {**os.environ, 'RABBITMQ_DEFAULT_USER': user, 'RABBITMQ_DEFAULT_PASS': password}
     subprocess.run(['docker', 'run', '--detach', '--pull=never', '--name', name, '--network', 'none',
-                    '--hostname', 'rabbitmq', '--memory', '512m', '--cpus', '2', '--pids-limit', '192',
+                    '--hostname', 'rabbitmq', '--add-host', 'rabbitmq:127.0.0.1',
+                    '--memory', '512m', '--cpus', '2', '--pids-limit', '192',
                     '--user', f'{os.getuid()}:0', '--mount', f'type=bind,source={data},target=/var/lib/rabbitmq',
-                    '--env', 'RABBITMQ_DEFAULT_USER', '--env', 'RABBITMQ_DEFAULT_PASS',
+                    '--env', 'HOME=/var/lib/rabbitmq', '--env', 'RABBITMQ_DEFAULT_USER', '--env', 'RABBITMQ_DEFAULT_PASS',
                     '--env', 'RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS=+S 2:2 +SDcpu 1 +SDio 1',
                     '--env', 'RABBITMQ_CTL_ERL_ARGS=+S 1:1 +SDcpu 1 +SDio 1', IMAGE],
                    env=environment, check=True, stdout=subprocess.DEVNULL, timeout=30)
