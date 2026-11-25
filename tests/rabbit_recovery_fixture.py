@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import secrets
 import subprocess
+import time
 
 SERVER = Path(__file__).resolve().parents[1] / 'experiments/server'
 IMAGE = json.loads((SERVER / 'dependency-images.lock.json').read_text(encoding='utf-8'))['rabbitmq']
@@ -38,7 +39,15 @@ def broker(root, data, suffix, user, password):
                               capture_output=True, text=True, check=check, timeout=timeout)
 
     try:
-        ctl('await_startup', '--timeout', '45', timeout=55)
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            readiness = subprocess.run(['docker', 'exec', name, 'rabbitmq-diagnostics', '-q', 'check_running'],
+                                       capture_output=True, text=True, timeout=10)
+            if readiness.returncode == 0:
+                break
+            time.sleep(0.5)
+        else:
+            raise RuntimeError(f'Synthetic RabbitMQ did not become ready: {readiness.stderr[-1000:]}')
         assert 'rabbit@rabbitmq' in ctl('eval', 'node().').stdout
         yield name, ctl
         ctl('stop')
