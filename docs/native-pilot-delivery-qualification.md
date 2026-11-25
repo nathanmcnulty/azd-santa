@@ -89,16 +89,42 @@ runtime sync hostname. The complete installed payload bytes and a fresh Intune
 service report remain unverified. No Intune object or assignment was changed
 during these checks.
 
+## Live sync and rule receipt on November 25
+
+After starting the existing HTTPS pilot VM, guest preflight found the
+port 443 firewall chain absent. With Azure inbound still denied and the
+listener unbound, the operator verified and started the unchanged guest
+firewall unit. The repeated preflight confirmed the chain, the original
+runtime and the 30-minute listener limit. The temporary Azure rule then
+allowed only the selected source IPv4 to reach the VM on TCP 443.
+
+The selected Mac reported Monitor mode, no successful full or rule sync,
+and absence of the synthetic rule immediately before the test. A normal
+sync triggered through Defender Live Response returned exit code zero.
+At 20:33:52 UTC, the backend recorded one enrollment for the expected
+serial and hardware UUID, followed by preflight and postflight. The Mac
+then reported the new sync timestamp and `ruleState=blocked` for the
+same synthetic binary hash. No test executable was deployed or run.
+
+The backend readback returned one matching machine rule with the expected
+policy. The device lookup verifies local receipt. The readback omitted
+the cursor, session and version fields that the synthetic qualification
+checks to establish full ledger commitment. Event ingestion, controlled
+execution and rule rollback also need separate evidence.
+
+The listener was stopped and port 443 was verified unbound. Azure
+readback confirmed the original inbound deny-all rule and VM deallocation.
+The managed disk and static IP remain reserved for the next trial.
+
 ## Evidence still required
 
 At publication, the control-plane payload readback was verified, while the Mac's
 prior profile-status report predated the update. That old compliant status cannot
 prove the new payload arrived. The backend readback still had zero enrollment
 requests and no native machine; the device's last check-in remained 06:47:46 UTC.
-The November 25 readbacks add current local profile and health evidence.
-Successful preflight and postflight, native rule receipt, event ingestion,
-execution and rollback remain separate gates. The original baseline snapshot
-and new intent/ciphertext receipts remain private.
+The November 25 readbacks add local profile and health evidence and the live
+sync and rule-receipt results above. The original baseline snapshot and
+new diagnostic and server receipts remain private.
 
 The offline planner intentionally continues to report publicationAllowed=false;
 its assertions and hashes are not deployment authority or native acceptance.
@@ -113,6 +139,9 @@ Wake the same selected Mac and keep it online before starting another bounded
 window. Reuse the retained installation binding, existing enrollment and private
 profile/Intune intent; do not run Create again or reset the administrator. Recheck
 the current account, device/group/profile identities, network address and runtime.
+After a VM boot, verify the guest firewall chain with Azure inbound closed.
+If the chain is absent, verify and start the existing firewall unit and
+repeat preflight before opening the Azure rule.
 Verify current Intune receipt and actual backend preflight/postflight before
 advancing to rule, event and rollback checks. Keep Monitor mode and the one-device
 scope, and close the window/deallocate idle compute again afterward.

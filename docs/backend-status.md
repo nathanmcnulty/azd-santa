@@ -25,7 +25,7 @@ The evidence below includes the November 25 native pilot follow-up.
 | Restore | Authority/encryption inventory; ciphertext authentication and bounded offline secret-rewrap primitives with actual synthetic crypto tests | Strict extraction, complete schema/row census, isolated application restoration, current-authority reconciliation and complete fault testing |
 | Operator access | Private application-level MFA/recovery tests; selected HTTPS pilot completed human password/TOTP enrollment and administrator login through a source-IP-restricted window, then restored deny-all ingress | Automated customer setup and controlled recovery on the current candidate; deferred Entra Easy Auth roadmap #108 |
 | Hostname TLS | Selected Azure hostname passed staging/production issuance; ordinary Windows and Linux trust verified the held endpoint; same certificate survived service restart; original deny policy restored | Renewal, DNS retirement/rate constraints, automated customer deployment and actual browser/Mac acceptance |
-| Native Mac | Bound enrollment, Intune payload/assignment readback and accepted sync request. The November 25 endpoint readback confirmed Monitor mode, active Endpoint Security, the expected inner profile UUID and the selected sync hostname. The template outer UUID was absent and preflight timed out while the VM was deallocated. | Fresh Intune status and full payload evidence, successful sync, rules, events, rotation and recovery on the selected Mac in Monitor mode |
+| Native Mac | The selected Mac reported Monitor mode, active Endpoint Security and the expected inner profile UUID. In the November 25 restricted HTTPS window, the backend recorded one native enrollment and successful preflight/postflight. The Mac reported a fresh full sync and receipt of the exact synthetic rule. The listener was stopped, deny-all was restored and the VM was deallocated. | Fresh Intune status and full payload evidence, backend rule commitment, events, controlled execution, rollback, rotation and recovery on the selected Mac |
 | Container Apps | Tracked comparison requirements | Equivalent full backend deployment, persistence/failure tests and measured cost comparison |
 
 Detailed evidence: [private installation](private-vm-installation.md),
@@ -39,17 +39,16 @@ to their exact source, image and layout; passing source tests does not qualify
 a rebuilt image or a physical Mac.
 
 The selected VM's existing Azure-managed hostname has also passed actual ARM
-ownership/linkage/DNS-property readback. That does not establish DNS resolution,
-trusted TLS, public admission or native Mac sync. General ingress remains held
+ownership/linkage/DNS-property readback and resolved to the expected IP. The
+restricted pilot verified TLS and one native sync. General ingress remains held
 closed; separately authorized bounded source-IP trials have their own evidence
 and explicit closure requirements. The successful native capture is recorded in
 [its qualification report](private-native-capture-qualification.md).
 
 ## Development order
 
-The next acceptance milestone is the one-Mac Monitor-mode policy/event loop.
-Prioritize its guarded HTTPS/admission and operator-MFA prerequisites, then
-Intune delivery and actual device receipt. Keep general public ingress disabled
+The next acceptance milestone is event, execution and rollback evidence from the
+one-Mac Monitor-mode pilot. Keep general public ingress disabled
 until the admission requirements in #58 are qualified. Bounded source-IP pilot
 windows require fresh target/runtime checks, retained application safeguards,
 a listener deadline and explicit network restoration.
