@@ -47,10 +47,11 @@ ALTER TABLE census_probe ADD COLUMN label text COLLATE pg_catalog.census_local_o
 CREATE OPERATOR CLASS pg_catalog.census_local_ops FOR TYPE integer USING btree AS
   OPERATOR 1 < (integer, integer), FUNCTION 1 btint4cmp(integer, integer);
 CREATE INDEX census_probe_value ON census_probe (value pg_catalog.census_local_ops);
-DO $$ BEGIN
-  IF (SELECT array_agg(DISTINCT fact->>'catalog' ORDER BY fact->>'catalog')
-      FROM census_excluded_reference) IS DISTINCT FROM ARRAY['pg_collation','pg_opclass','pg_proc'] THEN
-    RAISE EXCEPTION 'Expected recorded routine, collation and operator-class blockers';
+DO $$ DECLARE observed text[]; BEGIN
+  SELECT array_agg(DISTINCT fact->>'catalog' ORDER BY fact->>'catalog')
+    INTO observed FROM census_excluded_reference;
+  IF observed IS DISTINCT FROM ARRAY['pg_collation','pg_opclass','pg_proc'] THEN
+    RAISE EXCEPTION 'Unexpected blocker catalogs: %', observed;
   END IF;
   IF (SELECT current_setting('server_version_num')::integer / 10000) <> 18 THEN
     RAISE EXCEPTION 'Expected pinned PostgreSQL 18';
