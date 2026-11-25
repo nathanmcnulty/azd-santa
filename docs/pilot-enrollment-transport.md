@@ -65,3 +65,9 @@ request validation, controlled host/Docker adapters and mocked Azure responses.
 CLI process tripwires prevent real Azure CLI execution. Actual Run Command delivery, ORM creation, private output on
 the selected operator host and native profile delivery remain separate gates.
 See [the worker](pilot-enrollment.md).
+
+Failure codes include the stage and Create status. `NoCreateSubmitted` directs
+you to check local inputs, cached Azure identity, VM binding or intent, depending
+on the stage. For `CreateMayHaveStarted`, keep the intent and reconcile the
+existing attempt. `CreateVerified` means the sealed response verified before
+writing the private export failed. Keep the existing attempt and receipts.

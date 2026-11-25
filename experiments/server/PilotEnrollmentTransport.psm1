@@ -58,6 +58,7 @@ function Invoke-SantaPilotEnrollment{
   [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9]{8,32}$')][string]$Serial,
   [Parameter(Mandatory)][guid]$HardwareUuid,[Parameter(Mandatory)][string]$OperatorUsername,[Parameter(Mandatory)][string]$OperatorEmail,
   [Parameter(Mandatory)][string]$PrivateOutputPath,[ValidateSet('Plan','Create')][string]$Action='Plan',[switch]$ReadbackOnUnknown)
+ $stage='Input'; $submission='NoCreateSubmitted'
  $request=$null;$profile=$null
  try{
   & $script:setup {param($b) Assert-SantaSetupBinding $b} $Binding
@@ -72,20 +73,31 @@ function Invoke-SantaPilotEnrollment{
   $bound.SourceCommit=(Get-Content (Join-Path $PSScriptRoot 'zentral-source.lock.json') -Raw|ConvertFrom-Json).commit
   foreach($pair in @(@('AdmissionSha256','santa_admission.py'),@('RecoverySha256','operator_recovery.py'),@('SealedSha256','sealed_setup.py'))){$bound[$pair[0]]=Pilot-Hash ([IO.File]::ReadAllText((Join-Path $PSScriptRoot $pair[1])).Replace("`r`n","`n"))}
   $request=New-SantaSetupTransportRequest -Binding $bound -Mode bootstrap -Username $OperatorUsername -Email $OperatorEmail -Reason 'Read-only pilot enrollment attestation'
+  $stage='CachedIdentity'
   $context=Pilot-Read @('account','show','--subscription',$bound.SubscriptionId)
   if($context.id -cne $bound.SubscriptionId -or $context.state -cne 'Enabled' -or $context.tenantId -cne $bound.TenantId -or $context.user.type -cne 'user' -or $context.user.name -cne $Account -or $context.environmentName -cne 'AzureCloud'){throw 'Selected cached account differs.'}
+  $stage='TargetRead'
   $reader=${function:Pilot-Read}
   & $script:setup {param($r,$read) Assert-SantaSetupAzureTarget $r -ReadAzure $read} $request $reader
   $enrollment=[ordered]@{deployment_sha256=(Pilot-Hash (Pilot-Json $request.Binding));hardware_uuid=$HardwareUuid.ToString().ToUpperInvariant();nonce=[guid]::NewGuid().ToString('N');operator_username=$OperatorUsername;origin=$bound.Origin;recipient_public_key=$request.Recipient.PublicKeyBase64;scope='azd-santa-pilot-enrollment-v1';serial=$Serial;source_commit=$bound.SourceCommit}
   $digest=Pilot-Hash (Pilot-Json $enrollment)
+  $stage='CachedIdentityRecheck'
   if(($context|ConvertTo-Json -Depth 16 -Compress) -cne ((Pilot-Read @('account','show','--subscription',$bound.SubscriptionId))|ConvertTo-Json -Depth 16 -Compress)){throw 'Selected account drift.'}
+  $stage='Intent'
   & $script:files {param($p,$b) Write-SantaPrivateBytes $p $b} $intent ([Text.Encoding]::UTF8.GetBytes((@{scope='one-pilot-enrollment-attempt-v1';context_sha256=$digest;binding=$request.Binding;request=$enrollment}|ConvertTo-Json -Depth 8 -Compress)))
-  try{$envelope=Send-PilotEnrollment $request $enrollment create}catch{if(-not $ReadbackOnUnknown){throw};$envelope=Send-PilotEnrollment $request $enrollment observe}
+  $stage='Create'; $submission='CreateMayHaveStarted'
+  try{$envelope=Send-PilotEnrollment $request $enrollment create}catch{if(-not $ReadbackOnUnknown){throw};$stage='Observe';$envelope=Send-PilotEnrollment $request $enrollment observe}
+  $stage='EnvelopeReadback'
   $profile=[SantaPilot.Profile]::Receive($envelope,$digest,$request.Recipient.KeyId,$request.Recipient.Key,$baseline,$bound.Origin)
+  $submission='CreateVerified'; $stage='PrivateExport'
   & $script:files {param($p,$b) Write-SantaPrivateBytes $p $b} $sealed ([Text.Encoding]::UTF8.GetBytes($envelope))
   & $script:files {param($p,$b) Write-SantaPrivateBytes $p $b} $PrivateOutputPath $profile
   @{scope='santa-pilot-enrollment-export-v1';profileExported=$true;privateOutputPath=$PrivateOutputPath;deviceDeliveryProven=$false;monitor=$true}
- }catch{throw 'Pilot enrollment failed or is unknown; preserve local intent/ciphertext. Never replay Create. No profile or credential is returned.'}
+ } catch {
+  $guidance = if ($submission -eq 'NoCreateSubmitted') { 'Check the named stage. Preserve any existing checkpoint.' }
+      else { 'Preserve the local intent and any ciphertext. Do not replay Create.' }
+  throw "SantaEnrollment.${stage}.${submission}: $guidance"
+ }
  finally{if($profile){[Array]::Clear($profile,0,$profile.Length)};if($request){$request.Recipient.Key.Dispose()}}
 }
 Export-ModuleMember -Function Invoke-SantaPilotEnrollment

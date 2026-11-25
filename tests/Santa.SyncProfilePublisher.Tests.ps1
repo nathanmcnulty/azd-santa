@@ -37,6 +37,7 @@ Describe 'Single owned sync profile publisher (offline)' {
                 $b=ConvertFrom-Json $Body -AsHashtable;($b.Keys|Sort-Object)-join ','|Should -Be '@odata.type,payload,payloadName';$b['@odata.type']|Should -BeExactly '#microsoft.graph.macOSCustomConfiguration'
                 $script:patches++;if($script:failPatch){throw ('SECRET-CANARY '+('A'*64))};$script:remote.payload=$b.payload;return
             }
+            if($script:badMode -eq 'readback' -and $script:patches -eq 1){throw 'SECRET-CANARY'}
             if($script:badMode -eq 'assignments' -and $Uri -match '/assignments$'){return @{value=@();'@odata.nextLink'='https://graph.microsoft.com/next'}}
             if($script:badMode -eq 'dynamic' -and $Uri -match '/groups/.+\?' -and $Uri -notmatch '/members'){return @{id=$script:target.group;displayName='Pilot';securityEnabled=$true;mailEnabled=$false;groupTypes=@('DynamicMembership');membershipRule='rule'}}
             if($script:badMode -eq 'two_members' -and $Uri -match '/members\?'){return @{value=@(@{},@{})}}
@@ -61,7 +62,7 @@ Describe 'Single owned sync profile publisher (offline)' {
             switch($script:badContext){tenant{$c.TenantId=[guid]::Empty.ToString()} account{$c.Account='other@example.invalid'} credential{$c.TokenCredentialType='DeviceCode'} scope{$c.Scopes=@('Group.Read.All')}}
             $c
         }
-        {Invoke-SantaIntuneSyncProfile @script:params}|Should -Throw '*SantaSync.*'
+        {Invoke-SantaIntuneSyncProfile @script:params}|Should -Throw '*SantaSync.CachedIdentity.NoPatchSubmitted:*'
         Should -Invoke Set-MgRequestContext -ModuleName Santa.SyncProfilePublisher -Times 0
         Should -Invoke Invoke-MgGraphRequest -ModuleName Santa.SyncProfilePublisher -Times 0
     }
@@ -92,13 +93,13 @@ Describe 'Single owned sync profile publisher (offline)' {
     It 'rejects nonintegral, zero or out-of-Int32 timeout values before changing SDK settings' -ForEach @('fraction','zero','overflow') {
         $script:badTimeout=switch($_){fraction{[TimeSpan]::FromMilliseconds(1500)} zero{[TimeSpan]::Zero} overflow{[TimeSpan]::FromSeconds([double][int]::MaxValue+1)}}
         Mock Get-MgRequestContext -ModuleName Santa.SyncProfilePublisher {[pscustomobject]@{MaxRetry=3;ClientTimeout=$script:badTimeout}}
-        {Invoke-SantaIntuneSyncProfile @script:params}|Should -Throw '*SantaSync.*'
+        {Invoke-SantaIntuneSyncProfile @script:params}|Should -Throw '*SantaSync.GraphRequestContext.NoPatchSubmitted:*'
         Should -Invoke Set-MgRequestContext -ModuleName Santa.SyncProfilePublisher -Times 0
         $script:patches|Should -Be 0
     }
     It 'rejects pagination and substituted immutable device ID before PATCH' -ForEach @('paginated','wrongDevice') {
         Set-Variable -Scope Script -Name $_ -Value $true
-        {Invoke-SantaIntuneSyncProfile @script:params}|Should -Throw '*SantaSync.*';$script:patches|Should -Be 0
+        {Invoke-SantaIntuneSyncProfile @script:params}|Should -Throw '*SantaSync.TargetRead.NoPatchSubmitted:*';$script:patches|Should -Be 0
     }
     It 'rejects dynamic, multiple-member and paginated assignment scope' -ForEach @('dynamic','two_members','assignments') {
         $script:badMode=$_
@@ -127,7 +128,7 @@ Describe 'Single owned sync profile publisher (offline)' {
     }
     It 'preserves ambiguous intent, redacts raw errors and Observe never replays' {
         $script:failPatch=$true
-        try {Invoke-SantaIntuneSyncProfile @script:params;throw 'Should fail'}catch{$_.Exception.Message|Should -BeExactly 'SantaSync.FailedOrUnknownPreserveCheckpointNoReplay';$_.Exception.Message|Should -Not -Match 'SECRET-CANARY|A{64}'}
+        try {Invoke-SantaIntuneSyncProfile @script:params;throw 'Should fail'}catch{$_.Exception.Message|Should -Match '^SantaSync\.Patch\.PatchMayHaveStarted:';$_.Exception.Message|Should -Not -Match 'SECRET-CANARY|A{64}'}
         Test-Path $script:params.CheckpointPath|Should -BeTrue
         {Invoke-SantaIntuneSyncProfile @script:params}|Should -Throw '*SantaSync.*';$script:patches|Should -Be 1
         $script:params.Action='Observe';(Invoke-SantaIntuneSyncProfile @script:params).state|Should -Be 'previous-payload-observed-no-retry';$script:patches|Should -Be 1
@@ -135,6 +136,17 @@ Describe 'Single owned sync profile publisher (offline)' {
     It 'Observe verifies a completed write without another PATCH' {
         $null=Invoke-SantaIntuneSyncProfile @script:params;$script:params.Action='Observe'
         (Invoke-SantaIntuneSyncProfile @script:params).state|Should -Be 'payload-readback-verified';$script:patches|Should -Be 1
+    }
+    It 'reports failed readback separately from a failed PATCH and preserves the intent' {
+        $script:badMode='readback'
+        $output = & {
+            try { Invoke-SantaIntuneSyncProfile @script:params } catch { $_.Exception.Message }
+        } *>&1 | Out-String
+        $output | Should -Match 'SantaSync\.Readback\.PatchMayHaveStarted:'
+        $output | Should -Not -Match 'SECRET-CANARY|A{64}'
+        $script:patches | Should -Be 1
+        Test-Path $script:params.CheckpointPath | Should -BeTrue
+        Test-Path ($script:params.CheckpointPath+'.result.json') | Should -BeFalse
     }
     It 'requires a separate explicit removal flag for baseline updates to active sync' {
         $module=& (Get-Module Santa.SyncProfilePublisher) {$script:provider}

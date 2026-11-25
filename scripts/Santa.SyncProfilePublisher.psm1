@@ -157,6 +157,7 @@ function Invoke-SantaIntuneSyncProfile {
         [string]$ExpectedSyncOrigin,[string]$ExpectedCurrentProfileSha256,[string]$CheckpointPath)
     if($Action -ceq 'Disabled'){return [pscustomobject]@{state='disabled';cloudWrite=$false;additionalProfileAllowed=$false;assignmentsChanged=$false}}
     $saved=$null
+    $stage='Input'; $submission='NoPatchSubmitted'
     try {
         foreach($value in @($ExpectedTenantId,$ExpectedGroupId,$ExpectedDeviceObjectId,$ExpectedDeviceId,$ExpectedConfigurationObjectId)){
             $parsed=[guid]::Empty;Assert-Sync ([guid]::TryParseExact($value,'D',[ref]$parsed) -and $parsed -ne [guid]::Empty)
@@ -165,16 +166,20 @@ function Invoke-SantaIntuneSyncProfile {
         $target=@{tenant=$ExpectedTenantId;account=$ExpectedAccount;group=$ExpectedGroupId;groupName=$ExpectedGroupDisplayName
             deviceObject=$ExpectedDeviceObjectId;device=$ExpectedDeviceId;deviceName=$ExpectedDeviceName;configuration=$ExpectedConfigurationObjectId}
         $owned=Read-SyncReceipt $OwnedReceiptPath $target
+        $stage='CachedIdentity'
         Assert-SyncContext $target
+        $stage='GraphRequestContext'
         $contextSettings=Get-MgRequestContext -ErrorAction Stop -Verbose:$false -Debug:$false
         $timeout=$contextSettings.ClientTimeout
         Assert-Sync ($timeout -is [TimeSpan] -and $timeout.Ticks -gt 0 -and
             $timeout.Ticks % [TimeSpan]::TicksPerSecond -eq 0 -and $timeout.TotalSeconds -le [int]::MaxValue)
         $saved=@{MaxRetry=[int]$contextSettings.MaxRetry;ClientTimeout=[int]$timeout.TotalSeconds}
         $null=Set-MgRequestContext -MaxRetry 0 -ClientTimeout 30 -ErrorAction Stop -Verbose:$false -Debug:$false -Confirm:$false
+        $stage='TargetRead'
         $before=Read-SyncSnapshot $target $owned
         if($Action -ceq 'Inspect'){return [pscustomobject]@{state='read-only-inspection';target=$target;currentProfileSha256=$before.hash;cloudWrite=$false;nativeAcceptance=$false}}
         if($Action -ceq 'Observe') {
+            $stage='ObserveCheckpoint'
             $intent=ConvertFrom-Json (Sync-Input $CheckpointPath).text -AsHashtable -DateKind String
             Assert-Sync ($intent.scope -ceq 'santa-owned-sync-profile-intent-v1' -and (Sync-Json $intent.target) -ceq (Sync-Json $target) -and
                 $intent.ownershipReceiptSha256 -ceq $owned.sha256 -and $intent.scopeSha256 -ceq $before.scopeHash)
@@ -182,13 +187,16 @@ function Invoke-SantaIntuneSyncProfile {
             return [pscustomobject]@{state=$state;currentProfileSha256=$before.hash;cloudWrite=$false;nativeAcceptance=$false;automaticReplay=$false}
         }
         Assert-Sync ($ExpectedCurrentProfileSha256 -cmatch '^[a-f0-9]{64}$' -and $before.hash -ceq $ExpectedCurrentProfileSha256)
+        $stage='ProviderInput'
         $arguments=@{ProviderProfilePath=$ProviderProfilePath;QualificationPath=$QualificationPath;ReviewEvidencePath=$ReviewEvidencePath
             OwnedReceiptPath=$OwnedReceiptPath;ExpectedTenantId=$ExpectedTenantId;ExpectedGroupId=$ExpectedGroupId;ExpectedConfigurationObjectId=$ExpectedConfigurationObjectId}
         $material=& $script:provider {param($a) Read-SantaReviewedProviderMaterial $a} $arguments
         Assert-Sync ($material.plan.fingerprints.ownershipReceipt -ceq $owned.sha256)
         $desired=Merge-SyncProfile $before $material $ExpectedSyncOrigin
+        $stage='TargetRecheck'
         $fresh=Read-SyncSnapshot $target $owned
         Assert-Sync ($fresh.hash -ceq $before.hash -and $fresh.scopeHash -ceq $before.scopeHash -and (Sync-Json $fresh.profile) -ceq (Sync-Json $before.profile))
+        $stage='Intent'
         Assert-Sync (-not [IO.File]::Exists($CheckpointPath+'.result.json'))
         Write-SyncRecord $CheckpointPath @{scope='santa-owned-sync-profile-intent-v1';target=$target;ownershipReceiptSha256=$owned.sha256
             previousProfileSha256=$before.hash;desiredProfileSha256=$desired.hash;scopeSha256=$before.scopeHash
@@ -199,16 +207,23 @@ function Invoke-SantaIntuneSyncProfile {
             Assert-Sync ($fresh.profile['@odata.etag'] -is [string] -and $fresh.profile['@odata.etag'] -cmatch '\A(?:W/)?"[\x21\x23-\x7e]{1,256}"\z')
             $headers['If-Match']=$fresh.profile['@odata.etag']
         }
+        $stage='Patch'; $submission='PatchMayHaveStarted'
         $null=Invoke-SyncGraph PATCH "/v1.0/deviceManagement/deviceConfigurations/$ExpectedConfigurationObjectId" @{'@odata.type'='#microsoft.graph.macOSCustomConfiguration';payload=$desired.payload;payloadName=$fresh.profile.payloadName} $headers
+        $stage='Readback'
         $after=Read-SyncSnapshot $target $owned
         Assert-Sync ($after.hash -ceq $desired.hash -and $after.scopeHash -ceq $before.scopeHash)
+        $submission='PatchVerified'; $stage='ResultCheckpoint'
         $result=@{state='payload-readback-verified';configurationObjectId=$ExpectedConfigurationObjectId;profileSha256=$desired.hash
             assignmentsChanged=$false;additionalProfileAllowed=$false;nativeAcceptance=$false}
         Write-SyncRecord ($CheckpointPath+'.result.json') $result
         [pscustomobject]$result
-    } catch { throw 'SantaSync.FailedOrUnknownPreserveCheckpointNoReplay' }
+    } catch {
+        $guidance = if ($submission -eq 'NoPatchSubmitted') { 'Check the named stage. Preserve any existing checkpoint.' }
+            else { 'Preserve the checkpoint and use Observe. Do not replay Apply.' }
+        throw "SantaSync.${stage}.${submission}: $guidance"
+    }
     finally {
-        if($saved){try{$null=Set-MgRequestContext -MaxRetry $saved.MaxRetry -ClientTimeout $saved.ClientTimeout -ErrorAction Stop -Verbose:$false -Debug:$false -Confirm:$false}catch{throw 'SantaSync.RequestContextRestoreFailed'}}
+        if($saved){try{$null=Set-MgRequestContext -MaxRetry $saved.MaxRetry -ClientTimeout $saved.ClientTimeout -ErrorAction Stop -Verbose:$false -Debug:$false -Confirm:$false}catch{throw "SantaSync.RequestContextRestoreFailed.${stage}.${submission}: Close this Graph session. If a PATCH may have started, preserve the checkpoint and use Observe."}}
     }
 }
 Export-ModuleMember -Function Invoke-SantaIntuneSyncProfile
