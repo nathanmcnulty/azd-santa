@@ -12,4 +12,8 @@ Describe 'Santa bounded retained image VM delivery' {
         $result = & python -m unittest discover -s $PSScriptRoot -p test_retained_image_runner.py 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
     }
+    It 'plans and operates recovery with generated receipts and a role-scoped transfer' {
+        $result = & python -m unittest discover -s $PSScriptRoot -p test_retained_image_operator.py 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
+    }
 }

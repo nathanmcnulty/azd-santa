@@ -258,6 +258,46 @@ CI exercises the full script size with a 33-part manifest. Maximum-size
 transfer timing, actual Azure request limits and off-host journal retention
 still require qualification.
 
+### Run a selected image transfer
+
+`experiments/server/retained_image_operator.py` accepts the JSON output of
+`Get-SantaBackupStoreSelection -ReadArm`, the pinned export completion and
+part manifest, and the reviewed recovery-tooling bundle. Save the selection
+producer's output with `ConvertTo-Json -Depth 12`. The receipt names the
+owned store and the source and verifier VM instances. The operator refreshes
+ARM facts before issuing the selected Blob capabilities.
+
+Use `plan` first. This reads the local inputs and prints the intended target,
+object count, script size and `plan_sha256` without calling Azure. The
+following example reuses paths and hashes from an existing recovery
+operation. Create the private journal directory once and retain it across
+invocations.
+
+```powershell
+$inputs = @(
+    '--role', 'upload', '--selection', $selectionReceipt,
+    '--operation', $operationId, '--export-directory', $sourceExportDirectory,
+    '--manifest', $partManifest, '--manifest-sha256', $manifestSha,
+    '--completion', $exportCompletion, '--completion-sha256', $completionSha,
+    '--tooling', $toolingBundle, '--commit', $reviewedCommit,
+    '--tooling-sha256', $toolingSha
+)
+$plan = python ./experiments/server/retained_image_operator.py plan @inputs | ConvertFrom-Json
+$plan
+```
+
+After reviewing the plan, run the same command with `apply` in place of
+`plan`, adding `--journal-root $journalRoot --plan-sha256 $plan.plan_sha256`.
+The command installs the runner, obtains the public offer, issues and seals
+the exact-object capabilities in memory, and transfers the parts. A reported
+upload outcome of `unknown` returns exit code 2. Use `observe` with the same
+inputs and journal to inspect an interrupted run without resubmitting it.
+
+Run an independent `verify` plan and apply with the same pinned image
+inputs and the selected verifier. Omit `--export-directory` for this role.
+The verifier reassembles and hashes the ciphertext. Authentication,
+immutable image import and application restore remain separate operations.
+
 [action-run-command]: https://learn.microsoft.com/en-us/azure/virtual-machines/linux/run-command
 
 The Ubuntu test exports a disposable `linux/amd64` image, reassembles a

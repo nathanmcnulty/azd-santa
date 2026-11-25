@@ -19,6 +19,7 @@ PATHS = tuple(sorted(('LICENSE', 'THIRD_PARTY_NOTICES.md', 'third_party/santa-20
             'retained_image_export.py', 'retained_image_readback.py', 'retained_image_parts.py',
             'retained_image_blob.py', 'blob_retention.py', 'retained_image_sas.py', 'retained_image_handoff.py',
             'retained_image_delivery.py', 'retained_image_run_command.py', 'retained_image_runner.py',
+            'retained_image_operator.py',
             'private_arm_adapter.py', 'backup_store_selection.py', 'dependency-images.lock.json',
             'zentral-source.lock.json', 'secret-rewrap-source.lock.json', 'restore_tooling_bundle.py')))))
 SCOPE = 'azd-santa-restore-tooling-bundle-v1'
