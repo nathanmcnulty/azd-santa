@@ -25,8 +25,8 @@ def need(condition):
 
 class MetadataReader:
     """Bound tar header and control-file reads, even for PAX headers."""
-    def __init__(self, stream, size, deadline):
-        self.stream, self.size, self.deadline = stream, size, deadline
+    def __init__(self, stream, size, deadline, start):
+        self.stream, self.size, self.deadline, self.start = stream, size, deadline, start
         self.budget = METADATA_MAXIMUM
 
     def read(self, size):
@@ -36,12 +36,17 @@ class MetadataReader:
         return raw
 
     def seek(self, offset, whence=0):
-        result = self.stream.seek(offset, whence)
-        need(0 <= result <= self.size and time.monotonic() < self.deadline)
-        return result
+        if whence == 1:
+            offset += self.tell()
+        elif whence == 2:
+            offset += self.size
+        else:
+            need(whence == 0)
+        need(0 <= offset <= self.size and time.monotonic() < self.deadline)
+        return self.stream.seek(self.start + offset) - self.start
 
     def tell(self):
-        return self.stream.tell()
+        return self.stream.tell() - self.start
 
 
 def read_metadata(archive, members, name):
@@ -89,21 +94,23 @@ def verify_oci_index(archive, members, config_id, selected, diff_ids):
 
 
 def verify_archive(stream, *, archive_sha256, archive_bytes, image_id,
-                   maximum=ARCHIVE_MAXIMUM, seconds=600):
+                   maximum=ARCHIVE_MAXIMUM, seconds=600, archive_offset=0):
     """Check authenticated byte expectations, one image manifest and its config.
 
     Use a trusted receipt and a stable, owned seekable binary stream. Control
     plane calls, decryption, extraction, and image loading belong elsewhere.
+    The archive may follow a bounded authenticated prefix and must end at EOF.
     The caller must enforce an outer deadline for blocking filesystem I/O.
     """
     try:
         need(type(maximum) is int and 1024 <= maximum <= ARCHIVE_MAXIMUM
              and type(archive_bytes) is int and 1024 <= archive_bytes <= maximum
+             and type(archive_offset) is int and 0 <= archive_offset <= 8192
              and type(seconds) is int and 0 < seconds <= 1800
              and type(archive_sha256) is str and re.fullmatch(HEX, archive_sha256)
              and type(image_id) is str and re.fullmatch(IMAGE_ID, image_id))
         deadline = time.monotonic() + seconds
-        stream.seek(0)
+        stream.seek(archive_offset)
         remaining = archive_bytes
         digest = hashlib.sha256()
         while remaining:
@@ -114,8 +121,8 @@ def verify_archive(stream, *, archive_sha256, archive_bytes, image_id,
             remaining -= len(raw)
         need(not stream.read(1) and digest.hexdigest() == archive_sha256)
 
-        stream.seek(0)
-        reader = MetadataReader(stream, archive_bytes, deadline)
+        stream.seek(archive_offset)
+        reader = MetadataReader(stream, archive_bytes, deadline, archive_offset)
         with tarfile.open(fileobj=reader, mode='r:') as archive:
             members = {}
             for member in archive:

@@ -165,11 +165,22 @@ be used as independent provenance. Anyone with the public key can encrypt bytes.
 
 The envelope reuses the native RSA-OAEP and AES-GCM implementation. A separate
 encrypted image marker and intent precede the Docker tar bytes. The image receipt
-and payload are separate from native database capture and Blob transfer. The
-Ubuntu test exports a disposable `linux/amd64` image, authenticates the complete
-ciphertext with a separate recipient key, checks the archive, and reads back the
-same image ID after loading without starting a container. The reviewed restore
-tooling inventory, authenticated transfer, and live acceptance remain in
+and payload are separate from native database capture and Blob transfer.
+`experiments/server/retained_image_readback.py` checks a downloaded ciphertext
+against an independently pinned producer receipt and image inventory. It verifies
+the complete ciphertext before creating anonymous plaintext staging on the
+selected owner-private Linux filesystem. A second authenticated pass stages the
+bytes. The reader checks the encrypted intent and verifies the exact archive
+before exposing a read-only file descriptor positioned at the Docker tar. The caller
+consumes from that position within the context. The context closes the anonymous
+file and leaves no plaintext path. The staging filesystem needs space for one
+archive and protection appropriate for confidential data. A trusted isolated host
+and an outer I/O deadline remain caller prerequisites.
+
+The Ubuntu test exports a disposable `linux/amd64` image, independently verifies
+a ciphertext copy, and loads the verified descriptor. It reads back the same
+image ID without starting a container. The reviewed restore tooling inventory,
+authenticated transfer, and live acceptance remain in
 [issue #97](https://github.com/nathanmcnulty/azd-santa/issues/97).
 
 The optional VM creation-time Storage endpoint setting and GET-only existing
