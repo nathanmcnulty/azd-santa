@@ -2,8 +2,8 @@
 
 On 2026-11-15 UTC, the selected private VM completed actual one-device backend
 enrollment and owner-private profile export, followed by an Intune payload update.
-These are delivery prerequisites, not proof that the physical Mac received or
-executed a server policy.
+These operations prepare the device for policy sync. The November 25 endpoint
+readback below records what the Mac reported and where sync stopped.
 
 ## Maintained path and verified boundaries
 
@@ -65,17 +65,40 @@ synthetic hash with no test executable deployed. This permits rule-receipt check
 without changing execution mode or blocking a real application. All-event upload
 remained disabled (shard zero); no background collection expansion was introduced.
 
+## Endpoint readback on November 25
+
+The selected Defender macOS record's Entra device ID matched the retained Intune
+report for the authorized pilot. On November 25 at 12:58 UTC, the revised
+published health script ran through Defender Live Response. Its library digest
+matched the reviewed script. The endpoint reported Monitor mode and an active
+and enabled Santa Endpoint Security extension with the expected team ID. The
+local checks confirmed System Integrity Protection and reported no configuration
+errors.
+
+The Mac's configured sync hostname matched the selected HTTPS pilot. Santa
+reported no successful full or rule sync and its preflight timed out. Azure
+reported the HTTPS pilot VM deallocated. Defender marked the action succeeded
+and the diagnostic returned a nonzero script exit. The receipt preserved both
+outcomes.
+
+At 13:10 UTC, the profile diagnostic on the same Mac successfully read both
+the text and XML inventories. It found the Santa configuration identifier and
+the expected inner payload UUID. The template's outer payload UUID was absent
+from the device XML. This establishes the observed local payload markers and
+runtime sync hostname. The complete installed payload bytes and a fresh Intune
+service report remain unverified. No Intune object or assignment was changed
+during these checks.
+
 ## Evidence still required
 
 At publication, the control-plane payload readback was verified, while the Mac's
 prior profile-status report predated the update. That old compliant status cannot
 prove the new payload arrived. The backend readback still had zero enrollment
 requests and no native machine; the device's last check-in remained 06:47:46 UTC.
-The operator confirmed they could not access the Mac, so native qualification
-stopped at that physical-device availability gate. Fresh device profile/health, actual preflight and
-postflight, native rule receipt, event ingestion and execution/rollback observations
-remain separate gates. The original baseline snapshot and new intent/ciphertext
-receipts are retained privately; none includes plaintext credentials in Git.
+The November 25 readbacks add current local profile and health evidence.
+Successful preflight and postflight, native rule receipt, event ingestion,
+execution and rollback remain separate gates. The original baseline snapshot
+and new intent/ciphertext receipts remain private.
 
 The offline planner intentionally continues to report publicationAllowed=false;
 its assertions and hashes are not deployment authority or native acceptance.
