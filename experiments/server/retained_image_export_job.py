@@ -1,9 +1,11 @@
 """Original Unlicense. One selected guest export with bounded receipt readback."""
 
 from contextlib import ExitStack
+import io
 import os
 from pathlib import Path
 import re
+import zipfile
 
 import blob_retention as blob
 from retained_image_delivery import read_at
@@ -15,6 +17,8 @@ ROOT = '/var/lib/azd-santa-qualification/image-exports'
 SCOPE = 'azd-santa-retained-image-export-job-v1'
 PAGE_BYTES = 1536
 MAX_RESPONSE = 3072
+REQUEST_FILE = 'export.json'
+MAX_SELECTION = 16 * 1024
 
 
 class ExportJob:
@@ -123,3 +127,26 @@ def collect(receipt, pages):
     parts.checked_manifest(manifest, completion, manifest_sha256=digest,
                            completion_sha256=receipt['completion_sha256'], operation=receipt['operation'])
     return completion, manifest
+
+
+def dispatch(archive_bytes, request_bytes):
+    """Entry point for the digest-checked Run Command bootstrap."""
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        entry = archive.getinfo(REQUEST_FILE)
+        blob.need(0 < entry.file_size <= MAX_SELECTION)
+        raw = archive.read(entry)
+    config = parts.checked_document(raw, sha(raw), MAX_SELECTION)
+    blob.need(set(config) == {'source', 'operation', 'inventory', 'image_name', 'recipient',
+                             'inventory_sha256', 'recipient_sha256', 'maximum', 'seconds'})
+    job = ExportJob(blob.SelectedTarget(**config.pop('source')), config.pop('operation'),
+        decode(config.pop('inventory'), 8192), config.pop('image_name'), decode(config.pop('recipient'), 1024),
+        **config)
+    request = parts.checked_document(request_bytes, sha(request_bytes), 1024)
+    verb = request['action']
+    if verb == 'page':
+        blob.need(set(request) == {'action', 'page', 'manifest_sha256'})
+        result = job.observe(page=request['page'], manifest_sha256=request['manifest_sha256'])
+    else:
+        blob.need(set(request) == {'action'} and verb in ('start', 'observe'))
+        result = job.start(apply=True) if verb == 'start' else job.observe()
+    return {**result, 'batch_sha256': sha(request_bytes)}

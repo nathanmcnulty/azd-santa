@@ -4,4 +4,8 @@ Describe 'Santa encrypted image export' {
         $result = & python -m unittest discover -s $PSScriptRoot -p test_retained_image_export.py 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
     }
+    It 'packages the selected export command and on Linux collects it after a lost reply' {
+        $result = & python -m unittest discover -s $PSScriptRoot -p test_retained_image_export_command.py 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
+    }
 }
