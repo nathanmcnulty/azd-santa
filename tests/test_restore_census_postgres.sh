@@ -42,13 +42,13 @@ import sys
 sys.path.insert(0, 'experiments/server')
 from restore_census import CATALOG
 
-print('CREATE TEMP VIEW census_excluded_reference AS SELECT fact::jsonb AS fact FROM (')
-print(CATALOG['excluded_references'])
+print('CREATE TEMP VIEW census_unreviewed_reference AS SELECT fact::jsonb AS fact FROM (')
+print(CATALOG['unreviewed_references'])
 print(') AS reference(fact);')
 PY
   cat <<'SQL'
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM census_excluded_reference) THEN
+  IF EXISTS (SELECT 1 FROM census_unreviewed_reference) THEN
     RAISE EXCEPTION 'Plain table unexpectedly blocked';
   END IF;
 END $$;
@@ -62,7 +62,7 @@ CREATE OPERATOR CLASS pg_catalog.census_local_ops FOR TYPE integer USING btree A
 CREATE INDEX census_probe_value ON census_probe (value pg_catalog.census_local_ops);
 DO $$ DECLARE observed text[]; BEGIN
   SELECT array_agg(DISTINCT fact->>'catalog' ORDER BY fact->>'catalog')
-    INTO observed FROM census_excluded_reference;
+    INTO observed FROM census_unreviewed_reference;
   IF observed IS DISTINCT FROM ARRAY['pg_collation','pg_opclass','pg_proc'] THEN
     RAISE EXCEPTION 'Unexpected blocker catalogs: %', observed;
   END IF;
