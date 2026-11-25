@@ -5,33 +5,16 @@ from contextlib import ExitStack
 import hashlib
 import io
 import os
-import stat
 import sys
 import time
 import uuid
 
-from cryptography.hazmat.primitives.serialization import load_der_private_key
-
 import restore_cipher as cipher
 import restore_quarantine as quarantine
+from restore_recipient_key import load, private_input
 
 SCOPE = 'azd-santa-authenticated-capture-compatibility-v1'
 PREFIX_LIMIT = cipher.CHUNK + 8192
-
-
-def private_input(path, stack, maximum):
-    parent, name = quarantine.private_parent(path, stack)
-    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
-    stream = stack.enter_context(os.fdopen(fd, 'rb'))
-    before = os.fstat(fd)
-    quarantine.need(stat.S_ISREG(before.st_mode) and before.st_uid == os.geteuid()
-                    and before.st_nlink == 1 and not before.st_mode & 0o077 and 0 < before.st_size <= maximum)
-
-    def unchanged():
-        quarantine.need(cipher.identity(before) == cipher.identity(os.fstat(fd))
-                        == cipher.identity(os.stat(name, dir_fd=parent, follow_symlinks=False)))
-
-    return stream, before.st_size, unchanged
 
 
 def first_compatibility(prefix, recipient_sha256, deadline):
@@ -87,17 +70,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('ciphertext', 'ciphertext-sha256', 'recipient-key', 'output'):
         parser.add_argument('--' + name, required=True)
+    parser.add_argument('--encrypted-key-sha256')
     parser.add_argument('--maximum', type=int, default=1024**3)
     parser.add_argument('--seconds', type=int, default=600)
     args = parser.parse_args()
     try:
         quarantine.need(sys.platform == 'linux')
-        with ExitStack() as stack:
-            stream, size, unchanged = private_input(args.recipient_key, stack, 8192)
-            raw_key = stream.read(8193)
-            quarantine.need(len(raw_key) == size)
-            key = load_der_private_key(raw_key, password=None)
-            unchanged()
+        key = load(args.recipient_key, args.encrypted_key_sha256)
         receipt = collect(args.ciphertext, args.ciphertext_sha256, key, args.output,
                           maximum=args.maximum, seconds=args.seconds)
         print(quarantine.encoded(receipt).decode('ascii'))

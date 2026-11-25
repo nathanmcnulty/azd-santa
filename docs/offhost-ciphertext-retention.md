@@ -472,6 +472,26 @@ inputs and the selected verifier. Omit `--export-directory` for this role.
 The verifier reassembles and hashes the ciphertext. Authentication,
 immutable image import and application restore remain separate operations.
 
+While the original recipient DER key is still available, export a portable
+encrypted copy on Linux. Use the recipient public-key fingerprint from the
+original capture or export receipt. Use a fresh absolute output path under an
+owner-private directory.
+
+```bash
+python3 ./experiments/server/restore_recipient_key.py \
+  --recipient-key "$recipientPrivateDer" --recipient-sha256 "$recipientSha" \
+  --output "$encryptedRecipientDer"
+```
+
+OpenSSL encrypts the PKCS#8 file. Enter the passphrase twice at the terminal.
+Keep the passphrase in a recovery credential store. Store the encrypted key
+and its reported `encrypted_key_sha256` through separate trusted channels.
+The verify and load commands check that file digest before prompting, unlock
+the key in memory and match it to the original capture. Use the same
+`--recipient-key` and `--encrypted-key-sha256` options with
+`retained_image_compatibility.py` to recover the native backup metadata.
+Existing plaintext DER inputs omit `--encrypted-key-sha256`.
+
 On the isolated Linux recovery host, `retained_image_load.py verify`
 authenticates the image without contacting Docker. Use the same inputs
 with `load` and add `--docker-socket` for the explicit local recovery daemon
@@ -480,7 +500,8 @@ and `--attempt` for a fresh directory under an owner-private parent.
 ```bash
 python3 ./experiments/server/retained_image_load.py verify \
   --ciphertext "$imageCiphertext" --completion "$exportCompletion" \
-  --completion-sha256 "$completionSha" --recipient-key "$recipientPrivateDer" \
+  --completion-sha256 "$completionSha" --recipient-key "$encryptedRecipientDer" \
+  --encrypted-key-sha256 "$encryptedKeySha" \
   --inventory-sha256 "$inventorySha" --image core --image-id "$expectedImageId" \
   --staging "$privateStaging"
 ```
@@ -500,8 +521,9 @@ and its data directory.
 [docker-image-inspect]: https://docs.docker.com/reference/cli/docker/image/inspect/
 
 The Ubuntu test exports a disposable `linux/amd64` image, reassembles a
-ciphertext copy from a synthetic object store, authenticates it, and loads the
-verified descriptor. It reads back the same image ID without starting a container.
+ciphertext copy from a synthetic object store, and unlocks an encrypted
+recipient key to load the verified descriptor. It reads back the same image
+ID without starting a container.
 
 Retain an independently reviewed recovery toolset with
 `experiments/server/restore_tooling_bundle.py`. Its `build` command accepts a
@@ -536,7 +558,7 @@ rebuilding the same source is not the same image. Image exports may exceed
 2GiB or the single-PUT bound. This API rejects larger/different artifacts rather
 than truncating them or treating them as native data captures.
 
-Portable recipient-key recovery, independently retained trustworthy receipts,
+Independent verification of the original live recipient key, trustworthy receipts,
 account/region-loss protection, image/source artifacts and an independently
 authorized restore target remain prerequisites. CurrentUser DPAPI is test-only.
 LRS off-host retention does not establish regional disaster recovery or current
