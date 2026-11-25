@@ -243,7 +243,7 @@
       "evidenceState": "code",
       "evidence": [
         { "path": "experiments/server/private_arm_adapter.py", "sha256": "d6b94b6dd952e81829bc62015800448c40826b7982a059347ee5901570cb4a15" },
-        { "path": "experiments/server/retained_image_sas.py", "sha256": "482431085ebce1b08f4e052f240fcc74d3685c313fa17ec090a5cfcd335719a8" }
+        { "path": "experiments/server/retained_image_sas.py", "sha256": "2323d8a3db16a413dd43ce41de552cd92d8ebd2df08be3bc1f70ab6fb24cee0c" }
       ]
     },
     {

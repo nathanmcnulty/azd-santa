@@ -207,9 +207,18 @@ checks current store and VM facts, and invokes `listServiceSas` once per exact
 part for one role. The selected source receives create-only scope and a separate
 verifier receives read-only scope. The private in-process batch can only be
 taken once for the pinned manifest and target. The journal records no tokens.
-Keep the persistent root and resolve unknown outcomes by readback. Automatic
-encrypted delivery to the selected VM, off-host journal preservation, and live
-Azure verification remain separate.
+Keep the persistent root and resolve unknown outcomes by readback.
+
+`retained_image_handoff.py` creates a short-lived recipient offer on the selected
+Linux VM. It encrypts one packet per blob and binds each packet to the shared
+manifest, exact object, account, target VM instance, current boot and transfer
+role. The guest consumes the offer once, unlinks the ephemeral private-key file,
+and checks the entire packet set before calling the transfer code. Use the
+trusted operator channel to obtain the offer and deliver the packets. Recipient
+encryption protects the SAS in transit and relies on that channel for sender
+authorization. The handoff has no ARM token or storage account key. Automated
+VM transport, off-host journal preservation, and live Azure verification remain
+separate.
 
 The Ubuntu test exports a disposable `linux/amd64` image, reassembles a
 ciphertext copy from a synthetic object store, authenticates it, and loads the
