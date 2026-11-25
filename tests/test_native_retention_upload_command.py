@@ -31,10 +31,10 @@ class UploadCommandTests(unittest.TestCase):
         fixture.setUp()
         self.fixture = fixture
 
-    def create(self, cli):
+    def create(self, cli, **kwargs):
         bundle = tooling.BundleTests
         return command.UploadCommand(self.fixture.selected, self.fixture.capture.record, bundle.raw,
-                                     commit=bundle.commit, tooling_sha256=bundle.digest, cli=cli)
+                                     commit=bundle.commit, tooling_sha256=bundle.digest, cli=cli, **kwargs)
 
     def test_plan_selects_source_without_authentication_or_writes(self):
         cli = Mock(side_effect=AssertionError('unexpected CLI call'))
@@ -43,6 +43,32 @@ class UploadCommandTests(unittest.TestCase):
         self.assertFalse(plan['performs_mutation'])
         self.assertEqual(plan['permission'], 'c')
         self.assertEqual(plan['source']['instance_id'], self.fixture.selected.source.instance_id)
+        cli.assert_not_called()
+
+    def test_replacement_plan_requires_matching_original_journal(self):
+        replacement = 'a' * 64
+        cli = Mock(side_effect=AssertionError('unexpected CLI call'))
+        original = self.create(cli)
+        operation = self.create(cli, replace_unsubmitted_offer_sha256=replacement)
+        self.assertEqual(operation.preview()['replace_unsubmitted_offer_sha256'], replacement)
+        self.assertNotEqual(original.plan_sha256, operation.plan_sha256)
+        with TemporaryDirectory() as folder, patch.object(operation, '_send', side_effect=RuntimeError) as send:
+            root = Path(folder).resolve()
+            with self.assertRaises(command.blob.RetentionRejected):
+                operation.apply(root, operation.plan_sha256)
+            self.assertEqual(list(root.iterdir()), [])
+            send.assert_not_called()
+            directory = original._directory(root, original.plan_sha256)
+            directory.mkdir(mode=0o700)
+            command.write_record(directory / 'intent.json', original.plan)
+            command.write_record(directory / 'offer.json', {'offer_sha256': replacement})
+            with self.assertRaises(command.blob.RetentionRejected):
+                operation.apply(root, operation.plan_sha256)
+            send.assert_called_once_with({'action': 'offer', 'replace_unsubmitted_offer_sha256': replacement})
+            self.assertEqual(command.journal_read(directory / 'intent.json'), original.plan)
+            self.assertEqual(command.journal_read(directory / 'offer.json'), {'offer_sha256': replacement})
+            self.assertEqual(command.journal_read(operation._directory(root, operation.plan_sha256) / 'intent.json'),
+                             operation.plan)
         cli.assert_not_called()
 
     def test_capture_record_read_writes_only_the_pin_bound_transfer_record(self):

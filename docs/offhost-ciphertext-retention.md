@@ -181,6 +181,15 @@ the journal and use independent verification of the exact object with the
 original expected SHA. The observation command never requests a SAS or resubmits
 an upload.
 
+If `observe` reports `offered` and the operator retained the original
+`offer.json` receipt, wait for the guest offer to expire and use a different
+source boot. Pass `--replace-unsubmitted-offer-sha256` with the original
+`offer_sha256` to a fresh `plan` and `apply` using the same journal root and
+capture record. Pass the new plan digest to `apply`. The guest rechecks the
+capture and archives the original offer before issuing a new one. Any sign of
+submission stops this path. A stopped replacement has its own journal for
+`observe`, which takes the same replacement argument and plan digest.
+
 `experiments/server/native_retention_verifier.py` connects the cached ARM
 issuer to the native ciphertext download on one independently selected VM.
 Its short-lived offer binds the exact blob, capture record, verifier instance

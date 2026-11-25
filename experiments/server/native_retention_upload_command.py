@@ -48,7 +48,8 @@ def source_script(exports, request, nonce):
 
 
 class UploadCommand(SelectedVmCommand):
-    def __init__(self, selection, record, tooling, *, commit, tooling_sha256, cli=None):
+    def __init__(self, selection, record, tooling, *, commit, tooling_sha256, cli=None,
+                 replace_unsubmitted_offer_sha256=None):
         super().__init__(selection, selection.source, cli)
         selected = selection.store.blob
         blob.selection(record, selected, selection.store, self.target, 'c')
@@ -67,6 +68,10 @@ class UploadCommand(SelectedVmCommand):
                      'storage_account_id': selected.account_id, 'record_sha256': self.record_sha256,
                      'archive_sha256': digest, 'tooling_commit': commit, 'tooling_sha256': tooling_sha256,
                      'maximum_script_bytes': maximum_script}
+        if replace_unsubmitted_offer_sha256 is not None:
+            blob.need(type(replace_unsubmitted_offer_sha256) is str
+                      and re.fullmatch(blob.HEX, replace_unsubmitted_offer_sha256))
+            self.plan['replace_unsubmitted_offer_sha256'] = replace_unsubmitted_offer_sha256
         self.plan_sha256 = sha(blob.encoded(self.plan))
 
     def preview(self):
@@ -114,17 +119,28 @@ class UploadCommand(SelectedVmCommand):
 
     def _directory(self, root, plan_sha256):
         blob.need(plan_sha256 == self.plan_sha256)
-        return journal_root(root) / (self.record['operation_id'] + '-upload')
+        name = self.record['operation_id'] + '-upload'
+        replacement = self.plan.get('replace_unsubmitted_offer_sha256')
+        return journal_root(root) / (name if replacement is None else name + '-after-' + replacement)
 
     def apply(self, root, plan_sha256):
         blob.need(self._busy.acquire(blocking=False))
         try:
             directory = self._directory(root, plan_sha256)
+            request = {'action': 'offer'}
+            replacement = self.plan.get('replace_unsubmitted_offer_sha256')
+            if replacement is not None:
+                previous = directory.parent / (self.record['operation_id'] + '-upload')
+                blob.need(journal_read(previous / 'offer.json') == {'offer_sha256': replacement})
+                previous_plan = journal_read(previous / 'intent.json')
+                bindings = ('scope', 'source', 'tenant', 'subscription', 'storage_account_id', 'record_sha256')
+                blob.need(all(previous_plan[key] == self.plan[key] for key in bindings))
+                request['replace_unsubmitted_offer_sha256'] = replacement
             directory.mkdir(mode=0o700)
             sync_directory(directory.parent)
             write_record(directory / 'intent.json', self.plan)
             sync_directory(directory)
-            offer = self._send({'action': 'offer'})
+            offer = self._send(request)
             offer_digest = sha(blob.encoded(offer))
             write_record(directory / 'offer.json', {'offer_sha256': offer_digest})
             sync_directory(directory)
@@ -148,6 +164,7 @@ class UploadCommand(SelectedVmCommand):
             except FileNotFoundError:
                 offer = None
             reply = self._send({'action': 'observe'})
+            blob.need(reply['offer_sha256'] != self.plan.get('replace_unsubmitted_offer_sha256'))
             blob.need(offer is None or offer == {'offer_sha256': reply['offer_sha256']})
             return reply
         except Exception:
@@ -163,13 +180,15 @@ def main():
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--journal-root', type=Path)
     parser.add_argument('--plan-sha256')
+    parser.add_argument('--replace-unsubmitted-offer-sha256')
     args = parser.parse_args()
     try:
         record = checked_document(read_bytes(args.capture_record, 8192), args.capture_record_sha256, 8192)
         blob.checked_record(record)
         receipt = json.loads(read_bytes(args.selection, 8192), object_pairs_hook=blob.unique)
         command = UploadCommand(selected_store(receipt, record['operation_id']), record, read_bytes(args.tooling, MAX_BUNDLE),
-                                commit=args.commit, tooling_sha256=args.tooling_sha256)
+                                commit=args.commit, tooling_sha256=args.tooling_sha256,
+                                replace_unsubmitted_offer_sha256=args.replace_unsubmitted_offer_sha256)
         result = command.preview() if args.action == 'plan' else getattr(command, args.action)(args.journal_root, args.plan_sha256)
         print(blob.encoded(result).decode('ascii'))
     except (ValueError, KeyError, OSError, TypeError, RuntimeError):

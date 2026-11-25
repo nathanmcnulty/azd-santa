@@ -82,6 +82,7 @@ class State:
                 try:os.mkdir(name,0o700,dir_fd=parent);os.fsync(parent)
                 except FileExistsError:pass
             root=os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=parent);self.stack.callback(os.close,root)
+            self.root=root
             self.directory(os.fstat(root))
             if create:os.mkdir(selected,0o700,dir_fd=root);os.fsync(root)
             self.fd=os.open(selected,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=root);self.stack.callback(os.close,self.fd)
@@ -194,13 +195,16 @@ def current(offer,record,proof,*,require_fresh=True):
 
 
 @safe
-def create_offer(environment,target,record,selected_blob,*,apply=False,lifetime=1800):
+def create_offer(environment,target,record,selected_blob,*,apply=False,lifetime=1800,replacement=None):
     selected=selection(environment,target,record);need(type(selected_blob)is blob.Blob and selected_blob.uri==record['blob_uri']
         and selected_blob.operation==selected);need(type(lifetime)is int and 1<=lifetime<=1800)
+    need(replacement is None or type(replacement)is str and re.fullmatch(blob.HEX,replacement))
     if not apply:return dict(scope='blob-relay-offer-plan-v1',performs_mutation=False,operation=selected,maximum_lifetime=1800)
     guest();boot=fresh(target);proof=capture(environment,target,record);now=int(time.time())
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
+    if replacement is not None:
+        archive_unsubmitted(selected,replacement,environment,target,record,proof,boot,now)
     with State(selected,create=True) as state:
         state.write('offer-intent.json',encoded(dict(scope='one-ephemeral-offer-v1',record_sha256=sha(encoded(record)),boot_id=boot)))
         key=rsa.generate_private_key(public_exponent=65537,key_size=3072)
@@ -294,6 +298,32 @@ def context(state,expected_offer=None):
         and offer['ciphertext_sha256']==record['complete']['ciphertext_sha256']
         and offer['ciphertext_bytes']==record['complete']['ciphertext_bytes'])
     return offer,record,parsed(state.read('capture.json'))
+
+
+def archive_unsubmitted(selected,digest,environment,target,record,proof,boot,now):
+    import fcntl
+
+    with State(selected) as state:
+        fcntl.flock(state.fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        opened=os.fstat(state.fd)
+        named=os.stat(selected,dir_fd=state.root,follow_symlinks=False)
+        need((opened.st_dev,opened.st_ino)==(named.st_dev,named.st_ino))
+        need(set(os.listdir(state.fd))=={
+            'offer-intent.json','private-key.der','record.json','capture.json','offer.json'})
+        offer,previous_record,previous_proof=context(state,digest)
+        need(offer['environment']==environment and blob.SelectedTarget(**offer['target'])==target
+            and previous_record==record and previous_proof==proof
+            and offer['expires']<=now and offer['boot_id']!=boot and fresh(target)==boot)
+        need(state.read('offer-intent.json')==encoded(dict(scope='one-ephemeral-offer-v1',
+            record_sha256=offer['record_sha256'],boot_id=offer['boot_id'])))
+        archive=selected+'.unsubmitted-'+digest
+        try:
+            os.stat(archive,dir_fd=state.root,follow_symlinks=False)
+        except FileNotFoundError:
+            os.rename(selected,archive,src_dir_fd=state.root,dst_dir_fd=state.root)
+            os.fsync(state.root)
+        else:
+            need(False)
 
 
 def unit_state(name):

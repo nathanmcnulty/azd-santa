@@ -228,10 +228,10 @@
         { "path": "experiments/server/blob_retention.py", "sha256": "b1a60042d4fa2e1f970c7b0f114a04b749dcb387da39427e18743f893ec22f2b" },
         { "path": "experiments/server/native_retention_verifier.py", "sha256": "fb99e7b19af802bc6a88222cca235c5946845351afdbd3809fa7b5fe9aec7ea1" },
         { "path": "experiments/server/native_retention_verify_command.py", "sha256": "2299b4bb50c5878ce44babfbb2afcd4761b1bcbe0a49669f12b2040c7e9d236e" },
-        { "path": "experiments/server/native_retention_upload_command.py", "sha256": "c603f32bfc2a1341ff8a290101fa8ff45d2019401640bef9af4afd13089d6e58" },
-        { "path": "experiments/server/native_retention_upload_guest.py", "sha256": "ad1746baa879c86f1809763c21cb202ff8f302bcf386e54ed1ecaccf1122cf3c" },
+        { "path": "experiments/server/native_retention_upload_command.py", "sha256": "2ed46ca2ea98d5ac8e1c5dee85c75394c49edcc4e4bf11740f6267bc7e8696d0" },
+        { "path": "experiments/server/native_retention_upload_guest.py", "sha256": "a49b25f58dc065d673be7352c6a94888cfc017eaef8415b1f1a413a4251cdf50" },
         { "path": "experiments/server/native_capture_record_command.py", "sha256": "365377b462d09c4e8eda67cb1b58bb7f9a491a9c38754a57305a2dda48ce338a" },
-        { "path": "experiments/server/blob_capability_relay.py", "sha256": "17d0084a53af5a416077987b93cc4e921fd6e308eba9a937ad46d39573c86129" },
+        { "path": "experiments/server/blob_capability_relay.py", "sha256": "3d0a399109cd060e991b14f5c3ece706b4f09ca08ab4e1061abee2290d9b4070" },
         { "path": "experiments/server/private_arm_adapter.py", "sha256": "69a8abfdbe60e0826a7e000a092794ec4bb32425522fc06d41ce1f64da22e82f" }
       ]
     },
