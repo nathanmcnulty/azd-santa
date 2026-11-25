@@ -78,18 +78,24 @@ casts. The private observation retains blocker identities and reports
 partial coverage. Other catalog classes remain explicit blockers until their
 schema and execution semantics receive a reviewed adapter.
 
-Referenced excluded/global definitions remain an explicit unproven gate. Namespace
-selection omits pg_catalog, other pg_* namespaces and information_schema; the
-recursive dependency inventory follows dependents, not every referenced object.
-A custom routine, collation or operator class in an excluded namespace can retain
-its name while its definition changes. A stored column's qualified collation
-name or an index definition alone cannot detect that change. Before full restore
-acceptance, independently inventory and bind these referenced definitions and
-relevant global objects against the reviewed engine/source baseline. Neither
-column builtin-OID guards nor exact_match closes this gap. Both observation and
-comparison therefore return `referenced_definitions='unproven'` and
-`schema_complete=false`; no schema-complete or restore approval follows from a
-successful comparison. Issues54 and79 remain open.
+The collector follows recorded `pg_depend` references out of the inventoried
+objects. References whose targets resolve to `pg_catalog`, other `pg_*`
+namespaces, or `information_schema` become private `excluded_reference`
+blockers. This stops collection before application row reads and prevents a
+comparison even when the two names match. PostgreSQL's automatic dependency
+from a generated TOAST index to its own heap is treated as internal storage.
+Recollect older manifests with the updated collector since they lack this
+catalog inventory.
+
+Referenced definitions remain an explicit unproven gate. PostgreSQL omits
+dependency edges to pinned objects and may omit dependencies inside routine
+bodies. Namespace-less and external objects still require independent review.
+Bind those definitions and relevant global objects against the reviewed
+engine/source baseline before full restore acceptance. Observation and
+comparison continue to report `referenced_definitions='unproven'` and
+`schema_complete=false`. See the PostgreSQL documentation for
+[catalog dependency records](https://www.postgresql.org/docs/18/catalog-pg-depend.html)
+and [dependencies inside routines](https://www.postgresql.org/docs/18/ddl-depend.html).
 
 Sequence values are not MVCC-consistent even inside repeatable-read. The receipt
 always leaves `sequence_quiescence_proven=false`; independently proven stopped
@@ -114,9 +120,9 @@ private manifest remain confidential. Use the same retained key for comparison.
 
 Offline tests use controlled SQL/registry/loader adapters to exercise transaction
 order, rollback/redaction, exact coverage, changes, unsupported objects and
-limits. They do not execute PostgreSQL or Django, prove catalog SQL/API
-compatibility, or qualify an isolated restore. The next actual gate must execute
-this exact source against the pinned PostgreSQL18 image and complete real Django
-registry/migrations inside a non-listening disposable destination, then reconcile
-all blockers without filtering them out. Full administrator/device reissue and
-application/native postflight remain closed.
+limits. The Linux check runs the exact excluded-reference query using the pinned
+PostgreSQL 18 image with Docker networking disabled. It checks a plain table and
+references to a synthetic routine, collation and operator class. The full
+collector still needs qualification with the pinned database, real Django
+registry and migration loader inside a non-listening disposable destination.
+Full administrator/device reissue and application/native postflight remain open.
