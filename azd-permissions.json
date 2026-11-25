@@ -227,7 +227,23 @@
       "evidence": [
         { "path": "experiments/server/blob_retention.py", "sha256": "f5aa619725104fa3a4bbe174a7ea4ceb236d9eab68675b8730d90984cb3e1818" },
         { "path": "experiments/server/blob_capability_relay.py", "sha256": "eb6a5eee83ededf08e78c6203aeb7babc8e36129cf836f2af7ef80be0f6a9a1c" },
-        { "path": "experiments/server/private_arm_adapter.py", "sha256": "5da1bd9c26fe0fead5c1b1c75197dfbd4a2df0ef5de5ab2fd0162ea6b52fbdc4" }
+        { "path": "experiments/server/private_arm_adapter.py", "sha256": "d6b94b6dd952e81829bc62015800448c40826b7982a059347ee5901570cb4a15" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/blobServices/containers/read; Microsoft.Storage/storageAccounts/listServiceSas/action; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read",
+      "principal": "Explicit cached ARM operator for the selected retained image operation",
+      "phase": "runtime",
+      "feature": "offhost-image-artifact-retention",
+      "defaultEnabled": false,
+      "scope": "Selected owned account, source and verifier networks, and one role for an exact pinned image part manifest",
+      "rationale": "The issuer reuses cached ARM context and fresh owned store and VM checks, then requests one exact-object create or read SAS per part. The journal prevents replay on the retained root. Storage authorization is account-scoped and remains subject to the existing role and policy. Automatic encrypted VM delivery and live qualification remain separate.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/server/private_arm_adapter.py", "sha256": "d6b94b6dd952e81829bc62015800448c40826b7982a059347ee5901570cb4a15" },
+        { "path": "experiments/server/retained_image_sas.py", "sha256": "482431085ebce1b08f4e052f240fcc74d3685c313fa17ec090a5cfcd335719a8" }
       ]
     },
     {
