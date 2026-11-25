@@ -224,10 +224,20 @@ The guest stages one exact encrypted packet per part, verifies the full batch
 before starting a transfer, then keeps a marker and result for observation.
 Requests are capped at 14 KiB before outer command framing and responses expose
 only the fixed receipt fields. Plan sends nothing. An uncertain reply stops
-the operator, who can observe the same batch without replay. The live VM
-transport must still provision and select the guest program, authenticate the
-target, and qualify its actual outer request limit. Off-host journal
-preservation and live Azure verification remain separate.
+the operator, who can observe the same batch without replay.
+
+`retained_image_run_command.py` adapts that callback to Linux Azure Action
+Run Command. Each frame checks the cached tenant and subscription and reads
+back the selected VM resource ID, instance ID and region before submission.
+The guest loads a digest-pinned, root-owned runner from the selected operation
+and role directory. The adapter returns only a structured reply followed by
+the current request's completion marker. It caps the JSON at 3 KiB to fit
+within [Action Run Command's 4 KiB output limit][action-run-command]. Guest
+runner provisioning, timed transfer with a maximum-size batch, actual Azure
+request limits and off-host journal retention remain separate qualification
+work.
+
+[action-run-command]: https://learn.microsoft.com/en-us/azure/virtual-machines/linux/run-command
 
 The Ubuntu test exports a disposable `linux/amd64` image, reassembles a
 ciphertext copy from a synthetic object store, authenticates it, and loads the
