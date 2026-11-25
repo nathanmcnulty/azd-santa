@@ -70,7 +70,7 @@ function Get-StoreReviewedPriorSourceHashes {
         'Invoke-SantaBackupStoreDeployment.ps1'='bcb995d8700bd46107282d3364c4c87e5f4589278566a7e1d807d154fcb55d80'
         'BackupStoreSelection.psm1'='9e6b14153d46d6b7799718deb87aa50e3c1146ded1db13801926595dbcf11f4b'
         'backup_store_selection.py'='3934eeb139470803086ecbbeba26ed20a2c982c5bd4125a4b88d6e4e2ccd6bdc'
-        'blob_retention.py'='f5aa619725104fa3a4bbe174a7ea4ceb236d9eab68675b8730d90984cb3e1818'
+        'blob_retention.py'='b1a60042d4fa2e1f970c7b0f114a04b749dcb387da39427e18743f893ec22f2b'
         'HttpsEndpoint.psm1'='b548c7161c9db5efa35199ca6c12fc430b9393c272b1b0d762fd433c2be65b9d'
         'SealedSetup.psm1'='47a54386d2222b30b3aad92a7fb06758c53abd65530dc705bdcac1bacc556877'
         '../vm/PrivateStorageEndpoint.psm1'='34db373583a7ace65a63b76f5d6e01fde4c8d2580537b75075d4189553b25242'

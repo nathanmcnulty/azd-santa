@@ -116,7 +116,8 @@ class ImageSasIssuer(arm.CachedStoreObservation):
                 validated = capability(self._selection.store, self._target, part, token, self._permission)
                 query = urllib.parse.parse_qs(validated._token)
                 signature = query['sig'][0]
-                arm.require(query['st'] == [common['signedStart']] and query['se'] == [common['signedExpiry']]
+                arm.require(blob.sas_timestamp(query['st'][0]) == blob.sas_timestamp(common['signedStart'])
+                            and blob.sas_timestamp(query['se'][0]) == blob.sas_timestamp(common['signedExpiry'])
                             and signature not in signatures)
                 signatures.add(signature)
                 tokens[part['object']] = validated._token

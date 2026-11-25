@@ -217,6 +217,16 @@ gives the verified ciphertext path on the verifier for the compatibility
 recovery command. The operator receives neither backup contents nor a
 private key. Live upload and download remain acceptance gates.
 
+In the first live upload attempt, the source offered the pinned native
+ciphertext and Azure successfully issued the exact create-only SAS. The
+issuer rejected the returned timestamps before delivering the capability
+to the source. A separate provider probe confirmed Azure appends seven
+fractional zeros to each requested whole-second UTC instant. The client
+now accepts that representation while comparing the exact requested
+instants and retaining the signed query bytes for transport. The source
+observed the original upload attempt in the offered state and was
+deallocated. The attempt was preserved and the verifier remained off.
+
 `experiments/server/retention_image_inventory.py` implements the image selection
 for a separate retention contract. It checks the exact compatibility document
 from an authenticated native capture and the reviewed dependency lock against
