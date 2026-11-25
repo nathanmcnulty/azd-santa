@@ -213,5 +213,24 @@ Describe 'Optional private VM azd installation' {
             $result = & python -m unittest discover -s (Join-Path $root 'tests') -p test_private_install.py 2>&1
             $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
         }
+        It 'reports only the allowlisted failure for the bound failed job' -ForEach @(
+            @{ Code = 'source-verification'; Bundle = 'a' * 64; Message = '*SantaInstall.source-verification*' },
+            @{ Code = 'private-canary'; Bundle = 'a' * 64; Message = '*same unit/data retained*' },
+            @{ Code = 'source-verification'; Bundle = 'b' * 64; Message = '*same unit/data retained*' }
+        ) {
+            $script:failure = @{ scope = 'private-azd-install-observation'; bundle_sha256 = $Bundle
+                unit = 'azd-santa-install-aaaaaaaaaaaaaaaa.service'; state = 'failed'; completion = $null; failure_code = $Code }
+            Mock Invoke-PrivateAzure { @{} }
+            Mock New-PrivateSourceBundle { [pscustomobject]@{ Sha256 = 'a' * 64; ArchiveSha256 = 'b' * 64; Chunks = @('AAAA') } }
+            Mock Send-PrivateInstallCommand { $script:failure }
+            $output = & {
+                try { Invoke-PrivateVmAzdHook postprovision } catch { $_.Exception.Message }
+            } *>&1 | Out-String
+            $output | Should -BeLike $Message
+            $output | Should -Not -Match 'private-canary'
+            Should -Invoke Send-PrivateInstallCommand -Times 1 -Exactly -ParameterFilter { $Command.mode -eq 'observe' }
+            Should -Invoke Send-PrivateInstallCommand -Times 0 -Exactly -ParameterFilter { $Command.mode -in @('chunk','submit') }
+            Should -Invoke Complete-SantaBackendInstallation -Times 0 -Exactly
+        }
     }
 }
