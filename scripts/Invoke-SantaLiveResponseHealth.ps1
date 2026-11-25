@@ -6,6 +6,7 @@ param(
     [Parameter(Mandatory)][string] $ExpectedTenantId,
     [Parameter(Mandatory)][string] $ExpectedAccount,
     [string] $ScriptName = 'Get-SantaHealth.sh',
+    [ValidateScript({ $_ -cmatch '\A[a-f0-9]{64}\z' })][string] $ExpectedRuleSha256,
     [ValidatePattern('^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$')][string] $ExistingActionId,
     [switch] $Resume,
     [switch] $ReuseReceipt,
@@ -29,11 +30,16 @@ if ($ExpectedTenantId -notmatch '^[0-9a-fA-F-]{36}$') { throw 'ExpectedTenantId 
 if ($ExpectedAccount -notmatch '^[^@\s]+@[^@\s]+$') { throw 'ExpectedAccount must be the intended MDE administrator UPN.' }
 if ($ExpectedMachineName -notmatch '^[A-Za-z0-9._-]{1,255}$') { throw 'ExpectedMachineName is not safe.' }
 if ($ScriptName -notmatch '^[A-Za-z0-9._-]{1,128}$') { throw 'ScriptName is not safe.' }
+if (($ScriptName -ieq 'Get-SantaRuleReceipt.sh') -ne [bool]$ExpectedRuleSha256) {
+    throw 'ExpectedRuleSha256 is required for Get-SantaRuleReceipt.sh and is only accepted for that script.'
+}
 if ($Resume -and $ExistingActionId) { throw 'Use Resume for a saved ID or ExistingActionId for an independently recovered ID.' }
 if ($ReuseReceipt -and ($Resume -or $ExistingActionId)) { throw 'ReuseReceipt selects the action from the deployment receipt.' }
 
 if (-not $Apply) {
-    [pscustomobject]@{ mode = 'what-if'; machineId = $MachineId; expectedMachineName = $ExpectedMachineName; scriptName = $ScriptName; existingActionId = $ExistingActionId; resume = [bool]$Resume; reuseReceipt = [bool]$ReuseReceipt; tenantId = $ExpectedTenantId; account = $ExpectedAccount } | ConvertTo-Json
+    $plan = [ordered]@{ mode = 'what-if'; machineId = $MachineId; expectedMachineName = $ExpectedMachineName; scriptName = $ScriptName; existingActionId = $ExistingActionId; resume = [bool]$Resume; reuseReceipt = [bool]$ReuseReceipt; tenantId = $ExpectedTenantId; account = $ExpectedAccount }
+    if ($ExpectedRuleSha256) { $plan.expectedRuleSha256 = $ExpectedRuleSha256 }
+    $plan | ConvertTo-Json
     return
 }
 $operation = if ($ReuseReceipt) { "Start or reuse a receipt-bound Defender Live Response action for $ScriptName" }
@@ -114,7 +120,7 @@ if (Test-Path -LiteralPath $ReceiptPath) {
     if (-not ($Resume -or $ExistingActionId -or $ReuseReceipt)) { throw 'An action receipt already exists. Use Resume for a saved ID; do not resubmit an uncertain action.' }
     if ($saved.schemaVersion -ne '1.0' -or $saved.template -ne 'azd-santa' -or $saved.tenantId -ine $ExpectedTenantId -or $saved.account -ine $ExpectedAccount -or
         $saved.machine.id -ine $MachineId -or $saved.machine.name -ine $ExpectedMachineName -or
-        $saved.action.scriptName -ine $ScriptName) {
+        $saved.action.scriptName -ine $ScriptName -or [string]$saved.action.expectedRuleSha256 -cne $ExpectedRuleSha256) {
         throw 'Existing action receipt does not match the selected action, script, account, tenant and machine.'
     }
     $savedId = [string]$saved.action.id
@@ -160,6 +166,13 @@ if (Test-Path -LiteralPath $ReceiptPath) {
     if ($scripts.Count -ne 1 -or [string]$scripts[0].description -notmatch '(?i)managed by azd-santa') {
         throw "The exact azd-santa-owned Live Response script '$ScriptName' is not published once in the library."
     }
+    if ($ExpectedRuleSha256) {
+        $localScript = Join-Path $PSScriptRoot 'live-response/Get-SantaRuleReceipt.sh'
+        if ($scripts[0].hasParameters -ne $true -or
+            (Get-FileHash -LiteralPath $localScript -Algorithm SHA256).Hash -ine [string]$scripts[0].sha256) {
+            throw 'Publish the exact Santa rule diagnostic as a parameterized script before running it.'
+        }
+    }
 
     $receipt = [ordered]@{
         schemaVersion = '1.0'; template = 'azd-santa'; updatedUtc = ''; state = 'submitted'
@@ -167,12 +180,17 @@ if (Test-Path -LiteralPath $ReceiptPath) {
         machine = [ordered]@{ id = $MachineId; name = $ExpectedMachineName }
         action = [ordered]@{ id = $ExistingActionId; status = ''; scriptName = $ScriptName }
     }
+    $commandParameters = @([ordered]@{ key = 'ScriptName'; value = $ScriptName })
+    if ($ExpectedRuleSha256) {
+        $receipt.action.expectedRuleSha256 = $ExpectedRuleSha256
+        $commandParameters += [ordered]@{ key = 'Args'; value = $ExpectedRuleSha256 }
+    }
     if (-not $ExistingActionId) { Save-ActionReceipt -State 'submission-uncertain' }
     $action = if ($ExistingActionId) {
         [pscustomobject]@{ id = $ExistingActionId }
     } else {
         Invoke-DefenderJson -Method POST -Uri "https://api.security.microsoft.com/api/machines/$MachineId/runliveresponse" -Body ([ordered]@{
-            Commands = @([ordered]@{ type = 'RunScript'; params = @([ordered]@{ key = 'ScriptName'; value = $ScriptName }) })
+            Commands = @([ordered]@{ type = 'RunScript'; params = $commandParameters })
             Comment = "azd-santa health verification for $ExpectedMachineName"
         })
     }
@@ -220,8 +238,10 @@ if (Test-Path -LiteralPath $ReceiptPath) {
     }
     $command = @($completed.commands | Where-Object index -eq 0)
     $scriptParameters = @($command[0].command.params | Where-Object key -eq 'ScriptName')
+    $argsParameters = @($command[0].command.params | Where-Object key -eq 'Args')
     if ($command.Count -ne 1 -or [string]$command[0].command.type -ine 'RunScript' -or
-        $scriptParameters.Count -ne 1 -or [string]$scriptParameters[0].value -cne $ScriptName) {
+        $scriptParameters.Count -ne 1 -or [string]$scriptParameters[0].value -cne $ScriptName -or
+        ($ExpectedRuleSha256 -and ($argsParameters.Count -ne 1 -or [string]$argsParameters[0].value -cne $ExpectedRuleSha256))) {
         Save-ActionReceipt -State 'binding-mismatch' -Status 'Succeeded'
         throw 'Live Response command was not bound to the selected script.'
     }
@@ -252,6 +272,13 @@ if (Test-Path -LiteralPath $ReceiptPath) {
         $state = if ($hasExitCode -and $exitCode -ne 0) { 'command-failed' } elseif ([string]$result.script_output -match '(?m)^result=failed$') { 'command-failed' } else { 'result-unverified' }
         Save-ActionReceipt -State $state -Status 'Succeeded'
         throw 'Santa Live Response output did not verify a passed result.'
+    }
+    if ($ExpectedRuleSha256) {
+        $reportedRule = @(([string]$result.script_output -split '\r?\n') -cmatch '^ruleSha256=')
+        if ($reportedRule.Count -ne 1 -or $reportedRule[0] -cne "ruleSha256=$ExpectedRuleSha256") {
+            Save-ActionReceipt -State 'binding-mismatch' -Status 'Succeeded'
+            throw 'Live Response output was not bound to the expected rule.'
+        }
     }
     New-Item -ItemType Directory -Path (Split-Path -Parent $ResultPath) -Force | Out-Null
     [ordered]@{

@@ -116,3 +116,31 @@ the current account, device/group/profile identities, network address and runtim
 Verify current Intune receipt and actual backend preflight/postflight before
 advancing to rule, event and rollback checks. Keep Monitor mode and the one-device
 scope, and close the window/deallocate idle compute again afterward.
+
+### Rule receipt on the selected Mac
+
+Publish `scripts/live-response/Get-SantaRuleReceipt.sh` with
+`Publish-SantaLiveResponseScript.ps1 -ScriptPath` and a separate publication
+receipt. Use the synthetic binary hash from the reviewed server-side pilot
+rule, and use a fresh result path for each observation.
+
+```powershell
+./scripts/Invoke-SantaLiveResponseHealth.ps1 `
+  -MachineId $pilotMachineId -ExpectedMachineName $pilotMachineName `
+  -ExpectedTenantId $pilotTenantId -ExpectedAccount $pilotAccount `
+  -ScriptName Get-SantaRuleReceipt.sh -ExpectedRuleSha256 $pilotRuleSha256 `
+  -ResultPath $baselineResultPath -Apply
+```
+
+Capture a baseline before the planned sync. After the selected backend
+records the Mac's successful postflight, repeat with a new result path.
+A complete observation reports `ruleState=absent`, `blocked`, or `allowed`.
+`result=passed` means the lookup completed. A transition from absent to
+blocked, together with fresh sync timestamps and the matched backend
+postflight, supplies rule-receipt evidence. The diagnostic queries the
+database by SHA-256 and runs no test executable. Santa can report the full
+sync timestamp as a fallback for the rule sync timestamp. Keep event and
+execution evidence separate.
+
+This uses the [Defender RunScript Args parameter](https://learn.microsoft.com/en-us/defender-endpoint/api/run-live-response)
+and the [Santa 2026.8 read-only rule lookup](https://github.com/northpolesec/santa/blob/2026.8/Source/santactl/Commands/SNTCommandRule.mm).

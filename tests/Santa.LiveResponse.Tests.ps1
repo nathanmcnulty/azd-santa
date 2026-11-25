@@ -1,6 +1,7 @@
 #Requires -Version 7.6
 BeforeAll {
     $script:runner = Join-Path (Split-Path -Parent $PSScriptRoot) 'scripts/Invoke-SantaLiveResponseHealth.ps1'
+    $script:ruleScriptDigest = (Get-FileHash (Join-Path (Split-Path -Parent $runner) 'live-response/Get-SantaRuleReceipt.sh')).Hash
     Add-Type -TypeDefinition @'
 using System;
 using System.IO;
@@ -13,15 +14,18 @@ using System.Text.Json;
 public class SantaReceiptHandler : HttpMessageHandler {
     public Queue<HttpResponseMessage> Responses = new Queue<HttpResponseMessage>();
     public List<string> Requests = new List<string>();
+    public string SubmittedBody;
+    public string ScriptName = "Get-SantaHealth.sh";
     public string ReceiptPath;
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) {
         Requests.Add(request.Method + " " + request.RequestUri.AbsolutePath);
+        if (request.Method == HttpMethod.Post) SubmittedBody = request.Content.ReadAsStringAsync().GetAwaiter().GetResult();
         if (request.RequestUri.AbsolutePath.Contains("machineactions/")) {
             if (!File.Exists(ReceiptPath)) throw new Exception("Receipt missing before first poll");
             using (var document = JsonDocument.Parse(File.ReadAllText(ReceiptPath))) {
                 var receipt = document.RootElement;
                 if (receipt.GetProperty("action").GetProperty("id").GetString() != "00000000-0000-0000-0000-000000000002" ||
-                    receipt.GetProperty("action").GetProperty("scriptName").GetString() != "Get-SantaHealth.sh" ||
+                    receipt.GetProperty("action").GetProperty("scriptName").GetString() != ScriptName ||
                     receipt.GetProperty("machine").GetProperty("id").GetString() != new string('a', 40) ||
                     receipt.GetProperty("machine").GetProperty("name").GetString() != "fixture-mac" ||
                     receipt.GetProperty("tenantId").GetString() != "00000000-0000-0000-0000-000000000001")
@@ -43,8 +47,10 @@ public class SantaReceiptHandler : HttpMessageHandler {
         $response.Content = [Net.Http.StringContent]::new(($Body | ConvertTo-Json -Depth 12 -Compress))
         $Handler.Responses.Enqueue($response)
     }
-    function Add-Action($Status, $Machine = ('a' * 40), $Command = 'Completed', $ScriptName = 'Get-SantaHealth.sh') {
-        Add-Response @{ id = $script:actionId; type = 'LiveResponse'; machineId = $Machine; computerDnsName = 'fixture-mac'; status = $Status; commands = @(@{ index = 0; commandStatus = $Command; command = @{ type = 'RunScript'; params = @(@{ key = 'ScriptName'; value = $ScriptName }) } }) }
+    function Add-Action($Status, $Machine = ('a' * 40), $Command = 'Completed', $ScriptName = 'Get-SantaHealth.sh', $RuleSha256) {
+        $scriptParams = @(@{ key = 'ScriptName'; value = $ScriptName })
+        if ($RuleSha256) { $scriptParams += @{ key = 'Args'; value = $RuleSha256 } }
+        Add-Response @{ id = $script:actionId; type = 'LiveResponse'; machineId = $Machine; computerDnsName = 'fixture-mac'; status = $Status; commands = @(@{ index = 0; commandStatus = $Command; command = @{ type = 'RunScript'; params = $scriptParams } }) }
     }
     function Add-Success {
         Add-Action 'Succeeded'
@@ -69,9 +75,46 @@ Describe 'Private Live Response receipts and bounded polling' {
             MaximumPolls = 2; PollIntervalSeconds = 0; HttpClient = $client; ResultHttpClient = $downloadClient
         }
         Add-Response @{ id = 'a' * 40; computerDnsName = 'fixture-mac'; osPlatform = 'macOS'; onboardingStatus = 'Onboarded' }
-        Add-Response @{ value = @(@{ fileName = 'Get-SantaHealth.sh'; description = 'managed by azd-santa' }) }
+        Add-Response @{ value = @(
+            @{ fileName = 'Get-SantaHealth.sh'; description = 'managed by azd-santa' }
+            @{ fileName = 'Get-SantaRuleReceipt.sh'; description = 'managed by azd-santa'; sha256 = $ruleScriptDigest; hasParameters = $true }
+        ) }
     }
     AfterEach { $client.Dispose(); $downloadClient.Dispose() }
+    It 'binds rule lookup submission, action, output and local receipt to a single digest' {
+        $hash = 'b' * 64
+        $handler.ScriptName = 'Get-SantaRuleReceipt.sh'
+        Add-Response @{ id = $actionId }
+        Add-Action 'Succeeded' -ScriptName $handler.ScriptName -RuleSha256 $hash
+        Add-Response @{ value = 'https://example.test/signed-fixture' }
+        Add-Response @{ script_name = $handler.ScriptName; exit_code = 0; script_output = "ruleSha256=$hash`nruleState=absent`nresult=passed`n" } -Handler $downloadHandler
+        & $runner @parameters -ScriptName $handler.ScriptName -ExpectedRuleSha256 $hash
+        $posted = $handler.SubmittedBody | ConvertFrom-Json
+        ($posted.Commands[0].params | Where-Object key -eq 'Args').value | Should -BeExactly $hash
+        $receipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
+        $receipt.state | Should -BeExactly 'verified-completion'
+        $receipt.action.expectedRuleSha256 | Should -BeExactly $hash
+        { & $runner @parameters -ScriptName $handler.ScriptName -ExpectedRuleSha256 ('c' * 64) -ReuseReceipt } |
+            Should -Throw '*receipt does not match*'
+    }
+    It 'rejects a different rule in the completed action or diagnostic output' -TestCases @(
+        @{ WrongAction = $true }
+        @{ WrongAction = $false }
+    ) {
+        param($WrongAction)
+        $hash = 'b' * 64
+        $wrong = 'c' * 64
+        $handler.ScriptName = 'Get-SantaRuleReceipt.sh'
+        Add-Response @{ id = $actionId }
+        Add-Action 'Succeeded' -ScriptName $handler.ScriptName -RuleSha256 $(if ($WrongAction) { $wrong } else { $hash })
+        if (-not $WrongAction) {
+            Add-Response @{ value = 'https://example.test/signed-fixture' }
+            Add-Response @{ script_name = $handler.ScriptName; exit_code = 0; script_output = "ruleSha256=$wrong`nresult=passed`n" } -Handler $downloadHandler
+        }
+        { & $runner @parameters -ScriptName $handler.ScriptName -ExpectedRuleSha256 $hash } | Should -Throw '*was not bound*'
+        (Get-Content $receiptPath -Raw | ConvertFrom-Json).state | Should -BeExactly 'binding-mismatch'
+        Test-Path $resultPath | Should -BeFalse
+    }
     It 'persists before polling, tolerates a transient 404, and preserves v1 success consumers' {
         Add-Response @{ id = $actionId }
         Add-Response @{} 404
