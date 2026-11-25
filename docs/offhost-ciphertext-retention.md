@@ -537,6 +537,19 @@ the key in memory and match it to the original capture. Use the same
 `retained_image_compatibility.py` to recover the native backup metadata.
 Existing plaintext DER inputs omit `--encrypted-key-sha256`.
 
+For a Windows pilot key protected with CurrentUser DPAPI, run the Windows
+exporter under the original account. Use the original DPAPI purpose string and
+the public-key fingerprint from the capture receipt. The exporter prompts for
+a passphrase and returns the same encrypted-key digest used by the Linux
+verification and load commands. The original and the exported file remain
+encrypted on disk.
+
+```powershell
+./experiments/server/Export-SantaRecoveryRecipient.ps1 `
+    -ProtectedKeyPath $originalDpapiKey -ProtectionPurpose $originalPurpose `
+    -RecipientSha256 $recipientSha -OutputPath $encryptedRecipientDer
+```
+
 On the isolated Linux recovery host, `retained_image_load.py verify`
 authenticates the image without contacting Docker. Use the same inputs
 with `load` and add `--docker-socket` for the explicit local recovery daemon
