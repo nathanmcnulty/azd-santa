@@ -227,23 +227,24 @@
       "evidence": [
         { "path": "experiments/server/blob_retention.py", "sha256": "f5aa619725104fa3a4bbe174a7ea4ceb236d9eab68675b8730d90984cb3e1818" },
         { "path": "experiments/server/blob_capability_relay.py", "sha256": "eb6a5eee83ededf08e78c6203aeb7babc8e36129cf836f2af7ef80be0f6a9a1c" },
-        { "path": "experiments/server/private_arm_adapter.py", "sha256": "d6b94b6dd952e81829bc62015800448c40826b7982a059347ee5901570cb4a15" }
+        { "path": "experiments/server/private_arm_adapter.py", "sha256": "69a8abfdbe60e0826a7e000a092794ec4bb32425522fc06d41ce1f64da22e82f" }
       ]
     },
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
-      "permission": "Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/blobServices/containers/read; Microsoft.Storage/storageAccounts/listServiceSas/action; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read",
+      "permission": "Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/blobServices/containers/read; Microsoft.Storage/storageAccounts/listServiceSas/action; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Compute/virtualMachines/runCommand/action",
       "principal": "Explicit cached ARM operator for the selected retained image operation",
       "phase": "runtime",
       "feature": "offhost-image-artifact-retention",
       "defaultEnabled": false,
       "scope": "Selected owned account, source and verifier networks, and one role for an exact pinned image part manifest",
-      "rationale": "The issuer reuses cached ARM context and fresh owned store and VM checks, then requests one exact-object create or read SAS per part. The journal prevents replay on the retained root. Storage authorization is account-scoped and remains subject to the existing role and policy. Automatic encrypted VM delivery and live qualification remain separate.",
+      "rationale": "The issuer reuses cached ARM context and fresh owned store and VM checks, then requests one exact-object create or read SAS per part. The journal prevents replay on the retained root. Storage authorization is account-scoped and remains subject to the existing role and policy. Action Run Command supports encrypted delivery to a digest-pinned runner on the exact selected VM. Runner provisioning and live image transfer remain qualification gates.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/private_arm_adapter.py", "sha256": "d6b94b6dd952e81829bc62015800448c40826b7982a059347ee5901570cb4a15" },
-        { "path": "experiments/server/retained_image_sas.py", "sha256": "2323d8a3db16a413dd43ce41de552cd92d8ebd2df08be3bc1f70ab6fb24cee0c" }
+        { "path": "experiments/server/private_arm_adapter.py", "sha256": "69a8abfdbe60e0826a7e000a092794ec4bb32425522fc06d41ce1f64da22e82f" },
+        { "path": "experiments/server/retained_image_sas.py", "sha256": "2323d8a3db16a413dd43ce41de552cd92d8ebd2df08be3bc1f70ab6fb24cee0c" },
+        { "path": "experiments/server/retained_image_run_command.py", "sha256": "c8b64e7f39b8600ab45b1dcac5ae9182eb9497a50e523ff7623377a135780abe" }
       ]
     },
     {
