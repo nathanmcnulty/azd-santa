@@ -219,7 +219,7 @@ class RunCommand:
             request = checked_document(raw, handoff.sha(raw), delivery.MAX_FRAME)
             action, digest = request['action'], request['batch_sha256']
             fields = {'scope', 'batch_sha256', 'action'}
-            extras = {'begin': {'batch'}, 'part': {'index', 'packet'}, 'finish': set(),
+            extras = {'begin': {'batch'}, 'part': {'index', 'packet'}, 'parts': {'start', 'packets'}, 'finish': set(),
                       'observe': set(), 'offer': set(), 'runner': set()}
             blob.need(request['scope'] == delivery.SCOPE and re.fullmatch(blob.HEX, digest)
                       and set(request) == fields | extras[action])
@@ -228,6 +228,8 @@ class RunCommand:
             elif action == 'part':
                 handoff.decode(request['packet'], handoff.MAX_PACKET)
                 blob.need(type(request['index']) is int and 0 <= request['index'] < MAX_PARTS)
+            elif action == 'parts':
+                delivery.decode_group(request)
 
             nonce = uuid.uuid4().hex
             exports = (f"export SANTA_IMAGE_RUNNER='{self.runner}'\n"

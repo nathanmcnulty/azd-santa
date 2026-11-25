@@ -90,7 +90,17 @@ class RunCommandTests(unittest.TestCase):
     def test_bad_frame_is_rejected_before_cli_lookup(self):
         with self.assertRaises(storage.blob.RetentionRejected):
             self.runner(delivery.frame('observe', self.digest, other='unexpected'))
+        with self.assertRaises(storage.blob.RetentionRejected):
+            self.runner(delivery.frame('parts', self.digest, start=delivery.MAX_PARTS - 1,
+                                       packets=['eA==', 'eA==']))
         self.assertFalse(self.calls)
+
+    def test_valid_packet_group_reaches_selected_run_command(self):
+        self.raw = delivery.frame('parts', self.digest, start=0, packets=['eA==', 'eQ=='])
+        self.reply = {'scope': delivery.SCOPE, 'batch_sha256': self.digest, 'state': 'staged',
+                      'start': 0, 'count': 2}
+        self.assertEqual(self.runner(self.raw), self.reply)
+        self.assertEqual(len(self.calls), 3)
 
     @unittest.skipUnless(sys.platform == 'linux', 'Linux shell')
     def test_missing_installed_runner_emits_no_completion_marker(self):

@@ -8,7 +8,7 @@ import stat
 
 import blob_retention as blob
 import retained_image_handoff as handoff
-from retained_image_parts import checked_document
+from retained_image_parts import MAX_PARTS, checked_document
 from retained_image_sas import sync_directory, write_record
 
 MAX_FRAME = 14 * 1024
@@ -34,9 +34,39 @@ def build_batch(offer, packets, transfer, target, permission):
 
 
 def frame(operation, batch_sha256, **payload):
-    raw = blob.encoded({'scope': SCOPE, 'action': operation, 'batch_sha256': batch_sha256, **payload})
+    raw = encode_frame(operation, batch_sha256, **payload)
     blob.need(len(raw) <= MAX_FRAME)
     return raw
+
+
+def encode_frame(operation, batch_sha256, **payload):
+    return blob.encoded({'scope': SCOPE, 'action': operation, 'batch_sha256': batch_sha256, **payload})
+
+
+def packet_commands(digest, packets):
+    """Pack consecutive encrypted packets using the actual serialized byte count."""
+    start, group, raw = 0, [], None
+    for index, packet in enumerate(packets):
+        encoded = handoff.b64(packet)
+        candidate = encode_frame('parts', digest, start=start, packets=[*group, encoded])
+        if len(candidate) > MAX_FRAME:
+            blob.need(raw is not None)
+            yield raw, {'state': 'staged', 'start': start, 'count': len(group)}
+            start, group = index, []
+            candidate = frame('parts', digest, start=start, packets=[encoded])
+        group.append(encoded)
+        raw = candidate
+    if raw is not None:
+        yield raw, {'state': 'staged', 'start': start, 'count': len(group)}
+
+
+def decode_group(request, limit=MAX_PARTS):
+    start, packets = request['start'], request['packets']
+    blob.need(type(start) is int and type(packets) is list and 0 <= start < limit
+              and 0 < len(packets) <= limit - start)
+    decoded = [handoff.decode(packet, handoff.MAX_PACKET) for packet in packets]
+    blob.need(all(decoded))
+    return start, decoded
 
 
 def check_result(reply, digest, transfer, permission):
@@ -67,13 +97,12 @@ def send(invoke, journal_root, offer, packets, transfer, target, permission, *, 
         batch = build_batch(offer, packets, transfer, target, permission)
         digest = handoff.sha(batch)
         names = [part['object'] for part in transfer.selection['parts']]
-        commands = [frame('begin', digest, batch=handoff.b64(batch))]
-        commands.extend(frame('part', digest, index=index, packet=handoff.b64(packets[name]))
-                        for index, name in enumerate(names))
-        commands.append(frame('finish', digest))
+        commands = [(frame('begin', digest, batch=handoff.b64(batch)), {'state': 'begun', 'index': -1}),
+                    *packet_commands(digest, (packets[name] for name in names)),
+                    (frame('finish', digest), None)]
         if not apply:
             return {'scope': SCOPE, 'performs_mutation': False, 'frames': len(commands),
-                    'maximum_frame_bytes': max(map(len, commands))}
+                    'maximum_frame_bytes': max(len(command) for command, _ in commands)}
         root = Path(journal_root)
         blob.need(root.is_absolute() and root == root.resolve(strict=True) and root.is_dir())
         if os.name != 'nt':
@@ -85,12 +114,10 @@ def send(invoke, journal_root, offer, packets, transfer, target, permission, *, 
         write_record(journal / 'intent.json', {'batch_sha256': digest, 'offer_sha256': handoff.sha(offer),
                      'frames': len(commands), 'permission': permission, 'vm_instance_id': target.instance_id})
         sync_directory(journal)
-        for index, command in enumerate(commands):
+        for command, expected in commands:
             reply = invoke(command)
-            expected = {'scope': SCOPE, 'batch_sha256': digest}
-            if index < len(commands) - 1:
-                expected.update(state='begun' if index == 0 else 'staged', index=index - 1)
-                blob.need(reply == expected)
+            if expected is not None:
+                blob.need(reply == {'scope': SCOPE, 'batch_sha256': digest, **expected})
             else:
                 check_result(reply, digest, transfer, permission)
         write_record(journal / 'finished.json', {'batch_sha256': digest, 'state': 'reported'})
@@ -175,6 +202,21 @@ class Guest:
                     self.check_packet(packet, entries[index])
                     write_at(folder, f'part-{index:03d}.bin', packet)
                     return {'scope': SCOPE, 'batch_sha256': digest, 'state': 'staged', 'index': index}
+                if action == 'parts':
+                    blob.need(set(request) == fields | {'start', 'packets'})
+                    start, group = decode_group(request, len(entries))
+                    for index, packet in enumerate(group, start):
+                        self.check_packet(packet, entries[index])
+                        try:
+                            os.stat(f'part-{index:03d}.bin', dir_fd=folder, follow_symlinks=False)
+                        except FileNotFoundError:
+                            pass
+                        else:
+                            raise blob.RetentionRejected('Santa image packet already staged')
+                    for index, packet in enumerate(group, start):
+                        write_at(folder, f'part-{index:03d}.bin', packet)
+                    return {'scope': SCOPE, 'batch_sha256': digest, 'state': 'staged',
+                            'start': start, 'count': len(group)}
 
                 blob.need(action == 'finish' and set(request) == fields)
                 packets = {}
