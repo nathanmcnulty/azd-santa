@@ -93,6 +93,23 @@ The proposed operation runs with all writers stopped and verifies its own final
 authority predicates. A later signal-based external head would require a
 separate inventory of all write paths and coordinated commit behavior.
 
+The in-memory authority planner in `experiments/server/restore_authority_plan.py`
+defines the update allowlist for the eight affected models. It accepts typed
+projections and counts from the caller's reviewed census. It plans inactive
+users, Cedar policies and realms, unusable passwords, expiring tokens and
+sessions, denied OIDC conditions, and revoked enrollment secrets. It retains
+earlier expiries and existing revocation timestamps. The pinned realm model
+can use a realm-level login session lifetime, so a session timestamp is only
+one part of the planned realm changes. The private plan includes a keyed
+fingerprint of the observed projections and a receipt with per-model counts.
+It performs no database writes. A transactional adapter must still bind
+the actual schema, target, writer quiescence and independently reviewed
+census before these updates can be used. Zentral uses naive UTC datetimes.
+The adapter must establish that database time zone and normalize timestamps
+before passing them to the planner.
+[Pinned Zentral realm session model](https://github.com/zentralopensource/zentral/blob/88e67b3ce49033aab028029937a6e14f7c489073/server/realms/models.py#L299)
+[Pinned Zentral time settings](https://github.com/zentralopensource/zentral/blob/88e67b3ce49033aab028029937a6e14f7c489073/server/server/settings.py#L218)
+
 ## Signing rotation and secret recoverability
 
 The separate [offline secret-rewrap primitive](offline-secret-rewrap.md) now

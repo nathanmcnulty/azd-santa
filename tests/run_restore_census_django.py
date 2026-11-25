@@ -12,6 +12,7 @@ from django.conf import settings
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'experiments/server'))
 import restore_census as census
+from restore_authority_plan import UNUSABLE_PASSWORD
 
 KEY = b'synthetic restore census key....'
 
@@ -64,6 +65,7 @@ def reject(operation):
 def run(root):
     configure(root)
     from django.apps import apps
+    from django.contrib.auth.hashers import check_password, is_password_usable
     from django.core.management import call_command
     from django.db import connections
 
@@ -79,6 +81,8 @@ def run(root):
         call_command('makemigrations', 'accounts', verbosity=0, interactive=False)
         call_command('migrate', verbosity=0, interactive=False)
         user = apps.get_model('accounts', 'User').objects.create(username='synthetic-user')
+        assert not is_password_usable(UNUSABLE_PASSWORD)
+        assert not check_password('synthetic-old-password', UNUSABLE_PASSWORD)
         user.groups.add(apps.get_model('auth', 'Group').objects.create(name='synthetic-group'))
         with db.cursor() as cursor:
             cursor.execute('CREATE TABLE "probe%s%rows" (name text, tombstone integer)')
