@@ -5,7 +5,8 @@ param(
     [Parameter(Mandatory)][string] $ExpectedAccount,
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')][string] $EnvironmentName = 'default',
     [string] $PublicationReceiptPath,
-    [string] $OutputPath
+    [string] $OutputPath,
+    [ValidateRange(1,168)][int] $MaximumEvidenceAgeHours = 24
 )
 
 $ErrorActionPreference = 'Stop'
@@ -82,29 +83,45 @@ if (@($allStates | Where-Object { $_.managedDevice.id -ne $managedDeviceId }).Co
 }
 $run = if ($allStates.Count -eq 1) { $allStates[0] } else { $null }
 $resultText = if ($run) { [string] $run.resultMessage } else { '' }
-$captured = [regex]::Match($resultText, '(?m)^capturedAtUtc=([^\r\n]+)$').Groups[1].Value
-$reportedName = [regex]::Match($resultText, '(?m)^computerName=([^\r\n]+)$').Groups[1].Value
+$captureLines = [regex]::Matches($resultText, '(?m)^capturedAtUtc=([^\r\n]*)\r?$')
+$captured = if ($captureLines.Count -eq 1) { $captureLines[0].Groups[1].Value } else { '' }
+$reportedName = [regex]::Match($resultText, '(?m)^computerName=([^\r\n]+)\r?$').Groups[1].Value
 $expectedVersion = (Get-Content -LiteralPath (Join-Path $root 'package/santa.lock.json') -Raw | ConvertFrom-Json).release.tag
-$versionReported = [regex]::Match($resultText, '(?m)^expectedSantaVersion=([^\r\n]+)$').Groups[1].Value
-$runTime = if ($run) { [DateTimeOffset] $run.lastStateUpdateDateTime } else { $null }
+$versionReported = [regex]::Match($resultText, '(?m)^expectedSantaVersion=([^\r\n]+)\r?$').Groups[1].Value
+$runTime = if ($run.lastStateUpdateDateTime) { [DateTimeOffset] $run.lastStateUpdateDateTime } else { $null }
 $scriptTime = [DateTimeOffset] $remote.lastModifiedDateTime
+$asOf = [DateTimeOffset]::UtcNow
 $capturedTime = [DateTimeOffset]::MinValue
-$hasCapturedTime = [DateTimeOffset]::TryParse($captured, [ref] $capturedTime)
-$passed = $run -and $run.runState -eq 'success' -and [int]$run.errorCode -eq 0 -and
-    $runTime -ge $scriptTime -and $hasCapturedTime -and $capturedTime -ge $scriptTime -and
+$hasCapturedTime = [DateTimeOffset]::TryParseExact($captured, "yyyy-MM-dd'T'HH:mm:ss'Z'",
+    [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeUniversal, [ref] $capturedTime)
+$age = if ($hasCapturedTime) { $asOf - $capturedTime } else { $null }
+$successfulResult = $run -and $run.runState -eq 'success' -and [int]$run.errorCode -eq 0 -and
     $reportedName -eq $deviceName -and $versionReported -eq $expectedVersion -and
-    $resultText -match '(?m)^result=passed$'
-$status = if ($passed) { 'passed' } elseif (-not $run -or $run.runState -in @('unknown','pending') -or ($runTime -lt $scriptTime)) { 'pending' } else { 'failed' }
+    $resultText -match '(?m)^result=passed\r?$'
+$status = if (-not $run -or $run.runState -in @('unknown','pending') -or ($null -ne $runTime -and $runTime -lt $scriptTime)) {
+    'pending'
+} elseif (-not $successfulResult) {
+    'failed'
+} elseif (-not $hasCapturedTime -or $capturedTime -lt $scriptTime -or $capturedTime -gt $asOf -or $null -eq $runTime -or $runTime -gt $asOf) {
+    'invalid-evidence'
+} elseif ($age -gt [TimeSpan]::FromHours($MaximumEvidenceAgeHours)) {
+    'stale'
+} else {
+    'passed'
+}
 
 New-Item -ItemType Directory -Path (Split-Path -Parent $OutputPath) -Force | Out-Null
 [ordered]@{
     schemaVersion = '1.0'; template = 'azd-santa'; performsMutation = $false
-    collectedUtc = [DateTimeOffset]::UtcNow.ToString('o'); status = $status
+    collectedUtc = $asOf.ToString('o'); status = $status
+    maximumEvidenceAgeHours = $MaximumEvidenceAgeHours
+    captureAgeSeconds = if ($null -ne $age) { $age.TotalSeconds } else { $null }
     tenantId = $TenantId; account = $ExpectedAccount; environmentName = $EnvironmentName
     script = [ordered]@{ id = $scriptId; sha256 = $remoteHash; lastModifiedUtc = $scriptTime.ToUniversalTime().ToString('o') }
     pilot = [ordered]@{ groupId = $groupId; entraDeviceId = $entraDeviceId; managedDeviceId = $managedDeviceId; deviceName = $deviceName }
     run = if ($run) { [ordered]@{
-        id = [string] $run.id; state = [string] $run.runState; lastStateUpdateUtc = $runTime.ToUniversalTime().ToString('o')
+        id = [string] $run.id; state = [string] $run.runState
+        lastStateUpdateUtc = if ($null -ne $runTime) { $runTime.ToUniversalTime().ToString('o') } else { $null }
         capturedUtc = $captured; errorCode = [int] $run.errorCode; errorDescription = [string] $run.errorDescription
         resultMessage = $resultText
     } } else { $null }

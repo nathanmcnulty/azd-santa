@@ -186,9 +186,20 @@ The collector verifies the publication hash, the one-member pilot group, the
 Entra-to-Intune device binding, the unfiltered assignment, and the script's
 `deviceRunStates` record. Its private `.azure/<environment>/santa-intune-health-result.json`
 receipt is `passed` only when a successful run contains the expected computer
-name, Santa version, and pass marker and happened after the script's last update.
-A pending result means Intune has not yet reported execution of those exact
-bytes. The Graph endpoint is a beta API and may change.
+name, Santa version, and pass marker, and the endpoint captured it after the
+script's last update and within the last 24 hours. Use
+`-MaximumEvidenceAgeHours` to choose a window from 1 to 168 hours.
+
+- `stale` means a valid successful capture exceeded that window.
+- `invalid-evidence` means an otherwise successful result has missing,
+  malformed, future, or mismatched timing evidence.
+- `pending` means Intune has yet to report a run of the current script.
+- `failed` means the reported run did not meet the script's success criteria.
+
+The receipt preserves the reported run and includes `collectedUtc`,
+`maximumEvidenceAgeHours`, and `captureAgeSeconds` when the capture time can
+be parsed. The age comes from the endpoint capture, even when Intune recently
+updated its run record or the device checked in.
 
 The script writes no persistent files when run through either managed channel.
 The Live Response result is downloaded immediately into the selected AZD
