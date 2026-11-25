@@ -1,6 +1,7 @@
 """Synthetic Django/PostgreSQL restore census integration for Linux CI."""
 
 import argparse
+import json
 from pathlib import Path
 import stat
 import sys
@@ -245,8 +246,10 @@ def run(root):
         final_source = observe_runtime()
         assert final_source.receipt['complete_supported_data'], final_source.manifest['unsupported']
         assert final_source.manifest['data'][table]['rows'] == 3
-        with (root / 'source-census.json').open('xb') as output:
-            output.write(census.encoded({'manifest': final_source.manifest, 'receipt': final_source.receipt}))
+        # The fingerprint encoding has typed tags. Keep the fixture handoff
+        # as ordinary JSON so the second process can rebuild the same Census.
+        with (root / 'source-census.json').open('x', encoding='utf-8') as output:
+            json.dump({'manifest': final_source.manifest, 'receipt': final_source.receipt}, output)
         print('Django migration, schema, restricted role, row and transaction census fixture passed')
     finally:
         runtime.close()
