@@ -139,6 +139,11 @@ comparison and duplicate rows, a custom table access method, quoted identifiers,
 column tombstones, raw transaction refusal, statement timeout, interruption,
 and rollback. It also reproduces the VM installer's schema default grants and
 checks that comparison rejects a changed grant or an added database-wide grant.
+An independent Unix-socket connection uses the restricted role. It confirms the
+same row and migration observations and verifies that a disabled subscription
+blocks collection. The catalog check counts subscriptions using their database
+ID. The runtime role has no access to the connection-string column.
+[PostgreSQL subscription catalog](https://www.postgresql.org/docs/18/catalog-pg-subscription.html)
 The database
 and input data are disposable. The complete Zentral app registry and restored
 application data still require separate qualification, along with administrator
