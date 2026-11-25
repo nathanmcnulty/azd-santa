@@ -23,7 +23,7 @@ done
 [[ "$ready" == true ]]
 
 {
-  echo 'CREATE TABLE census_probe (value integer NOT NULL);'
+  echo 'CREATE TABLE census_probe (value integer NOT NULL, notes text);'
   python - <<'PY'
 import sys
 sys.path.insert(0, 'experiments/server')

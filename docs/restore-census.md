@@ -82,8 +82,10 @@ The collector follows recorded `pg_depend` references out of the inventoried
 objects. References whose targets resolve to `pg_catalog`, other `pg_*`
 namespaces, or `information_schema` become private `excluded_reference`
 blockers. This stops collection before application row reads and prevents a
-comparison even when the two names match. Recollect older manifests with the
-updated collector since they lack this catalog inventory.
+comparison even when the two names match. PostgreSQL's automatic dependency
+from a generated TOAST index to its own heap is treated as internal storage.
+Recollect older manifests with the updated collector since they lack this
+catalog inventory.
 
 Referenced definitions remain an explicit unproven gate. PostgreSQL omits
 dependency edges to pinned objects and may omit dependencies inside routine

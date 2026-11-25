@@ -197,7 +197,11 @@ CATALOG = {
  # Follow outbound edges before reading data. Identity is diagnostic only.
  'excluded_references':SCHEMA_OBJECTS+""", referenced AS (
  SELECT DISTINCT d.refclassid,d.refobjid,d.refobjsubid FROM pg_depend d JOIN objects o
- ON d.classid=o.classid AND d.objid=o.objid AND (o.objsubid=0 OR d.objsubid=o.objsubid))
+ ON d.classid=o.classid AND d.objid=o.objid AND (o.objsubid=0 OR d.objsubid=o.objsubid)
+ -- A generated TOAST index's auto dependency on its own heap is internal storage.
+ WHERE NOT (d.deptype='a' AND d.classid='pg_class'::regclass AND d.refclassid='pg_class'::regclass
+   AND EXISTS (SELECT 1 FROM pg_index idx JOIN pg_class owning_relation ON owning_relation.reltoastrelid=idx.indrelid
+     WHERE idx.indexrelid=d.objid AND idx.indrelid=d.refobjid)))
  SELECT json_build_object('catalog',r.refclassid::regclass::text,'type',i.type,
  'schema',i.schema,'identity',i.identity)::text
  FROM referenced r CROSS JOIN LATERAL pg_identify_object(r.refclassid,r.refobjid,r.refobjsubid) i
