@@ -151,12 +151,26 @@ hashed bytes and binds both to the same configuration. A multi-platform index
 as the selected ID requires separate qualification. Use an outer wall-clock
 deadline to bound blocking disk I/O.
 
-The Ubuntu test exports a disposable `linux/amd64` image by immutable ID,
-removes only that fixture image, verifies the archive, loads it, and reads back
-the same image ID and platform without starting a container. The verifier
-reports archive verification only. Encrypted export, the reviewed restore
-tooling inventory, authenticated transfer, and independent live acceptance
-remain in [issue #97](https://github.com/nathanmcnulty/azd-santa/issues/97).
+`experiments/server/retained_image_export.py` streams a single selected image by
+exact ID and platform from the local Linux Docker socket. It needs Docker API
+1.48 or later for platform selection. The caller pins the previously verified
+inventory and the recipient's RSA public key. The exporter creates a fresh
+private directory, records its intent first, and writes only encrypted output.
+Docker may use its own temporary storage internally, so the daemon also needs
+adequate private disk space and an external deadline. An interrupted or oversized
+export leaves its directory for inspection. A successful export publishes a
+receipt that binds the intent, plaintext image archive, and ciphertext hashes and
+sizes. The receipt must be captured via a trusted producer channel before it can
+be used as independent provenance. Anyone with the public key can encrypt bytes.
+
+The envelope reuses the native RSA-OAEP and AES-GCM implementation. A separate
+encrypted image marker and intent precede the Docker tar bytes. The image receipt
+and payload are separate from native database capture and Blob transfer. The
+Ubuntu test exports a disposable `linux/amd64` image, authenticates the complete
+ciphertext with a separate recipient key, checks the archive, and reads back the
+same image ID after loading without starting a container. The reviewed restore
+tooling inventory, authenticated transfer, and live acceptance remain in
+[issue #97](https://github.com/nathanmcnulty/azd-santa/issues/97).
 
 The optional VM creation-time Storage endpoint setting and GET-only existing
 network proposal are described in [private Storage endpoint wiring](private-storage-endpoint.md).
