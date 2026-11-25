@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import subprocess
 import time
 
@@ -119,12 +120,18 @@ def capture(root):
 
 def verify(root, quarantine, historical_identity, historical_generation, expected_files):
     assert inventory(quarantine) == expected_files
+    # The pinned checker opens even an unmodified base file for writing.
+    # Its disposable input is separate from quarantine and both Redis stores.
+    check_data = root / 'redis-check'
+    shutil.copytree(quarantine, check_data)
+    assert inventory(check_data) == expected_files
     subprocess.run(['docker', 'run', '--rm', '--name', 'ci' + root.name + '-redis-check',
                     '--network', 'none', '--memory', '128m', '--cpus', '1',
                     '--pids-limit', '32', '--user', f'{os.getuid()}:0',
-                    '--mount', f'type=bind,source={quarantine},target=/captured,readonly',
-                    '--entrypoint', 'redis-check-aof', IMAGE, '/captured/' + MANIFEST],
+                    '--mount', f'type=bind,source={check_data},target=/check',
+                    '--entrypoint', 'redis-check-aof', IMAGE, '/check/' + MANIFEST],
                    check=True, timeout=20)
+    assert inventory(check_data) == expected_files
     marker, guard = policy_constants()
     with redis(root, root / 'redis-fresh', 'fresh') as client:
         keys = [client.make_key(key) for key in (marker, admission.STATE, *HISTORY)]

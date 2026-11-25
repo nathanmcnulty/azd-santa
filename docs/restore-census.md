@@ -170,8 +170,9 @@ the complete Zentral stack and current authority remain open.
 [Elasticsearch snapshot restore API](https://www.elastic.co/docs/api/doc/elasticsearch/v9/operation/operation-snapshot-restore)
 
 Redis history stays in quarantine. The fixture checks each captured AOF file
-against its source digest and runs the pinned image's AOF checker on a read-only
-mount. A separate Redis instance starts from an empty directory. It initializes
+against its source digest. The pinned AOF checker opens files for writing, so
+it receives a separate copy. The fixture confirms the checker changes no bytes.
+A separate Redis instance starts from an empty directory. It initializes
 a new store identity and admission generation, rejects the historical identity
 and retains no old MFA claim or failure-budget key. Broker recovery and full
 authority reissue remain open.
