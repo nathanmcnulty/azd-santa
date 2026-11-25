@@ -59,3 +59,9 @@ Removing the sync settings from a profile does **not** establish that previously
 downloaded rules were cleared. Native macOS profile delivery, Santa sync/rule receipt,
 execution and rollback behavior remain separate unproven gates. Offline mocked
 publisher tests are not Intune acceptance or native qualification.
+
+Failure codes include the stage and PATCH status. For example,
+`SantaSync.CachedIdentity.NoPatchSubmitted` directs you to verify the cached
+account and scopes. `PatchMayHaveStarted` directs you to Observe using the
+existing checkpoint. `PatchVerified` means payload and scope readback matched
+before a local receipt or SDK session cleanup failed.

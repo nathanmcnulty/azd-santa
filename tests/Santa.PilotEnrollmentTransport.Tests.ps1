@@ -76,13 +76,13 @@ Describe 'One bound recipient-sealed pilot profile export'{
   }
   It 'retains intent on unknown and rejects plaintext/error/cross-context responses without profile'{
    Mock Send-PilotEnrollment {throw 'private-canary'}
-   try{Invoke-SantaPilotEnrollment @script:pilotArguments -Action Create;throw 'unexpected'}catch{$_.Exception.Message|Should -Not -Match 'private-canary|unexpected'}
+   try{Invoke-SantaPilotEnrollment @script:pilotArguments -Action Create;throw 'unexpected'}catch{$_.Exception.Message|Should -Match '^SantaEnrollment\.Create\.CreateMayHaveStarted:'; $_.Exception.Message|Should -Not -Match 'private-canary|unexpected'}
    Test-Path ($script:output+'.intent.json')|Should -BeTrue;Test-Path $script:output|Should -BeFalse
    Should -Invoke Send-PilotEnrollment -Times 1 -Exactly
   }
   It 'does not persist an unvalidated response containing plaintext extra fields' {
    Mock Send-PilotEnrollment { '{"secret":"plaintext-canary"}' }
-   {Invoke-SantaPilotEnrollment @script:pilotArguments -Action Create}|Should -Throw
+   {Invoke-SantaPilotEnrollment @script:pilotArguments -Action Create}|Should -Throw '*SantaEnrollment.EnvelopeReadback.CreateMayHaveStarted:*'
    Test-Path ($script:output+'.intent.json')|Should -BeTrue
    Test-Path ($script:output+'.sealed.json')|Should -BeFalse
    Test-Path $script:output|Should -BeFalse
@@ -90,12 +90,12 @@ Describe 'One bound recipient-sealed pilot profile export'{
   }
   It 'rejects an existing output before any cloud request'{
    [IO.File]::WriteAllText($script:output,'retained')
-   {Invoke-SantaPilotEnrollment @script:pilotArguments -Action Create}|Should -Throw
+   {Invoke-SantaPilotEnrollment @script:pilotArguments -Action Create}|Should -Throw '*SantaEnrollment.Input.NoCreateSubmitted:*'
    [IO.File]::ReadAllText($script:output)|Should -BeExactly 'retained';Should -Invoke Pilot-Read -Times 0
   }
   It 'rejects a different cached principal before reserving or creating'{
    $script:pilotArguments.Account='someone-else@example.test'
-   {Invoke-SantaPilotEnrollment @script:pilotArguments -Action Create}|Should -Throw
+   {Invoke-SantaPilotEnrollment @script:pilotArguments -Action Create}|Should -Throw '*SantaEnrollment.CachedIdentity.NoCreateSubmitted:*'
    Test-Path ($script:output+'.intent.json')|Should -BeFalse;Should -Invoke Send-PilotEnrollment -Times 0
   }
   It 'rejects tampered context, IDs, recipient and extra plaintext fields with real OAEP' {

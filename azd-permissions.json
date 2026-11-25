@@ -19,11 +19,11 @@
       "evidence": [
         {
           "path": "experiments/server/PilotEnrollmentTransport.psm1",
-          "sha256": "d0e463e852136ca6d092e03eadada1696487ac9ef6d61fb682f7a5d6c265914e"
+          "sha256": "eaee072836dce277596abf51af5f3d82a76512aa4349ba40ca27a31b6631c47c"
         },
         {
           "path": "experiments/server/Invoke-SantaPilotEnrollment.ps1",
-          "sha256": "b962acd94377afc3ddde0a302af7b327126961f8e2dd7623f391f65dfdc56ac9"
+          "sha256": "bd9603bc44cd4e8cd16a6f4588b279c3d789bb6d10bc2109f645578b56077558"
         },
         {
           "path": "experiments/server/PilotEnrollmentProfile.cs",
@@ -570,7 +570,7 @@
       "phase": "deployment",
       "evidence": [
         {
-          "sha256": "67a0fc62c5e15a8fc44fad9d8640647ea289028743230f9ff1f7e975ee0a83e6",
+          "sha256": "58ec1dc5786bfe1ea02222d1c7312c461a3e588dde7ac88f8d60f7fde01c6fc1",
           "path": "scripts/Santa.SyncProfilePublisher.psm1"
         },
         {
@@ -596,7 +596,7 @@
       "phase": "deployment",
       "evidence": [
         {
-          "sha256": "67a0fc62c5e15a8fc44fad9d8640647ea289028743230f9ff1f7e975ee0a83e6",
+          "sha256": "58ec1dc5786bfe1ea02222d1c7312c461a3e588dde7ac88f8d60f7fde01c6fc1",
           "path": "scripts/Santa.SyncProfilePublisher.psm1"
         },
         {
@@ -622,7 +622,7 @@
       "phase": "deployment",
       "evidence": [
         {
-          "sha256": "67a0fc62c5e15a8fc44fad9d8640647ea289028743230f9ff1f7e975ee0a83e6",
+          "sha256": "58ec1dc5786bfe1ea02222d1c7312c461a3e588dde7ac88f8d60f7fde01c6fc1",
           "path": "scripts/Santa.SyncProfilePublisher.psm1"
         },
         {
