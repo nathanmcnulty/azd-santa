@@ -239,12 +239,13 @@
       "feature": "offhost-image-artifact-retention",
       "defaultEnabled": false,
       "scope": "Selected owned account, source and verifier networks, and one role for an exact pinned image part manifest",
-      "rationale": "The issuer reuses cached ARM context and fresh owned store and VM checks, then requests one exact-object create or read SAS per part. The journal prevents replay on the retained root. Storage authorization is account-scoped and remains subject to the existing role and policy. Action Run Command supports encrypted delivery to a digest-pinned runner on the exact selected VM. Runner provisioning and live image transfer remain qualification gates.",
+      "rationale": "The issuer reuses cached ARM context and fresh owned store and VM checks, then requests one exact-object create or read SAS per part. The journal prevents replay on the retained root. Storage authorization is account-scoped and remains subject to the existing role and policy. Action Run Command supports encrypted delivery to a digest-pinned runner on the exact selected VM. A digest-bound source archive provisions the local Linux guest runner. Azure delivery of the archive and live image transfer remain qualification gates.",
       "evidenceState": "code",
       "evidence": [
         { "path": "experiments/server/private_arm_adapter.py", "sha256": "69a8abfdbe60e0826a7e000a092794ec4bb32425522fc06d41ce1f64da22e82f" },
         { "path": "experiments/server/retained_image_sas.py", "sha256": "2323d8a3db16a413dd43ce41de552cd92d8ebd2df08be3bc1f70ab6fb24cee0c" },
-        { "path": "experiments/server/retained_image_run_command.py", "sha256": "c8b64e7f39b8600ab45b1dcac5ae9182eb9497a50e523ff7623377a135780abe" }
+        { "path": "experiments/server/retained_image_run_command.py", "sha256": "5ef9cc9305b906b7a69e780cf367d2efcf91e124f1027964a8f0e6b79de30a98" },
+        { "path": "experiments/server/retained_image_runner.py", "sha256": "e46130a2930d6a85b726d12f091ef2e62ce2859d44cd16ade36165b54116c5e6" }
       ]
     },
     {

@@ -12,10 +12,10 @@ import private_arm_adapter as arm
 import retained_image_delivery as delivery
 import retained_image_handoff as handoff
 from retained_image_parts import MAX_PARTS, checked_document
+from retained_image_runner import GUEST_ROOT
 
 RECEIPT = 'SANTA_IMAGE_FRAME_JSON:'
 DONE = 'SANTA_IMAGE_FRAME_DONE:'
-GUEST_ROOT = '/var/lib/azd-santa-qualification/image-delivery'
 BOOTSTRAP = """import base64, contextlib, hashlib, json, os, stat
 from pathlib import Path
 
@@ -77,6 +77,7 @@ class RunCommand:
         handoff.context(transfer, self.target, permission)
         blob.need(transfer.store == selection.store and transfer.source == selection.source)
         self.selection, self.runner_sha256 = selection, runner_sha256
+        self.transfer, self.permission = transfer, permission
         self.runner = f"{GUEST_ROOT}/{handoff.offer_name(transfer, permission)}/run.py"
         self._cli = cli
         self._application = None
@@ -89,6 +90,15 @@ class RunCommand:
             self._application = arm.resolve_cli()
         return arm.bounded_cli(arguments, seconds, application=self._application)
 
+    def offer(self):
+        """Read or create the boot-bound public offer for this installed runner."""
+        digest = self.transfer.pins['manifest_sha256']
+        result = self(delivery.frame('offer', digest))
+        blob.need(set(result) == {'scope', 'batch_sha256', 'state', 'offer'} and result['state'] == 'offered')
+        raw = handoff.decode(result['offer'], 4096)
+        handoff.check_offer(raw, handoff.sha(raw), self.transfer, self.target, self.permission)
+        return raw
+
     def __call__(self, raw):
         if not self._busy.acquire(blocking=False):
             raise blob.RetentionRejected('Santa VM image command already in progress')
@@ -96,7 +106,8 @@ class RunCommand:
             request = checked_document(raw, handoff.sha(raw), delivery.MAX_FRAME)
             action, digest = request['action'], request['batch_sha256']
             fields = {'scope', 'batch_sha256', 'action'}
-            extras = {'begin': {'batch'}, 'part': {'index', 'packet'}, 'finish': set(), 'observe': set()}
+            extras = {'begin': {'batch'}, 'part': {'index', 'packet'}, 'finish': set(),
+                      'observe': set(), 'offer': set()}
             blob.need(request['scope'] == delivery.SCOPE and re.fullmatch(blob.HEX, digest)
                       and set(request) == fields | extras[action])
             if action == 'begin':
