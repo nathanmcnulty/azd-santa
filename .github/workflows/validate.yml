@@ -22,6 +22,8 @@ jobs:
           /bin/zsh -n ./scripts/Test-SantaEndpoint.sh
           /bin/bash -n ./scripts/live-response/Get-SantaHealth.sh
           /bin/bash ./tests/Test-SantaHealth.sh
+          /bin/bash -n ./scripts/live-response/Get-SantaRuleReceipt.sh
+          /bin/bash ./tests/Test-SantaRuleReceipt.sh
           /bin/bash -n ./scripts/live-response/Get-SantaProfileState.sh
           /bin/bash ./tests/Test-SantaProfileState.sh
           /bin/bash -n ./experiments/server/bootstrap-host.sh
@@ -93,6 +95,11 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: bash tests/Test-SantaHealth.sh
+
+      - name: Verify native rule receipt diagnostics against shell fixtures
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash tests/Test-SantaRuleReceipt.sh
 
       - name: Generate and validate offline artifacts
         run: |
