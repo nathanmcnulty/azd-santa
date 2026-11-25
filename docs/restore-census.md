@@ -151,9 +151,10 @@ and device reissue and native postflight.
 
 The Linux fixture also stops the synthetic cluster and checks the clean
 shutdown through `pg_controldata`. It mounts the source volume read-only and
-seals the full PostgreSQL directory and the pinned Elasticsearch node's native
-snapshot repository with Santa's cold backup writer. Control metadata and the
-remaining service volumes use synthetic fixtures. The Linux check authenticates
+seals the full PostgreSQL directory, the pinned Elasticsearch node's native
+snapshot repository and the pinned Redis node's multipart AOF with Santa's cold
+backup writer. Control metadata and the remaining service volumes use synthetic
+fixtures. The Linux check authenticates
 and extracts the archive into private quarantine, copies only the quarantined
 PostgreSQL directory to a fresh volume and starts PostgreSQL directly in a
 separate network-disabled container. The restricted role compares the restored
@@ -167,3 +168,11 @@ cluster's template was excluded. Authentication of the retained pilot archive,
 the complete Zentral stack and current authority remain open.
 [PostgreSQL file-system-level backup](https://www.postgresql.org/docs/18/backup-file.html)
 [Elasticsearch snapshot restore API](https://www.elastic.co/docs/api/doc/elasticsearch/v9/operation/operation-snapshot-restore)
+
+Redis history stays in quarantine. The fixture checks each captured AOF file
+against its source digest and runs the pinned image's AOF checker on a read-only
+mount. A separate Redis instance starts from an empty directory. It initializes
+a new store identity and admission generation, rejects the historical identity
+and retains no old MFA claim or failure-budget key. Broker recovery and full
+authority reissue remain open.
+[Redis persistence](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/)

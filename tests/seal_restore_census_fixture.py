@@ -8,6 +8,7 @@ import time
 
 from test_restore_quarantine import Quarantine, producer, quarantine
 import elastic_restore_fixture as elastic
+import redis_recovery_fixture as redis
 
 MAXIMUM = 192 * 1024**2
 MAXIMUM_FILES = 10000
@@ -44,6 +45,8 @@ def run(root):
         controls, maximum_bytes=MAXIMUM, maximum_files=MAXIMUM_FILES,
         capture_snapshot=lambda binding: elastic.capture(root, binding))
     roots['volumes/postgres_data'] = cluster
+    redis_data, historical_identity, historical_generation, redis_files = redis.capture(root)
+    roots['volumes/redis_data'] = redis_data
     capture = root / 'sealed'
     capture.mkdir(mode=0o700)
     control_digest = hashlib.sha256((cluster / 'global/pg_control').read_bytes()).digest()
@@ -68,6 +71,8 @@ def run(root):
     print('Santa sealed and authenticated the cold PostgreSQL fixture into quarantine')
     repository = destination / 'contents' / 'elasticsearch_snapshot_repository'
     elastic.restore(root, repository, compatibility['native_snapshot']['plan'])
+    redis.verify(root, destination / 'contents' / 'volumes' / 'redis_data',
+                 historical_identity, historical_generation, redis_files)
 
 
 if __name__ == '__main__':
