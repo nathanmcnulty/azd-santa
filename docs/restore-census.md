@@ -79,13 +79,15 @@ partial coverage. Other catalog classes remain explicit blockers until their
 schema and execution semantics receive a reviewed adapter.
 
 The collector follows recorded `pg_depend` references out of the inventoried
-objects. References whose targets resolve to `pg_catalog`, other `pg_*`
-namespaces, or `information_schema` become private `excluded_reference`
-blockers. This stops collection before application row reads and prevents a
-comparison even when the two names match. PostgreSQL's automatic dependency
-from a generated TOAST index to its own heap is treated as internal storage.
-Recollect older manifests with the updated collector since they lack this
-catalog inventory.
+objects. References into `pg_catalog`, other `pg_*` namespaces,
+`information_schema`, and database-local objects that have no namespace and
+fall outside the census become private `unreviewed_reference` blockers.
+A custom table access method is one example. Unresolved identities also stop
+collection. The extension catalog supplies the existing extension observations.
+PostgreSQL's automatic dependency from a generated TOAST index to its own heap
+is treated as internal storage. These checks run before application row reads
+and prevent comparison even when two object names match. Recollect older
+manifests because they lack the updated catalog inventory.
 
 Referenced definitions remain an explicit unproven gate. PostgreSQL omits
 dependency edges to pinned objects and may omit dependencies inside routine
@@ -121,14 +123,15 @@ private manifest remain confidential. Use the same retained key for comparison.
 Offline tests use controlled SQL/registry/loader adapters to exercise transaction
 order, rollback/redaction, exact coverage, changes, unsupported objects and
 limits. The Linux check uses the pinned PostgreSQL 18 image with Docker networking
-disabled. It checks the exact excluded-reference query and runs the full
+disabled. It checks the exact outbound reference query and runs the full
 collector through a private Unix socket with Django 5.2.18 and psycopg2-binary
 2.9.11. The test pins those versions to the reviewed
 [Zentral constraints](https://github.com/zentralopensource/zentral/blob/88e67b3ce49033aab028029937a6e14f7c489073/requirements_constraints.txt).
 The fixture uses Django's real auth and contenttypes migrations and synthetic
 Santa app labels and models. It checks migration graph and applied rows, exact
-comparison and duplicate rows, quoted identifiers, column tombstones, raw
-transaction refusal, statement timeout, interruption, and rollback. The database
+comparison and duplicate rows, a custom table access method, quoted identifiers,
+column tombstones, raw transaction refusal, statement timeout, interruption,
+and rollback. The database
 and input data are disposable. The complete Zentral app registry and restored
 application data still require separate qualification, along with administrator
 and device reissue and native postflight.

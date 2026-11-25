@@ -111,6 +111,20 @@ def run(root):
             return census.compare(observed, baseline, dispositions, fingerprint_key=KEY)
 
         assert compare(observe())['exact_match']
+        with db.cursor() as cursor:
+            cursor.execute('CREATE ACCESS METHOD census_heap TYPE TABLE HANDLER pg_catalog.heap_tableam_handler')
+            cursor.execute('CREATE TABLE custom_storage (name text) USING census_heap')
+        blocked = observe()
+        refs = blocked.manifest['catalog']['unreviewed_references']
+        assert any(ref['catalog'] == 'pg_am' and ref['schema'] is None
+                   and ref['identity'] == 'census_heap' for ref in refs), refs
+        assert not blocked.receipt['complete_supported_data']
+        assert blocked.manifest['data'] == {} and blocked.manifest['migrations'] is None
+        reject(lambda: compare(blocked))
+        with db.cursor() as cursor:
+            cursor.execute('DROP TABLE custom_storage')
+            cursor.execute('DROP ACCESS METHOD census_heap')
+        assert compare(observe())['exact_match']
         reject(lambda: observe(limits=census.Limits(rows=1)))
         raw = db.connection
         idle = db.Database.extensions.TRANSACTION_STATUS_IDLE

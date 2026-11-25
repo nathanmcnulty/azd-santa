@@ -218,17 +218,18 @@ class CensusTests(unittest.TestCase):
         with self.assertRaises(c.CensusRejected):self.collect()
         with self.assertRaises(c.CensusRejected):c.parse('{"id":1,"id":2}')
 
-    def test_excluded_references_block_even_agreeing_baselines_before_data_scan(self):
+    def test_unreviewed_references_block_even_agreeing_baselines_before_data_scan(self):
         baseline=self.collect()
         for catalog,kind,schema,identity in (
                 ('pg_proc','function','pg_catalog','pg_catalog.local_fn(integer)'),
                 ('pg_collation','collation','pg_catalog','pg_catalog.local_order'),
-                ('pg_opclass','operator class','information_schema','information_schema.local_ops FOR btree')):
+                ('pg_opclass','operator class','information_schema','information_schema.local_ops FOR btree'),
+                ('pg_am','access method',None,'census_heap')):
             with self.subTest(catalog=catalog):
                 self.setUp()
-                self.db.catalog['excluded_references']=[dict(catalog=catalog,type=kind,schema=schema,identity=identity)]
+                self.db.catalog['unreviewed_references']=[dict(catalog=catalog,type=kind,schema=schema,identity=identity)]
                 observed=self.collect()
-                self.assertEqual(observed.manifest['unsupported'],[dict(category='excluded_reference',identity=identity)])
+                self.assertEqual(observed.manifest['unsupported'],[dict(category='unreviewed_reference',identity=identity)])
                 self.assertEqual(self.db.reads,list(c.CATALOG))
                 self.assertEqual(self.db.commands[-1][0],'ROLLBACK')
                 self.assertEqual(observed.manifest['data'],{})
