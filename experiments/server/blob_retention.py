@@ -261,6 +261,13 @@ class Capability:
         return urllib.parse.urlsplit(self.blob.uri).path + '?' + self._token + '&api-version=' + API_VERSION
 
 
+def sas_timestamp(value):
+    """Accept whole UTC seconds and Azure's seven-zero fractional representation."""
+    match = re.fullmatch(r'([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?:\.0000000)?Z', value)
+    need(match is not None)
+    return dt.datetime.fromisoformat(match[1] + '+00:00')
+
+
 def mint_capability(arm_call, record, blob, store, target, permission, *, apply=False, now=None):
     """The callback uses existing cached ARM authority; never login or grant.
 
@@ -285,12 +292,13 @@ def mint_capability(arm_call, record, blob, store, target, permission, *, apply=
         values = unique(pairs)
         need(set(values) == {'sv', 'sr', 'sp', 'spr', 'st', 'se', 'sig'}
              and values['sr'] == 'b' and values['sp'] == permission and values['spr'] == 'https'
-             and values['st'] == body['signedStart'] and values['se'] == body['signedExpiry']
+             and sas_timestamp(values['st']) == sas_timestamp(body['signedStart'])
+             and sas_timestamp(values['se']) == sas_timestamp(body['signedExpiry'])
              and dt.date.fromisoformat(values['sv']) >= dt.date(2015, 4, 5))
         signature = base64.b64decode(values['sig'], validate=True)
         need(len(signature) == 32 and base64.b64encode(signature).decode() == values['sig'])
         return Capability(blob, target, permission, record['complete']['ciphertext_sha256'],
-                          dt.datetime.fromisoformat(body['signedExpiry'].replace('Z', '+00:00')), token)
+                          sas_timestamp(body['signedExpiry']), token)
     except Exception:
         raise RetentionRejected('Blob capability rejected; no policy or permission fallback') from None
 

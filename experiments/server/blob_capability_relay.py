@@ -28,7 +28,7 @@ import blob_retention as blob
 
 ROOT=Path('/var/lib/azd-santa-qualification')
 ALGORITHM='RSA-OAEP-256+A256GCM'  # Existing sealed_setup OAEP/SHA256 + AESGCM pattern.
-RETENTION_SHA='f5aa619725104fa3a4bbe174a7ea4ceb236d9eab68675b8730d90984cb3e1818'
+RETENTION_SHA='b1a60042d4fa2e1f970c7b0f114a04b749dcb387da39427e18743f893ec22f2b'
 CONTROLLER_SHA='f0a8961f64e48471eed71757805ae4e29ee080aef30c6ab9ec040eafaf443099'
 MAX_PACKET=16384
 OFFER_FIELDS={'scope','version','algorithm','offer_id','created','expires','boot_id','environment','target',
@@ -220,10 +220,7 @@ def token_fields(token,offer,now):
     values=blob.unique(urllib.parse.parse_qsl(token,keep_blank_values=True,strict_parsing=True))
     need(set(values)=={'sv','sr','sp','spr','st','se','sig'} and values['sr']=='b' and values['sp']=='c' and values['spr']=='https')
     need(re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}',values['sv']) and dt.date.fromisoformat(values['sv'])>=dt.date(2015,4,5))
-    def stamp(value):
-        need(re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z',value))
-        return int(dt.datetime.fromisoformat(value.replace('Z','+00:00')).timestamp())
-    start,expiry=stamp(values['st']),stamp(values['se'])
+    start,expiry=(int(blob.sas_timestamp(values[key]).timestamp()) for key in ('st','se'))
     need(start<=now<expiry<=offer['expires'] and expiry-now<=900);decode(values['sig'],32)
     return expiry
 

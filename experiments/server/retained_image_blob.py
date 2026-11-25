@@ -35,8 +35,7 @@ def capability(store, target, part, token, permission):
               and dt.date.fromisoformat(values['sv']) >= dt.date(2015, 4, 5))
     signature = base64.b64decode(values['sig'], validate=True)
     blob.need(len(signature) == 32 and base64.b64encode(signature).decode() == values['sig'])
-    start, expiry = (dt.datetime.strptime(values[key], '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=dt.timezone.utc)
-                     for key in ('st', 'se'))
+    start, expiry = (blob.sas_timestamp(values[key]) for key in ('st', 'se'))
     blob.need(start <= dt.datetime.now(dt.timezone.utc) < expiry and expiry - start <= dt.timedelta(minutes=30))
     # Encode parsed fields so reserved characters cannot become URL delimiters.
     return blob.Capability(Object(store.blob.account, part['object']), target, permission, part['sha256'],

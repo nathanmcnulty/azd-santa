@@ -60,7 +60,8 @@ class Arm:
             path=urllib.parse.urlsplit(url).path.casefold()
             return copy.deepcopy(next(v for k,v in self.responses.items() if k.casefold()==path))
         values=dict(sv='2015-04-05',sr=body['signedResource'],sp=body['signedPermission'],spr=body['signedProtocol'],
-            st=body['signedStart'],se=body['signedExpiry'],sig=base64.b64encode(b's'*32).decode())
+            st=body['signedStart'][:-1]+'.0000000Z',se=body['signedExpiry'][:-1]+'.0000000Z',
+            sig=base64.b64encode(b's'*32).decode())
         return {'serviceSasToken':urllib.parse.urlencode(values)}
 
 
@@ -234,7 +235,7 @@ class Retention(unittest.TestCase):
 
     def test_sas_permission_protocol_ip_expiry_duplicates_and_raw_errors_are_redacted(self):
         base=self.arm
-        for change in ('write','ip','protocol','expiry','duplicate','raw-error'):
+        for change in ('write','ip','protocol','expiry','nonzero-fraction','duplicate','raw-error'):
             def call(method,url,body):
                 value=base(method,url,body)
                 if method=='GET':return value
@@ -244,6 +245,7 @@ class Retention(unittest.TestCase):
                 elif change=='ip':values['sip']='203.0.113.1'
                 elif change=='protocol':values['spr']='https,http'
                 elif change=='expiry':values['se']='2099-01-01T00:00:00Z'
+                elif change=='nonzero-fraction':values['se']=values['se'][:-2]+'1Z'
                 raw=urllib.parse.urlencode(values)
                 if change=='duplicate':raw+='&sp=c'
                 return {'serviceSasToken':raw}
