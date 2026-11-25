@@ -29,6 +29,13 @@ PATHS = tuple(sorted(('LICENSE', 'THIRD_PARTY_NOTICES.md', 'third_party/santa-20
             'private_arm_adapter.py', 'backup_store_selection.py', 'dependency-images.lock.json',
             'zentral-source.lock.json', 'secret-rewrap-source.lock.json', 'restore_tooling_bundle.py')))))
 SCOPE = 'azd-santa-restore-tooling-bundle-v1'
+AUTHORITY_SCOPE = 'azd-santa-restore-tooling-bundle-v2'
+AUTHORITY_PATHS = tuple(sorted((*PATHS, 'docs/restore-quarantine-design.md',
+                               SERVER + 'Export-SantaRecoveryRecipient.ps1',
+                               SERVER + 'restore_authority_plan.py',
+                               SERVER + 'restore_authority_transaction.py')))
+INVENTORIES = {SCOPE: PATHS, AUTHORITY_SCOPE: AUTHORITY_PATHS}
+VERSIONS = {1: SCOPE, 2: AUTHORITY_SCOPE}
 MAX_FILE = 256 * 1024
 MAX_BUNDLE = 2 * 1024**2
 COMMIT = r'[0-9a-f]{40}'
@@ -57,10 +64,13 @@ def unique(pairs):
     return result
 
 
-def build(repo, commit):
+def build(repo, commit, *, version=1):
     """Read exact blobs from a caller-selected, reviewed Git commit, without filters."""
     try:
         need(type(commit) is str and re.fullmatch(COMMIT, commit))
+        need(type(version) is int and version in VERSIONS)
+        scope = VERSIONS[version]
+        paths = INVENTORIES[scope]
         deadline = time.monotonic() + 30
         env = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
         env['GIT_NO_LAZY_FETCH'] = '1'
@@ -74,14 +84,14 @@ def build(repo, commit):
 
         need(git('cat-file', '-t', commit).strip() == b'commit')
         records = {}
-        for entry in git('ls-tree', '-r', '-l', '-z', commit, '--', *PATHS).split(b'\0')[:-1]:
+        for entry in git('ls-tree', '-r', '-l', '-z', commit, '--', *paths).split(b'\0')[:-1]:
             fields, path = entry.split(b'\t', 1)
             mode, kind, object_id, size = fields.decode('ascii').split()
             name = path.decode('ascii')
-            need(name in PATHS and name not in records and mode in ('100644', '100755') and kind == 'blob'
+            need(name in paths and name not in records and mode in ('100644', '100755') and kind == 'blob'
                  and re.fullmatch(COMMIT, object_id) and 0 < int(size) <= MAX_FILE)
             records[name] = (object_id, int(size))
-        need(set(records) == set(PATHS) and sum(size for _, size in records.values()) <= MAX_BUNDLE // 2)
+        need(set(records) == set(paths) and sum(size for _, size in records.values()) <= MAX_BUNDLE // 2)
 
         files = {}
         for name, (object_id, size) in records.items():
@@ -89,7 +99,7 @@ def build(repo, commit):
             header = f'blob {size}\0'.encode('ascii')
             need(len(body) == size and hashlib.sha1(header + body).hexdigest() == object_id)
             files[name] = {'sha256': sha(body), 'base64': base64.b64encode(body).decode('ascii')}
-        raw = encoded({'scope': SCOPE, 'commit': commit, 'files': files})
+        raw = encoded({'scope': scope, 'commit': commit, 'files': files})
         need(len(raw) <= MAX_BUNDLE)
         return raw
     except (TypeError, ValueError, OSError, RecursionError, subprocess.SubprocessError):
@@ -103,9 +113,10 @@ def verify(raw, *, commit, bundle_sha256):
              and type(commit) is str and re.fullmatch(COMMIT, commit))
         bundle = json.loads(raw, object_pairs_hook=unique, parse_constant=lambda _: need(False))
         need(type(bundle) is dict and set(bundle) == {'scope', 'commit', 'files'}
-             and bundle['scope'] == SCOPE and bundle['commit'] == commit and encoded(bundle) == raw)
+             and type(bundle['scope']) is str and bundle['scope'] in INVENTORIES
+             and bundle['commit'] == commit and encoded(bundle) == raw)
         files = bundle['files']
-        need(type(files) is dict and set(files) == set(PATHS))
+        need(type(files) is dict and set(files) == set(INVENTORIES[bundle['scope']]))
         decoded = {}
         for path, data in files.items():
             need(type(data) is dict and set(data) == {'base64', 'sha256'} and type(data['base64']) is str)
@@ -138,6 +149,7 @@ def main():
     create.add_argument('repo')
     create.add_argument('commit')
     create.add_argument('bundle', type=Path)
+    create.add_argument('--version', type=int, choices=VERSIONS, default=1)
     for name in ('verify', 'stage'):
         command = sub.add_parser(name)
         command.add_argument('bundle', type=Path)
@@ -148,7 +160,8 @@ def main():
     args = parser.parse_args()
     try:
         if args.action == 'build':
-            raw = build(args.repo, args.commit)
+            raw = build(args.repo, args.commit, version=args.version)
+            scope = VERSIONS[args.version]
             with args.bundle.open('xb') as output:
                 output.write(raw)
         else:
@@ -159,8 +172,9 @@ def main():
                 stage(raw, args.destination, **pins)
             else:
                 verify(raw, **pins)
-        print(encoded({'scope': SCOPE, 'commit': args.commit, 'bundle_sha256': sha(raw),
-                       'files': len(PATHS), 'bytes': len(raw)}).decode('ascii'))
+            scope = json.loads(raw)['scope']
+        print(encoded({'scope': scope, 'commit': args.commit, 'bundle_sha256': sha(raw),
+                       'files': len(INVENTORIES[scope]), 'bytes': len(raw)}).decode('ascii'))
     except (OSError, ToolingRejected):
         parser.exit(1, 'Santa restore tooling operation failed; preserve any existing output\n')
 
