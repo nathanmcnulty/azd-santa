@@ -42,7 +42,7 @@ jobs:
             tests/fixtures/endpoint/santa-pilot-executable.c -o "$stage/santa-pilot-executable"
           codesign --force --sign - "$stage/santa-pilot-executable"
           codesign --verify --strict --all-architectures "$stage/santa-pilot-executable"
-          lipo -verify_arch arm64 x86_64 "$stage/santa-pilot-executable"
+          lipo "$stage/santa-pilot-executable" -verify_arch arm64 x86_64
           [[ "$("$stage/santa-pilot-executable")" == 'santa-pilot-execution-fixture-ok' ]]
           git rev-parse HEAD > "$stage/source-commit.txt"
           (
