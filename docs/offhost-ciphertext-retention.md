@@ -127,6 +127,32 @@ byte verification; download and compare with the separately retained expected SH
 
 ## Recovery artifacts and remaining integration
 
+Use `experiments/server/native_capture_record_command.py` to collect the input
+record for both transfers. Take the request SHA-256, ciphertext SHA-256 and
+length, source bundle SHA-256, and image ID from independently retained capture
+evidence. The planned read targets the original source instance. The guest
+checks the original request, completion and ciphertext against those values
+and returns only the transfer record. It creates no upload state and uses no
+Storage capability.
+
+```powershell
+$recordInputs = @(
+    '--selection', $selectionReceipt, '--operation', $captureOperation,
+    '--request-sha256', $requestSha, '--ciphertext-sha256', $ciphertextSha,
+    '--ciphertext-bytes', "$ciphertextBytes", '--source-bundle-sha256', $sourceBundleSha,
+    '--image-id', $sourceImageId, '--tooling', $toolingBundle,
+    '--commit', $reviewedCommit, '--tooling-sha256', $toolingSha
+)
+$recordPlan = python ./experiments/server/native_capture_record_command.py plan @recordInputs |
+    ConvertFrom-Json
+$recordRead = python ./experiments/server/native_capture_record_command.py read @recordInputs `
+    --output $nativeCaptureRecord --plan-sha256 $recordPlan.plan_sha256 | ConvertFrom-Json
+$nativeCaptureRecordSha = $recordRead.capture_record_sha256
+```
+
+Use a new output file in the existing private local journal directory. The
+reported SHA-256 is the digest of the exact record file written for transfer.
+
 `experiments/server/native_retention_upload_command.py` plans or submits one
 create-only upload from the selected source VM. It accepts the backup-store
 selection receipt, a capture record and its independently trusted digest, and
