@@ -131,6 +131,11 @@ class Reader:
 # Names/definitions are private schema data. All queries enumerate every
 # non-system namespace; no assumption that every object belongs to public.
 NS="n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'"
+SCHEMA_OBJECTS="""WITH RECURSIVE objects(classid,objid,objsubid) AS (
+ SELECT 'pg_namespace'::regclass::oid,n.oid,0 FROM pg_namespace n WHERE """+NS+"""
+ UNION SELECT d.classid,d.objid,d.objsubid FROM pg_depend d JOIN objects o
+ ON d.refclassid=o.classid AND d.refobjid=o.objid AND (o.objsubid=0 OR d.refobjsubid=o.objsubid))
+"""
 CATALOG = {
  'schemas':"SELECT json_build_object('name',n.nspname,'owner',pg_get_userbyid(n.nspowner),'acl',n.nspacl)::text FROM pg_namespace n WHERE "+NS,
  'relations':"""SELECT json_build_object('schema',n.nspname,'name',c.relname,'kind',c.relkind,
@@ -185,12 +190,18 @@ CATALOG = {
  'sequences':"""SELECT json_build_object('schema',n.nspname,'name',c.relname,'type',format_type(s.seqtypid,NULL),
  'start',s.seqstart,'increment',s.seqincrement,'maximum',s.seqmax,'minimum',s.seqmin,'cache',s.seqcache,'cycle',s.seqcycle)::text
  FROM pg_sequence s JOIN pg_class c ON c.oid=s.seqrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE """+NS,
- 'objects':"""WITH RECURSIVE objects(classid,objid,objsubid) AS (
- SELECT 'pg_namespace'::regclass::oid,n.oid,0 FROM pg_namespace n WHERE """+NS+"""
- UNION SELECT d.classid,d.objid,d.objsubid FROM pg_depend d JOIN objects o
- ON d.refclassid=o.classid AND d.refobjid=o.objid AND (o.objsubid=0 OR d.refobjsubid=o.objsubid))
+ 'objects':SCHEMA_OBJECTS+"""
  SELECT json_build_object('catalog',classid::regclass::text,'type',i.type,'schema',i.schema,'name',i.name,'identity',i.identity)::text
  FROM objects o CROSS JOIN LATERAL pg_identify_object(o.classid,o.objid,o.objsubid) i""",
+ # A recorded reference into an excluded namespace is insufficiently reviewed.
+ # Follow outbound edges before reading data. Identity is diagnostic only.
+ 'excluded_references':SCHEMA_OBJECTS+""", referenced AS (
+ SELECT DISTINCT d.refclassid,d.refobjid,d.refobjsubid FROM pg_depend d JOIN objects o
+ ON d.classid=o.classid AND d.objid=o.objid AND (o.objsubid=0 OR d.objsubid=o.objsubid))
+ SELECT json_build_object('catalog',r.refclassid::regclass::text,'type',i.type,
+ 'schema',i.schema,'identity',i.identity)::text
+ FROM referenced r CROSS JOIN LATERAL pg_identify_object(r.refclassid,r.refobjid,r.refobjsubid) i
+ WHERE i.schema ~ '^pg_' OR i.schema = 'information_schema'""",
  'extensions':"SELECT json_build_object('name',e.extname,'version',e.extversion,'relocatable',e.extrelocatable,'configuration',ARRAY(SELECT x::regclass::text FROM unnest(e.extconfig) x),'condition',e.extcondition,'schema',n.nspname,'owner',pg_get_userbyid(e.extowner))::text FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace",
  'global_blockers':"SELECT json_build_object('kind','large_objects','count',count(*))::text FROM pg_largeobject_metadata HAVING count(*)>0 UNION ALL SELECT json_build_object('kind','foreign_servers','count',count(*))::text FROM pg_foreign_server HAVING count(*)>0 UNION ALL SELECT json_build_object('kind','publications','count',count(*))::text FROM pg_publication HAVING count(*)>0 UNION ALL SELECT json_build_object('kind','subscriptions','count',count(*))::text FROM pg_subscription HAVING count(*)>0 UNION ALL SELECT json_build_object('kind','event_triggers','count',count(*))::text FROM pg_event_trigger HAVING count(*)>0 UNION ALL SELECT json_build_object('kind','custom_casts','count',count(*))::text FROM pg_cast WHERE oid>=16384 HAVING count(*)>0",
  'database':"SELECT json_build_object('version',current_setting('server_version_num'),'encoding',current_setting('server_encoding'),'database',current_database(),'user',current_user,'collation',d.datcollate,'ctype',d.datctype,'collation_provider',d.datlocprovider,'collation_version',d.datcollversion,'locale',to_jsonb(d)->>'datlocale','tablespace',sp.spcname,'read_only',current_setting('transaction_read_only'),'isolation',current_setting('transaction_isolation'))::text FROM pg_database d JOIN pg_tablespace sp ON sp.oid=d.dattablespace WHERE d.datname=current_database()",
@@ -279,6 +290,7 @@ def collect(connection,registry,*,fingerprint_key,limits=Limits(),clock=time.mon
              and catalog['database'][0]['isolation']=='repeatable read' and catalog['database'][0]['encoding']=='UTF8')
         need(len(catalog['relations'])==len({relation_key(r['schema'],r['name']) for r in catalog['relations']}))
         unsupported=[dict(category='catalog',identity=o['identity']) for o in catalog['objects'] if o['catalog'] not in SUPPORTED_CATALOGS]
+        unsupported += [dict(category='excluded_reference',identity=o['identity']) for o in catalog['excluded_references']]
         unsupported += [dict(category='global',identity=v['kind']) for v in catalog['global_blockers']]
         unsupported += [dict(category='routine',identity=relation_key(v['schema'],v['name'])) for v in catalog['routines'] if v['kind'] not in ('f','p','w')]
         unsupported += [dict(category='type',identity=relation_key(v['schema'],v['name'])) for v in catalog['types'] if v['kind']!='c' and not (v['kind']=='b' and v['element'] is not None)]

@@ -87,3 +87,8 @@ jobs:
 
       - name: Confirm committed generated profiles are reproducible
         run: git diff --exit-code -- profiles/generated
+
+      - name: Verify restore reference blockers on pinned PostgreSQL
+        if: runner.os == 'Linux'
+        shell: bash
+        run: timeout 180s bash tests/test_restore_census_postgres.sh
