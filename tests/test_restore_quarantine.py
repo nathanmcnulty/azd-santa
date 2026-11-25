@@ -23,6 +23,7 @@ import cold_backup as producer
 import native_snapshot as native
 import restore_cipher
 import restore_quarantine as quarantine
+import restore_recipient_key as recipient_key
 import retained_image_compatibility as compatibility
 
 
@@ -230,6 +231,42 @@ class Quarantine(unittest.TestCase):
             self.assertEqual(set(Path(folder).iterdir()), {source, destination})
             with self.assertRaises(FileExistsError):
                 compatibility.collect(source, digest(sealed), self.key, destination)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'Linux private descriptor paths and OpenSSL')
+    def test_recovers_capture_metadata_with_only_the_portable_key_file(self):
+        password = b'synthetic capture fixture passphrase only'
+        with tempfile.TemporaryDirectory(dir=Path.home()) as origin, \
+                tempfile.TemporaryDirectory(dir=Path.home()) as recovery:
+            private = Path(origin) / 'recipient.der'
+            private.touch(mode=0o600)
+            private.write_bytes(self.key.private_bytes(serialization.Encoding.DER,
+                serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+            exported = Path(origin) / 'recipient.encrypted.der'
+            report = recipient_key.pack(private, exported, digest(self.public), password)
+            encrypted = exported.read_bytes()
+            self.assertEqual(report['encrypted_key_sha256'], digest(encrypted))
+            self.assertEqual(exported.stat().st_mode & 0o777, 0o600)
+            portable = Path(recovery) / exported.name
+            portable.touch(mode=0o600)
+            portable.write_bytes(encrypted)
+            private.unlink()
+            with patch.object(recipient_key, 'passphrase') as prompt:
+                with self.assertRaises(quarantine.QuarantineRejected):
+                    recipient_key.load(portable, '0'*64)
+                prompt.assert_not_called()
+                prompt.return_value = b'wrong synthetic passphrase'
+                with self.assertRaises(ValueError):
+                    recipient_key.load(portable, report['encrypted_key_sha256'])
+                prompt.return_value = password
+                key = recipient_key.load(portable, report['encrypted_key_sha256'])
+            sealed = self.seal(self.plaintext())
+            source = Path(recovery) / 'backup.sealed'
+            source.touch(mode=0o600)
+            source.write_bytes(sealed)
+            destination = Path(recovery) / 'compatibility.json'
+            receipt = compatibility.collect(source, digest(sealed), key, destination)
+            self.assertEqual(receipt['compatibility_sha256'], digest(destination.read_bytes()))
+            self.assertEqual(set(Path(recovery).iterdir()), {portable, source, destination})
 
     def test_traversal_absolute_alias_and_unknown_root_reject(self):
         raw = self.plaintext()

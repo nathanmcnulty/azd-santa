@@ -29,6 +29,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 sys.path.insert(0, 'experiments/server')
 from retained_image_export import encoded, export_image
 from retained_image_parts import assemble, plan
+from restore_recipient_key import pack
 
 directory = Path(sys.argv[1]) / 'exported'
 image = sys.argv[2]
@@ -79,6 +80,18 @@ assert verified['state'] == 'verified' and not verified['image_loaded'] and veri
 assert subprocess.run(['docker', 'image', 'inspect', image], timeout=10, stdout=subprocess.DEVNULL,
                       stderr=subprocess.DEVNULL).returncode != 0
 attempt = readback / 'attempt'
+portable = readback / 'recipient.encrypted.der'
+password = b'synthetic fixture passphrase only'
+receipt = pack(private_key, portable, hashlib.sha256(public).hexdigest(), password)
+private_key.unlink()
+args[args.index('--recipient-key') + 1] = str(portable)
+args += ['--encrypted-key-sha256', receipt['encrypted_key_sha256']]
+# A hosted runner has no interactive terminal. Substitute the prompt only.
+command = [sys.executable, '-c',
+           'import runpy, sys; sys.path.insert(0, "experiments/server"); '
+           'import restore_recipient_key as keys; '
+           'keys.passphrase = lambda prompt: b"synthetic fixture passphrase only"; '
+           'runpy.run_path("experiments/server/retained_image_load.py", run_name="__main__")']
 load_args = ['load', *args, '--docker-socket', str(Path('/var/run/docker.sock').resolve(strict=True)),
              '--attempt', str(attempt)]
 loaded = json.loads(subprocess.check_output([*command, *load_args], timeout=25))
@@ -89,7 +102,7 @@ intent = (attempt / 'intent.json').read_bytes()
 assert json.loads(intent)['state'] == 'load-uncertain'
 assert subprocess.run([*command, *load_args], timeout=20, capture_output=True).returncode != 0
 assert (attempt / 'intent.json').read_bytes() == intent
-assert set(readback.iterdir()) == {copy, private_key, completion_path, attempt}
+assert set(readback.iterdir()) == {copy, portable, completion_path, attempt}
 PY
 [[ "$(docker image inspect --format '{{.Id}} {{.Os}}/{{.Architecture}}' "$id")" == "$id linux/amd64" ]]
 echo 'Authenticated encrypted export loaded with the exact Linux amd64 image ID; no container was started.'

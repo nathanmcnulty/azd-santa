@@ -10,12 +10,10 @@ import subprocess
 import sys
 import time
 
-from cryptography.hazmat.primitives.serialization import load_der_private_key
-
 import blob_retention as blob
 from retained_image_archive import ARCHIVE_MAXIMUM
-from retained_image_compatibility import private_input
 from retained_image_readback import need, open_verified_image, remaining_seconds
+from restore_recipient_key import load, private_input
 
 SCOPE = 'azd-santa-retained-image-load-v1'
 
@@ -85,6 +83,7 @@ def main():
     parser.add_argument('--staging', type=Path, required=True)
     parser.add_argument('--docker-socket', type=Path)
     parser.add_argument('--attempt', type=Path)
+    parser.add_argument('--encrypted-key-sha256')
     parser.add_argument('--maximum', type=int, default=ARCHIVE_MAXIMUM)
     parser.add_argument('--seconds', type=int, default=600)
     args = parser.parse_args()
@@ -92,12 +91,8 @@ def main():
         need(sys.platform == 'linux')
         need((args.action == 'load' and args.docker_socket is not None and args.attempt is not None)
              or (args.action == 'verify' and args.docker_socket is None and args.attempt is None))
+        key = load(args.recipient_key, args.encrypted_key_sha256)
         with ExitStack() as stack:
-            stream, length, unchanged = private_input(args.recipient_key, stack, 8192)
-            key_bytes = stream.read(8193)
-            need(len(key_bytes) == length)
-            key = load_der_private_key(key_bytes, password=None)
-            unchanged()
             stream, length, unchanged = private_input(args.completion, stack, 4096)
             completion = stream.read(4097)
             need(len(completion) == length)
