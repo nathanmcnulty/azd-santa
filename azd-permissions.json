@@ -250,6 +250,8 @@
         { "path": "experiments/server/retained_image_export_job.py", "sha256": "745aa9f963c1526924babcc2adf9b0829048ec54763a1bec2746b5729fff52b6" },
         { "path": "experiments/server/retained_image_parts.py", "sha256": "5aa4084892d248b0d36a6d3ea59edc8c520c4ba017af13f81dfd6e4cbac204c3" },
         { "path": "experiments/server/retained_image_export_command.py", "sha256": "fa35247a4da93a0edbd21a48f1804e295be9b703ac3a5c2f51931f5c0855cb74" },
+        { "path": "experiments/server/retention_image_inventory.py", "sha256": "1743939d67a7e0ccf02f2c63ea50e03b4e25dd25f13be6d08f2dc56e61a68b93" },
+        { "path": "experiments/server/retained_image_inventory_command.py", "sha256": "4f54cd13580d9da5d12d0eaf10eb1f2b557773a2d85c28155fcee63565913a2a" },
         { "path": "experiments/server/retained_image_operator.py", "sha256": "e2fecb1b530fbd1986e346100ead0f85191f60671935fd3cdac4bdaf39fea6aa" },
         { "path": "experiments/server/retained_image_runner.py", "sha256": "8033c367e86bc5452ad0c5d8815411cfa08483cbd5182d08ee62c32d3110a0d5" }
       ]

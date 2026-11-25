@@ -272,6 +272,30 @@ still require qualification.
 
 ### Run a selected image transfer
 
+To collect a fresh source inventory, use
+`experiments/server/retained_image_inventory_command.py`. It verifies the
+independently authenticated `compatibility.json` and requires its source VM
+instance to match the backup-store selection. It takes the dependency lock
+from the reviewed tooling bundle. The plan shows the five expected IDs and
+contacts no Azure services. During explicit readback, the selected guest uses
+[`docker image inspect`][docker-image-inspect] for those exact IDs and
+returns only the confirmed inventory. Container configuration and daemon
+diagnostics stay on the guest.
+
+```powershell
+$inventoryInputs = @(
+    '--selection', $selectionReceipt, '--operation', $operationId,
+    '--compatibility', $authenticatedCompatibility,
+    '--compatibility-sha256', $compatibilitySha, '--tooling', $toolingBundle,
+    '--commit', $reviewedCommit, '--tooling-sha256', $toolingSha
+)
+$inventoryPlan = python ./experiments/server/retained_image_inventory_command.py plan @inventoryInputs |
+    ConvertFrom-Json
+$inventory = python ./experiments/server/retained_image_inventory_command.py read @inventoryInputs `
+    --plan-sha256 $inventoryPlan.plan_sha256 --output $imageInventory | ConvertFrom-Json
+$inventorySha = $inventory.inventory_sha256
+```
+
 For a fresh export, use `experiments/server/retained_image_export_command.py`.
 It accepts the same backup-store selection and reviewed tooling bundle as the
 transfer command, plus the reviewed image inventory and recovery recipient's
@@ -343,6 +367,7 @@ The verifier reassembles and hashes the ciphertext. Authentication,
 immutable image import and application restore remain separate operations.
 
 [action-run-command]: https://learn.microsoft.com/en-us/azure/virtual-machines/linux/run-command
+[docker-image-inspect]: https://docs.docker.com/reference/cli/docker/image/inspect/
 
 The Ubuntu test exports a disposable `linux/amd64` image, reassembles a
 ciphertext copy from a synthetic object store, authenticates it, and loads the
