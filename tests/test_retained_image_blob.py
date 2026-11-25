@@ -80,10 +80,9 @@ class TransferTests(unittest.TestCase):
     def tokens(self, permission):
         now = dt.datetime.now(dt.timezone.utc)
         stamp = lambda value: value.strftime('%Y-%m-%dT%H:%M:%SZ')
-        sas = urlencode(dict(sv='2023-11-03', sr='b', sp=permission, spr='https',
+        return {name: urlencode(dict(sv='2023-11-03', sr='b', sp=permission, spr='https',
             st=stamp(now-dt.timedelta(minutes=1)), se=stamp(now+dt.timedelta(minutes=4)),
-            sig=base64.b64encode(b'X'*32).decode('ascii')))
-        return dict.fromkeys(self.names, sas)
+            sig=base64.b64encode(bytes([index])*32).decode('ascii'))) for index, name in enumerate(self.names)}
 
     def request(self, method, path, body=None, headers=None):
         parsed = urlsplit(path)
@@ -138,6 +137,9 @@ class TransferTests(unittest.TestCase):
     def test_wrong_permission_same_host_and_modified_source_make_no_requests(self):
         with self.assertRaises(blob.RetentionRejected):
             self.transfer.upload(self.source_file, self.root, self.tokens('r'), apply=True)
+        with self.assertRaises(blob.RetentionRejected):
+            same_token = next(iter(self.tokens('c').values()))
+            self.transfer.upload(self.source_file, self.root, dict.fromkeys(self.names, same_token), apply=True)
         with self.assertRaises(blob.RetentionRejected):
             self.transfer.download(self.read_dir, self.source, self.tokens('r'), apply=True)
         self.source_file.write_bytes(b'z'*self.source_file.stat().st_size)

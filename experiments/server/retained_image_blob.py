@@ -87,7 +87,11 @@ class Transfer:
     def tokens_for(self, tokens, target, permission):
         rows = self.selection['parts']
         blob.need(type(tokens) is dict and set(tokens) == {part['object'] for part in rows})
-        return {part['object']: capability(self.store, target, part, tokens[part['object']], permission) for part in rows}
+        capabilities = {part['object']: capability(self.store, target, part, tokens[part['object']], permission)
+                        for part in rows}
+        signatures = {urllib.parse.parse_qs(selected._token)['sig'][0] for selected in capabilities.values()}
+        blob.need(len(signatures) == len(capabilities))
+        return capabilities
 
     def upload(self, source_path, attempt_root, tokens=None, *, apply=False, seconds=900, transport=None):
         """Attempt one conditional PUT per planned part, stopping on ambiguity."""
