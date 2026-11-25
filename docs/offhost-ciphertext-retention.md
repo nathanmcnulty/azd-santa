@@ -200,9 +200,16 @@ the same journal root. A separate VM instance with read-only tokens can verify
 the exact parts and reconstruct the ciphertext in a fresh journal. Neither
 role receives listing, overwrite, deletion, ARM or recipient-key credentials.
 The transport checks signed permission and expiry fields, while binding the
-token to the exact object depends on trusted issuance. Automatic issuance and
-delivery, durable off-host journal preservation, and live Azure evidence remain
-separate. Keep the persistent root and resolve unknown outcomes by readback.
+token to the exact object depends on trusted issuance. The operator-side
+`retained_image_sas.py` module can issue that batch explicitly using cached ARM
+authority. A default plan sends no requests. Apply reserves a private journal,
+checks current store and VM facts, and invokes `listServiceSas` once per exact
+part for one role. The selected source receives create-only scope and a separate
+verifier receives read-only scope. The private in-process batch can only be
+taken once for the pinned manifest and target. The journal records no tokens.
+Keep the persistent root and resolve unknown outcomes by readback. Automatic
+encrypted delivery to the selected VM, off-host journal preservation, and live
+Azure verification remain separate.
 
 The Ubuntu test exports a disposable `linux/amd64` image, reassembles a
 ciphertext copy from a synthetic object store, authenticates it, and loads the
