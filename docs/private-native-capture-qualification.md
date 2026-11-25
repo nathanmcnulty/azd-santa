@@ -117,16 +117,15 @@ postflight does not stand in for a complete database/application census.
 
 ## Remaining acceptance gates
 
-Ciphertext currently resides only on the VM. There is no claim of recoverability.
-The following remain separate requirements:
+The original ciphertext was independently read back from Azure Blob Storage
+on a separate VM. See [the Azure pilot retention evidence](offhost-ciphertext-retention.md#azure-pilot-upload-and-independent-readback-2026-11-25).
+The following remain separate requirements.
 
 - Complete real schema/application census and isolated PostgreSQL/native
   Elasticsearch/full-stack restore.
 - Independently trusted ciphertext receipt and complete recipient-side GCM
   authentication, safe extraction and quarantine validation.
-- Off-host retention and independent byte verification; portable recipient-key
-  recovery and exact image/source/tooling retention. Rebuilding source is not
-  retention of the same image.
+- Portable recipient-key recovery and exact image/source/tooling retention.
 - Current external authority, rollback/replay resistance and fresh administrator/
   device reissue.
 - Broader interruption/crash/reboot/resource-limit qualification and native Mac,
