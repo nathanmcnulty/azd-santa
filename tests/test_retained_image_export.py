@@ -158,6 +158,7 @@ class ExportJobTests(unittest.TestCase):
                 jobs.collect(receipt, [first, *pages[1:]])
             completion, manifest = jobs.collect(receipt, pages)
             artifact = Path(receipt['export_directory'])
+            self.assertEqual((artifact / 'complete.json').stat().st_nlink, 1)
             self.assertEqual(manifest, (artifact / 'parts.json').read_bytes())
             with (artifact / 'image.sealed').open('rb') as image:
                 independently_planned = parts.plan(image, completion, completion_sha256=receipt['completion_sha256'],

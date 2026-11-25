@@ -149,6 +149,8 @@ def export_image(destination, inventory, image_name, recipient_der, *, inventory
                 sync(output)
             need(time.monotonic() < deadline)
             os.link('completion.pending', 'complete.json', src_dir_fd=directory, dst_dir_fd=directory)
+            if operation is not None:
+                os.unlink('completion.pending', dir_fd=directory)
             os.fsync(directory)
             return result
     except (ValueError, KeyError, TypeError, OSError, RuntimeError, RecursionError, subprocess.SubprocessError):
