@@ -127,6 +127,20 @@ byte verification; download and compare with the separately retained expected SH
 
 ## Recovery artifacts and remaining integration
 
+`experiments/server/native_retention_verifier.py` connects the cached ARM
+issuer to the native ciphertext download on one independently selected VM.
+Its short-lived offer binds the exact blob, capture record, verifier instance
+and current boot. The operator journals the request before requesting a
+read-only SAS and returns only an encrypted packet. The verifier checks the
+packet and signed permission, saves its exclusive submission marker, and
+removes the ephemeral recipient key before requesting the blob.
+
+After a lost reply, observation can read the existing byte-verification
+receipt without issuing a second GET. The ciphertext is retained privately as
+`download/backup.sealed` under the verifier operation directory. Sealed
+authentication requires the separate, original capture recipient. The
+native verifier still needs an Azure command adapter and live qualification.
+
 `experiments/server/retention_image_inventory.py` implements the image selection
 for a separate retention contract. It checks the exact compatibility document
 from an authenticated native capture and the reviewed dependency lock against
