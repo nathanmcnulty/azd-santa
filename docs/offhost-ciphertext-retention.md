@@ -172,9 +172,8 @@ its first write to Blob.
 `retained_image_export_job.py` reserves the operation on the selected guest
 after checking its Azure VM identity. It gives the operator a completion
 record and bounded manifest pages with a shared SHA-256 pin. A failed export
-preserves its reservation and cannot publish a complete receipt. The current
-guest contract still needs an Azure invocation and receipt adapter. The
-encrypted image stays on the source VM for the existing upload workflow.
+preserves its reservation and cannot publish a complete receipt. The
+encrypted image stays on the source VM for the upload workflow.
 
 The envelope reuses the native RSA-OAEP and AES-GCM implementation. A separate
 encrypted image marker and intent precede the Docker tar bytes. The image receipt
@@ -272,6 +271,38 @@ transfer timing, actual Azure request limits and off-host journal retention
 still require qualification.
 
 ### Run a selected image transfer
+
+For a fresh export, use `experiments/server/retained_image_export_command.py`.
+It accepts the same backup-store selection and reviewed tooling bundle as the
+transfer command, plus the reviewed image inventory and recovery recipient's
+DER public key. The plan prints the exact source VM, image ID, maximum
+archive size, and plan digest. It contacts Azure only during explicit apply
+or readback. The selected archive and deadline limits must fit the lab's
+disk and runtime budget.
+
+```powershell
+$exportInputs = @(
+    '--selection', $selectionReceipt, '--operation', $operationId,
+    '--inventory', $imageInventory, '--inventory-sha256', $inventorySha,
+    '--image', 'core', '--recipient', $recipientPublicDer,
+    '--recipient-sha256', $recipientSha, '--tooling', $toolingBundle,
+    '--commit', $reviewedCommit, '--tooling-sha256', $toolingSha
+)
+$exportPlan = python ./experiments/server/retained_image_export_command.py plan @exportInputs |
+    ConvertFrom-Json
+python ./experiments/server/retained_image_export_command.py apply @exportInputs `
+    --journal-root $journalRoot --plan-sha256 $exportPlan.plan_sha256
+python ./experiments/server/retained_image_export_command.py collect @exportInputs `
+    --journal-root $journalRoot --plan-sha256 $exportPlan.plan_sha256
+```
+
+The journal reserves export before submission. When its reply is lost, use
+`observe` with the same inputs to inspect the guest without resubmitting.
+`collect` checks every manifest page before publishing the local
+`complete.json`, `parts.json`, and `export.json` files together. Its report
+supplies `metadata_directory`, `export_directory` on the source VM, and both
+hashes for the transfer below. This path is qualified against a synthetic
+Azure response in CI. Live guest export and receipt delivery remain open.
 
 `experiments/server/retained_image_operator.py` accepts the JSON output of
 `Get-SantaBackupStoreSelection -ReadArm`, the pinned export completion and

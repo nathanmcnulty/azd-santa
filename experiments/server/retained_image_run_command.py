@@ -52,7 +52,7 @@ try:
 except Exception:
     raise SystemExit(1) from None
 """
-INSTALL_BOOTSTRAP = """import base64, contextlib, hashlib, json, lzma, os, sys, tempfile
+ARCHIVE_BOOTSTRAP = """import base64, contextlib, hashlib, json, lzma, os, sys, tempfile
 from pathlib import Path
 
 def main():
@@ -70,19 +70,23 @@ def main():
             stream.write(raw)
         sys.path.insert(0, str(archive))
         with open(os.devnull, 'w') as sink, contextlib.redirect_stdout(sink):
-            from retained_image_runner import install
-            result = install(raw, digest, apply=True)
-    result.update(scope='azd-santa-image-delivery-v1', batch_sha256=digest)
-    print('SANTA_IMAGE_FRAME_JSON:' + json.dumps(result, sort_keys=True, separators=(',', ':'), allow_nan=False))
+ARCHIVE_ACTION
+    response = json.dumps(result, sort_keys=True, separators=(',', ':'), allow_nan=False)
+    if not 0 < len(response.encode('ascii')) <= 3072:
+        raise ValueError()
+    print('SANTA_IMAGE_FRAME_JSON:' + response)
 
 try:
     main()
 except Exception:
     raise SystemExit(1) from None
 """.replace('ARCHIVE_LIMIT', str(runner.MAX_ARCHIVE))
+INSTALL_BOOTSTRAP = ARCHIVE_BOOTSTRAP.replace('ARCHIVE_ACTION', """            from retained_image_runner import install
+            result = install(raw, digest, apply=True)
+    result.update(scope='azd-santa-image-delivery-v1', batch_sha256=digest)""")
 
 
-def receipt(result, nonce, digest):
+def receipt(result, nonce, digest, *, scope=delivery.SCOPE):
     values = result['value']
     blob.need(type(values) is list and 0 < len(values) <= 4)
     for item in values:
@@ -95,23 +99,18 @@ def receipt(result, nonce, digest):
               and lines[markers[0]] == DONE + nonce)
     payload = lines[payloads[0]][len(RECEIPT):].encode('ascii')
     value = checked_document(payload, handoff.sha(payload), 3072)
-    blob.need(value.get('scope') == delivery.SCOPE and value.get('batch_sha256') == digest)
+    blob.need(value.get('scope') == scope and value.get('batch_sha256') == digest)
     return value
 
 
-class RunCommand:
-    """Bind delivery.send's callback to one reviewed guest runner and VM instance."""
+class SelectedVmCommand:
+    """Send one bounded script to a VM after checking the cached account and resource."""
 
-    def __init__(self, selection, transfer, permission, runner_sha256, *, cli=None):
-        blob.need(type(selection) is arm.Selection and permission in ('c', 'r')
-                  and re.fullmatch(blob.HEX, runner_sha256))
+    def __init__(self, selection, target, cli=None):
+        blob.need(type(selection) is arm.Selection and target is not None
+                  and target in (selection.source, selection.verifier))
         selection.intent()
-        self.target = selection.source if permission == 'c' else selection.verifier
-        handoff.context(transfer, self.target, permission)
-        blob.need(transfer.store == selection.store and transfer.source == selection.source)
-        self.selection, self.runner_sha256 = selection, runner_sha256
-        self.transfer, self.permission = transfer, permission
-        self.runner = f"{GUEST_ROOT}/{handoff.offer_name(transfer, permission)}/run.py"
+        self.selection, self.target = selection, target
         self._cli = cli
         self._application = None
         self._busy = threading.Lock()
@@ -122,15 +121,6 @@ class RunCommand:
         if self._application is None:
             self._application = arm.resolve_cli()
         return arm.bounded_cli(arguments, seconds, application=self._application)
-
-    def offer(self):
-        """Read or create the boot-bound public offer for this installed runner."""
-        digest = self.transfer.pins['manifest_sha256']
-        result = self(delivery.frame('offer', digest))
-        blob.need(set(result) == {'scope', 'batch_sha256', 'state', 'offer'} and result['state'] == 'offered')
-        raw = handoff.decode(result['offer'], 4096)
-        handoff.check_offer(raw, handoff.sha(raw), self.transfer, self.target, self.permission)
-        return raw
 
     def _read_target(self):
         target_id = self.target.vm_id
@@ -152,7 +142,7 @@ class RunCommand:
         blob.need(len(script) <= MAX_SCRIPT)
         return script
 
-    def _submit(self, args, script, nonce, digest, seconds):
+    def _submit(self, args, script, nonce, digest, seconds, *, scope=delivery.SCOPE):
         with tempfile.TemporaryDirectory(prefix='santa-image-command-') as folder:
             path = Path(folder) / 'frame.sh'
             blob.need(re.fullmatch(r'[A-Za-z0-9_ .:/\\~-]+', str(path)))
@@ -161,7 +151,30 @@ class RunCommand:
                 stream.write(script)
             result = self._call(['vm', 'run-command', 'invoke', *args,
                                  '--command-id', 'RunShellScript', '--scripts', '@' + str(path)], seconds)
-        return receipt(result, nonce, digest)
+        return receipt(result, nonce, digest, scope=scope)
+
+
+class RunCommand(SelectedVmCommand):
+    """Bind delivery.send's callback to one reviewed guest runner and VM instance."""
+
+    def __init__(self, selection, transfer, permission, runner_sha256, *, cli=None):
+        blob.need(type(selection) is arm.Selection and permission in ('c', 'r')
+                  and re.fullmatch(blob.HEX, runner_sha256))
+        super().__init__(selection, selection.source if permission == 'c' else selection.verifier, cli)
+        handoff.context(transfer, self.target, permission)
+        blob.need(transfer.store == selection.store and transfer.source == selection.source)
+        self.runner_sha256 = runner_sha256
+        self.transfer, self.permission = transfer, permission
+        self.runner = f"{GUEST_ROOT}/{handoff.offer_name(transfer, permission)}/run.py"
+
+    def offer(self):
+        """Read or create the boot-bound public offer for this installed runner."""
+        digest = self.transfer.pins['manifest_sha256']
+        result = self(delivery.frame('offer', digest))
+        blob.need(set(result) == {'scope', 'batch_sha256', 'state', 'offer'} and result['state'] == 'offered')
+        raw = handoff.decode(result['offer'], 4096)
+        handoff.check_offer(raw, handoff.sha(raw), self.transfer, self.target, self.permission)
+        return raw
 
     def provision(self, raw, journal_root=None, *, apply=False):
         """Install the selected package before obtaining any short-lived credentials."""
