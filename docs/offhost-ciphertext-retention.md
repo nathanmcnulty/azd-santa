@@ -232,10 +232,22 @@ back the selected VM resource ID, instance ID and region before submission.
 The guest loads a digest-pinned, root-owned runner from the selected operation
 and role directory. The adapter returns only a structured reply followed by
 the current request's completion marker. It caps the JSON at 3 KiB to fit
-within [Action Run Command's 4 KiB output limit][action-run-command]. Guest
-runner provisioning, timed transfer with a maximum-size batch, actual Azure
-request limits and off-host journal retention remain separate qualification
-work.
+within [Action Run Command's 4 KiB output limit][action-run-command].
+
+`retained_image_runner.py` builds the selected guest package from the exact
+reviewed recovery-tooling bundle. It binds the guest manifest, completion,
+VM identities and transfer role into a private archive. Its Linux installer
+validates guest identity, reserves a fresh operation directory and writes
+the pinned entry point last. The operator can request the same boot-bound
+public offer again after losing its reply. The runner uses the saved offer
+and immutable selection for all subsequent frames.
+
+The command path still needs to deliver that package to the selected VM.
+The full source archive can exceed the 64 KiB per-command script bound after
+encoding, so installation needs bounded staging before acquiring the
+short-lived offer and capabilities. Maximum-size transfer timing, actual
+Azure request limits and off-host journal retention still require
+qualification.
 
 [action-run-command]: https://learn.microsoft.com/en-us/azure/virtual-machines/linux/run-command
 

@@ -47,6 +47,7 @@ class TransferTests(unittest.TestCase):
         folder = tempfile.TemporaryDirectory(dir=Path.home())
         self.addCleanup(folder.cleanup)
         self.root = Path(folder.name)
+        self.upload_attempt_root = self.root
         self.source = target('source')
         self.reader = target('reader')
         store = blob.Store(blob.Blob(SUB + 'rg-store/providers/Microsoft.Storage/storageAccounts/santafixture',
@@ -93,7 +94,7 @@ class TransferTests(unittest.TestCase):
         self.assertEqual(query['api-version'], ['2023-11-03'])
         self.calls.append((method, key))
         if method == 'PUT':
-            self.assertTrue((self.root / OPERATION / 'intent.json').exists())
+            self.assertTrue((self.upload_attempt_root / OPERATION / 'intent.json').exists())
             self.assertEqual(headers['If-None-Match'], '*')
             value = b''.join(iter(lambda: body.read(8192), b''))
             self.assertEqual(len(value), int(headers['Content-Length']))
