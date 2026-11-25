@@ -9,7 +9,8 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import Mock
 
-import test_retained_image_runner as fixtures
+import test_private_arm_adapter as arm_fixtures
+import test_restore_tooling_bundle as tooling_fixtures
 import test_retained_image_export as export_fixtures
 import retained_image_export_command as command
 from retained_image_handoff import decode, sha
@@ -19,14 +20,15 @@ from retained_image_run_command import MAX_SCRIPT
 class ExportCommandTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        fixtures.PackageTests.setUpClass()
+        arm_fixtures.CachedArmTests.setUpClass()
+        tooling_fixtures.BundleTests.setUpClass()
         export_fixtures.ExportTests.setUpClass()
 
     def setUp(self):
-        fixture = fixtures.PackageTests()
+        fixture = arm_fixtures.CachedArmTests()
         self.addCleanup(fixture.doCleanups)
         fixture.setUp()
-        self.selection, self.bundle = fixture.fixture.selection, fixture.bundle
+        self.selection, self.bundle = fixture.selected, tooling_fixtures.BundleTests
         self.inventory = command.blob.encoded({'scope': 'azd-santa-retention-image-inventory-v1',
             'platform': 'linux/amd64', 'images': {'core': {'id': 'sha256:' + '1' * 64}}})
 
