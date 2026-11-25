@@ -8,6 +8,7 @@ param(
     [string] $ScriptName = 'Get-SantaHealth.sh',
     [ValidatePattern('^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$')][string] $ExistingActionId,
     [switch] $Resume,
+    [switch] $ReuseReceipt,
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')][string] $EnvironmentName = 'default',
     [string] $ResultPath,
     [string] $ReceiptPath,
@@ -29,27 +30,19 @@ if ($ExpectedAccount -notmatch '^[^@\s]+@[^@\s]+$') { throw 'ExpectedAccount mus
 if ($ExpectedMachineName -notmatch '^[A-Za-z0-9._-]{1,255}$') { throw 'ExpectedMachineName is not safe.' }
 if ($ScriptName -notmatch '^[A-Za-z0-9._-]{1,128}$') { throw 'ScriptName is not safe.' }
 if ($Resume -and $ExistingActionId) { throw 'Use Resume for a saved ID or ExistingActionId for an independently recovered ID.' }
-if (-not (Get-Command az -ErrorAction SilentlyContinue)) { throw 'Azure CLI is required for its cached browser/WAM token.' }
+if ($ReuseReceipt -and ($Resume -or $ExistingActionId)) { throw 'ReuseReceipt selects the action from the deployment receipt.' }
 
 if (-not $Apply) {
-    [pscustomobject]@{ mode = 'what-if'; machineId = $MachineId; expectedMachineName = $ExpectedMachineName; scriptName = $ScriptName; existingActionId = $ExistingActionId; resume = [bool]$Resume; tenantId = $ExpectedTenantId; account = $ExpectedAccount } | ConvertTo-Json
+    [pscustomobject]@{ mode = 'what-if'; machineId = $MachineId; expectedMachineName = $ExpectedMachineName; scriptName = $ScriptName; existingActionId = $ExistingActionId; resume = [bool]$Resume; reuseReceipt = [bool]$ReuseReceipt; tenantId = $ExpectedTenantId; account = $ExpectedAccount } | ConvertTo-Json
     return
 }
-$operation = if ($Resume -or $ExistingActionId) { "Read existing Defender Live Response action for $ScriptName" } else { "Run Defender Live Response script $ScriptName" }
+$operation = if ($ReuseReceipt) { "Start or reuse a receipt-bound Defender Live Response action for $ScriptName" }
+    elseif ($Resume -or $ExistingActionId) { "Read existing Defender Live Response action for $ScriptName" }
+    else { "Run Defender Live Response script $ScriptName" }
 if (-not $PSCmdlet.ShouldProcess("$ExpectedMachineName ($MachineId)", $operation)) { return }
 
-$accountJson = (& az account show --query '{tenantId:tenantId,user:user.name}' --output json --only-show-errors) -join [Environment]::NewLine
-if ($LASTEXITCODE -ne 0) { throw 'Azure CLI could not inspect the active account.' }
-$account = $accountJson | ConvertFrom-Json
-if ([string]$account.tenantId -ine $ExpectedTenantId -or [string]$account.user -ine $ExpectedAccount) {
-    throw "Azure CLI is signed into '$($account.user)' in tenant '$($account.tenantId)', not the selected MDE account and tenant."
-}
-$token = (& az account get-access-token --resource 'https://api.securitycenter.microsoft.com' --tenant $ExpectedTenantId --query accessToken --output tsv --only-show-errors).Trim()
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) { throw 'Azure CLI could not obtain a Defender for Endpoint token.' }
-
+$client = $null
 $ownsClient = $null -eq $HttpClient
-$client = if ($ownsClient) { [Net.Http.HttpClient]::new() } else { $HttpClient }
-$client.DefaultRequestHeaders.Authorization = [Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $token)
 function Invoke-DefenderJson {
     param([Parameter(Mandatory)][ValidateSet('GET','POST')][string] $Method, [Parameter(Mandatory)][string] $Uri, [object] $Body, [switch] $AllowNotFound)
     $content = if ($null -ne $Body) { [Net.Http.StringContent]::new(($Body | ConvertTo-Json -Depth 12 -Compress), [Text.Encoding]::UTF8, 'application/json') } else { $null }
@@ -118,23 +111,43 @@ $knownStatuses = @('Pending','InProgress','Succeeded','Failed','Cancelled','Reje
 $saved = $null
 if (Test-Path -LiteralPath $ReceiptPath) {
     $saved = Get-Content -LiteralPath $ReceiptPath -Raw | ConvertFrom-Json -AsHashtable
-    if (-not ($Resume -or $ExistingActionId)) { throw 'An action receipt already exists. Use Resume for a saved ID; do not resubmit an uncertain action.' }
+    if (-not ($Resume -or $ExistingActionId -or $ReuseReceipt)) { throw 'An action receipt already exists. Use Resume for a saved ID; do not resubmit an uncertain action.' }
     if ($saved.schemaVersion -ne '1.0' -or $saved.template -ne 'azd-santa' -or $saved.tenantId -ine $ExpectedTenantId -or $saved.account -ine $ExpectedAccount -or
         $saved.machine.id -ine $MachineId -or $saved.machine.name -ine $ExpectedMachineName -or
         $saved.action.scriptName -ine $ScriptName) {
         throw 'Existing action receipt does not match the selected action, script, account, tenant and machine.'
     }
     $savedId = [string]$saved.action.id
-    if ($Resume) {
+    if ($Resume -or $ReuseReceipt) {
         if ($savedId -notmatch $actionPattern) { throw 'The action receipt has no valid saved ID. Recover the original action ID before resuming.' }
         $ExistingActionId = $savedId
     } elseif ($savedId -and $savedId -ine $ExistingActionId) {
         throw 'Existing action receipt does not match the selected action ID.'
     }
+    if ($ReuseReceipt -and $saved.state -ceq 'verified-completion') {
+        if ($saved.action.status -cne 'Succeeded' -or $saved.resultSha256 -notmatch '^[a-f0-9]{64}$' -or
+            -not (Test-Path -LiteralPath $ResultPath -PathType Leaf) -or
+            (Get-FileHash -LiteralPath $ResultPath -Algorithm SHA256).Hash -ine $saved.resultSha256) {
+            throw 'The existing verified action result is unavailable or differs from its receipt. Preserve the evidence.'
+        }
+        return [pscustomobject]@{ state = 'verified-completion'; receiptPath = $ReceiptPath; reused = $true }
+    }
     if ($saved.state -in $terminalStates) { throw 'The existing action receipt already records a terminal outcome. Preserve it and the corresponding result.' }
 } elseif ($Resume) {
     throw 'No saved action receipt is available to resume.'
 }
+
+    if (-not (Get-Command az -ErrorAction SilentlyContinue)) { throw 'Azure CLI is required for its cached browser/WAM token.' }
+    $accountJson = (& az account show --query '{tenantId:tenantId,user:user.name}' --output json --only-show-errors) -join [Environment]::NewLine
+    if ($LASTEXITCODE -ne 0) { throw 'Azure CLI could not inspect the active account.' }
+    $account = $accountJson | ConvertFrom-Json
+    if ([string]$account.tenantId -ine $ExpectedTenantId -or [string]$account.user -ine $ExpectedAccount) {
+        throw 'Azure CLI account or tenant did not match the selected Defender context.'
+    }
+    $token = ([string]((& az account get-access-token --resource 'https://api.securitycenter.microsoft.com' --tenant $ExpectedTenantId --query accessToken --output tsv --only-show-errors) -join '')).Trim()
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) { throw 'Azure CLI could not obtain a Defender for Endpoint token.' }
+    $client = if ($ownsClient) { [Net.Http.HttpClient]::new() } else { $HttpClient }
+    $client.DefaultRequestHeaders.Authorization = [Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $token)
 
     $machine = Invoke-DefenderJson -Method GET -Uri "https://api.security.microsoft.com/api/machines/$MachineId"
     if ([string]$machine.id -ine $MachineId -or [string]$machine.computerDnsName -ine $ExpectedMachineName -or [string]$machine.osPlatform -ine 'macOS') {
@@ -248,6 +261,7 @@ if (Test-Path -LiteralPath $ReceiptPath) {
         action = [ordered]@{ id = $action.id; status = $completed.status; scriptName = $ScriptName }
         result = $result
     } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
+    $receipt.resultSha256 = (Get-FileHash -LiteralPath $ResultPath -Algorithm SHA256).Hash.ToLowerInvariant()
     Save-ActionReceipt -State 'verified-completion' -Status 'Succeeded'
     $completedLabel = if ($ScriptName -eq 'Get-SantaHealth.sh') { 'Live Response health check passed' } else { 'Live Response diagnostic completed' }
     Write-Host "$completedLabel for $ExpectedMachineName. Result: $ResultPath" -ForegroundColor Green
@@ -258,5 +272,5 @@ if (Test-Path -LiteralPath $ReceiptPath) {
     throw
 } finally {
     $receiptLock.Dispose()
-    if ($ownsClient) { $client.Dispose() }
+    if ($ownsClient -and $client) { $client.Dispose() }
 }

@@ -23,10 +23,12 @@ script_name. No automatic POST retry occurs. Invocations sharing a receipt are s
 using a persistent, empty `.lock` file; a stopped process releases the lock.
 Do not choose a new receipt path to bypass an uncertain submission.
 
-If an azd postprovision run already created a receipt, use the same action
-runner with `-Resume` to collect the result. Leave automatic Live
-Response execution disabled for subsequent `azd up` runs in that environment
-unless you intend to start a separate diagnostic.
+`azd` postprovision uses `-ReuseReceipt` with the environment's existing paths.
+The first run can submit an action. A later run with a saved action ID resumes
+polling, and an already verified result is reused after checking its SHA-256.
+Reusing a completed result makes no Defender request and preserves its capture
+time. If submission was uncertain and the ID is missing, recover the action ID
+before resuming. A later deployment never retries that submission.
 
 Receipt states:
 
@@ -43,7 +45,7 @@ Receipt states:
 - `command-failed`: explicit command failure or a failing script result.
 - `command-unverified`, `result-unverified`: no verified completion evidence yet.
 - `verified-completion`: command completion and successful script output were
-  verified. The original success artifact contract remains unchanged.
+  verified. The receipt records the hash of the existing schema 1.0 result.
 
 Resume preserves terminal receipts and their results without issuing another
 Defender request.

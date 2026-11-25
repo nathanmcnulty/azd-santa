@@ -113,6 +113,21 @@ Describe 'Private Live Response receipts and bounded polling' {
         (Get-Content $receiptPath -Raw) | Should -BeExactly $savedReceipt
         (Get-Content $resultPath -Raw) | Should -BeExactly $savedResult
     }
+    It 'reuses a verified deployment result and rejects changed bytes without another request' {
+        Add-Response @{ id = $actionId }
+        Add-Success
+        & $runner @parameters -ReuseReceipt
+        $requestCount = $handler.Requests.Count
+        $receiptBefore = Get-Content $receiptPath -Raw
+        ($receiptBefore | ConvertFrom-Json).resultSha256 | Should -Be (Get-FileHash -LiteralPath $resultPath -Algorithm SHA256).Hash
+        $reused = & $runner @parameters -ReuseReceipt
+        $reused.state | Should -Be 'verified-completion'
+        $reused.reused | Should -BeTrue
+        Add-Content -LiteralPath $resultPath -Value 'Fixture changed the saved bytes.'
+        { & $runner @parameters -ReuseReceipt } | Should -Throw '*differs from its receipt*'
+        $handler.Requests.Count | Should -Be $requestCount
+        (Get-Content $receiptPath -Raw) | Should -BeExactly $receiptBefore
+    }
     It 'keeps the last known service status when a resumed row becomes temporarily invisible' {
         Add-Response @{ id = $actionId }
         Add-Action 'InProgress'; Add-Response @{} 404
@@ -121,7 +136,7 @@ Describe 'Private Live Response receipts and bounded polling' {
         Add-Response @{ id = 'a' * 40; computerDnsName = 'fixture-mac'; osPlatform = 'macOS'; onboardingStatus = 'Onboarded' }
         Add-Response @{ value = @(@{ fileName = 'Get-SantaHealth.sh'; description = 'managed by azd-santa' }) }
         Add-Response @{} 404; Add-Action 'redact-unrecognized-status'
-        (& $runner @parameters -Resume -WarningAction SilentlyContinue).state | Should -Be 'polling-timeout'
+        (& $runner @parameters -ReuseReceipt -WarningAction SilentlyContinue).state | Should -Be 'polling-timeout'
         $rawReceipt = Get-Content $receiptPath -Raw
         $rawReceipt | Should -Not -Match 'redact-unrecognized-status'
         ($rawReceipt | ConvertFrom-Json).action.status | Should -Be 'InProgress'
@@ -140,6 +155,7 @@ Describe 'Private Live Response receipts and bounded polling' {
         $receipt.action.id | Should -BeNullOrEmpty
         @($handler.Requests | Where-Object { $_ -like '*machineactions/*' }).Count | Should -Be 0
         { & $runner @parameters -Resume } | Should -Throw '*no valid saved ID*'
+        { & $runner @parameters -ReuseReceipt } | Should -Throw '*no valid saved ID*'
         @($handler.Requests | Where-Object { $_ -like 'POST *' }).Count | Should -Be 1
     }
     It 'keeps completion unverified when the success artifact cannot be written' {
