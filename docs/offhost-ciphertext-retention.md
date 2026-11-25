@@ -224,7 +224,9 @@ python ./experiments/server/native_retention_verify_command.py apply @verifyInpu
 Use `observe` with the same arguments to inspect a lost reply. The report
 gives the verified ciphertext path on the verifier for the compatibility
 recovery command. The operator receives neither backup contents nor a
-private key. Live upload and download remain acceptance gates.
+private key.
+
+### Azure pilot upload and independent readback, 2026-11-25
 
 In the first live upload attempt, the source offered the pinned native
 ciphertext and Azure successfully issued the exact create-only SAS. The
@@ -235,6 +237,30 @@ now accepts that representation while comparing the exact requested
 instants and retaining the signed query bytes for transport. The source
 observed the original upload attempt in the offered state and was
 deallocated. The attempt was preserved and the verifier remained off.
+
+The next attempt used the expired-offer recovery from
+[#156](https://github.com/nathanmcnulty/azd-santa/pull/156) against the
+[same native capture](private-native-capture-qualification.md#fresh-capture-and-actual-terminal-observation).
+The source issued a fresh offer on a different boot, preserved the original
+attempt, and reported `uploaded-unverified` after a create-only upload.
+The source was deallocated before the independent verifier booted. Using a
+read-only SAS, the verifier downloaded all 80,159,434 bytes and recomputed
+SHA-256 `1f66f3f3907f8acdd42538a493ba84b0a27d76ac3b87014bad94945008199d01`,
+matching the original source capture. The verifier was then deallocated.
+
+| Retained evidence | SHA-256 |
+| --- | --- |
+| Source terminal upload observation | `57f1ed1aac6e61e12b144d750a4c1e545503c2e53d2f5f87a10d44e843b7d487` |
+| Independent Azure readback receipt | `ecb1ebead8bd53a808fed1cdde6a192f296959c1ccc61d57a0589cf8c649ce8a` |
+
+This qualifies off-host byte retention for the selected Azure pilot capture.
+On the original Windows workstation, the CurrentUser DPAPI-protected recipient
+key was recovered in memory and its public key fingerprint matched the native
+capture receipt. The check establishes access from that Windows user profile.
+Recipient-side envelope authentication, exact image retention, full stack
+restore, and current authority remain open.
+
+### Exact image retention
 
 `experiments/server/retention_image_inventory.py` implements the image selection
 for a separate retention contract. It checks the exact compatibility document
@@ -577,7 +603,7 @@ rebuilding the same source is not the same image. Image exports may exceed
 2GiB or the single-PUT bound. This API rejects larger/different artifacts rather
 than truncating them or treating them as native data captures.
 
-Independent verification of the original live recipient key, trustworthy receipts,
+Portable custody of the original recipient key, trustworthy receipts,
 account/region-loss protection, image/source artifacts and an independently
 authorized restore target remain prerequisites. CurrentUser DPAPI is test-only.
 LRS off-host retention does not establish regional disaster recovery or current
