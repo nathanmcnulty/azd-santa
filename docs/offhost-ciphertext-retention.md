@@ -220,11 +220,13 @@ authorization. The handoff has no ARM token or storage account key.
 
 `retained_image_delivery.py` defines the bounded request/reply protocol for
 that channel. The operator reserves the operation before the first request.
-The guest stages one exact encrypted packet per part, verifies the full batch
-before starting a transfer, then keeps a marker and result for observation.
-Requests are capped at 14 KiB before outer command framing and responses expose
-only the fixed receipt fields. Plan sends nothing. An uncertain reply stops
-the operator, who can observe the same batch without replay.
+The operator groups consecutive encrypted packets in each request using
+the serialized size. Each request is capped at 14 KiB before outer command
+framing. The guest validates the complete group before staging any member,
+then checks the full batch before starting a transfer. A 33-part fixture
+with 1,600-byte packets needs six packet requests plus begin and finish.
+Plan sends nothing. An uncertain reply stops the operator, who can observe
+staged packet indexes or the saved transfer result without replay.
 
 `retained_image_run_command.py` adapts that callback to Linux Azure Action
 Run Command. Each frame checks the cached tenant and subscription and reads

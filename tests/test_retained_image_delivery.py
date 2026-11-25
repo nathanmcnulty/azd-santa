@@ -8,6 +8,28 @@ import retained_image_delivery as delivery
 import retained_image_handoff as handoff
 
 
+class PacketSizingTests(unittest.TestCase):
+    def test_maximum_part_count_uses_six_bounded_packets_requests_at_fixture_size(self):
+        digest = 'a' * 64
+        packets = [bytes([index]) * 1600 for index in range(delivery.MAX_PARTS)]
+        commands = list(delivery.packet_commands(digest, packets))
+        self.assertEqual(len(commands), 6)
+        self.assertLessEqual(max(len(raw) for raw, _ in commands), delivery.MAX_FRAME)
+        merged = []
+        for raw, ack in commands:
+            start, group = delivery.decode_group(json.loads(raw))
+            self.assertEqual(ack, {'state': 'staged', 'start': len(merged), 'count': len(group)})
+            self.assertEqual(start, len(merged))
+            merged.extend(group)
+        self.assertEqual(merged, packets)
+
+    def test_maximum_sized_envelopes_can_be_sent_individually(self):
+        packets = [b'x' * handoff.MAX_PACKET] * delivery.MAX_PARTS
+        frames = list(delivery.packet_commands('a' * 64, packets))
+        self.assertEqual(len(frames), delivery.MAX_PARTS)
+        self.assertLessEqual(max(len(raw) for raw, _ in frames), delivery.MAX_FRAME)
+
+
 @unittest.skipUnless(sys.platform == 'linux', 'Linux guest journal protocol')
 class DeliveryTests(unittest.TestCase):
     def setUp(self):
@@ -44,7 +66,7 @@ class DeliveryTests(unittest.TestCase):
             self.assertFalse(preview['performs_mutation'])
             self.assertEqual(seen, [])
             result = delivery.send(*args, apply=True)
-            self.assertEqual(seen, ['begin', 'part', 'part', 'part', 'finish'])
+            self.assertEqual(seen, ['begin', 'parts', 'finish'])
             self.assertEqual(result, guest(delivery.frame('observe', result['batch_sha256'])))
         self.assertEqual(result['result']['verified_parts'], 3)
 
@@ -77,10 +99,37 @@ class DeliveryTests(unittest.TestCase):
         batch = delivery.build_batch(offer, packets, self.transfer, target, 'c')
         digest = handoff.sha(batch)
         guest(delivery.frame('begin', digest, batch=handoff.b64(batch)))
-        packet = next(iter(packets.values()))
+        first, second, _ = map(handoff.b64, packets.values())
         with self.assertRaises(handoff.blob.RetentionRejected):
-            guest(delivery.frame('part', digest, index=0, packet=handoff.b64(packet + b'x')))
+            guest(delivery.frame('parts', digest, start=0, packets=[first, first]))
+        self.assertEqual(guest(delivery.frame('observe', digest))['staged'], [])
+        # An overlapping request cannot write an otherwise valid trailing member.
+        guest(delivery.frame('part', digest, index=0, packet=first))
+        with self.assertRaises(handoff.blob.RetentionRejected):
+            guest(delivery.frame('parts', digest, start=0, packets=[first, second]))
         with self.assertRaises(handoff.blob.RetentionRejected):
             guest(delivery.frame('finish', digest))
-        self.assertEqual(guest(delivery.frame('observe', digest))['staged'], [])
+        self.assertEqual(guest(delivery.frame('observe', digest))['staged'], [0])
+        self.assertEqual(self.fixture.calls, [])
+
+    def test_lost_group_response_stops_before_finish_and_can_be_observed(self):
+        target = self.fixture.source
+        guest, offer, packets = self.prepare(target, 'c', self.fixture.root)
+        actions = []
+        batch = delivery.build_batch(offer, packets, self.transfer, target, 'c')
+        digest = handoff.sha(batch)
+
+        def invoke(raw):
+            action = json.loads(raw)['action']
+            actions.append(action)
+            result = guest(raw)
+            if action == 'parts':
+                raise TimeoutError('synthetic lost group response')
+            return result
+
+        for _ in range(2):
+            with self.assertRaises(handoff.blob.RetentionRejected):
+                delivery.send(invoke, self.operator, offer, packets, self.transfer, target, 'c', apply=True)
+        self.assertEqual(actions, ['begin', 'parts'])
+        self.assertEqual(guest(delivery.frame('observe', digest))['staged'], [0, 1, 2])
         self.assertEqual(self.fixture.calls, [])
