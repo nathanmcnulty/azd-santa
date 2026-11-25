@@ -14,7 +14,7 @@ from retained_image_blob import Transfer
 from retained_image_parts import MAX_MANIFEST, checked_document
 
 GUEST_ROOT = '/var/lib/azd-santa-qualification/image-delivery'
-MAX_ARCHIVE = 128 * 1024
+MAX_ARCHIVE = 512 * 1024
 MAX_SELECTION = 48 * 1024
 SOURCES = tuple(name + '.py' for name in (
     'backup_store_selection', 'blob_retention', 'cold_backup', 'private_arm_adapter',
@@ -32,8 +32,8 @@ def handle(request):
         info = os.fstat(stream.fileno())
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_nlink != 1 or info.st_mode & 0o077:
             raise ValueError()
-        raw = stream.read(131073)
-    if not 0 < len(raw) <= 131072 or hashlib.sha256(raw).hexdigest() != 'ARCHIVE_SHA256':
+        raw = stream.read(ARCHIVE_LIMIT + 1)
+    if not 0 < len(raw) <= ARCHIVE_LIMIT or hashlib.sha256(raw).hexdigest() != 'ARCHIVE_SHA256':
         raise ValueError()
     sys.path.insert(0, str(archive))
     try:
@@ -46,7 +46,7 @@ def handle(request):
 
 def driver(digest):
     blob.need(len(digest) == 64 and all(char in '0123456789abcdef' for char in digest))
-    return DRIVER.replace('ARCHIVE_SHA256', digest).encode('ascii')
+    return DRIVER.replace('ARCHIVE_SHA256', digest).replace('ARCHIVE_LIMIT', str(MAX_ARCHIVE)).encode('ascii')
 
 
 def source_file(path, permission):
@@ -74,7 +74,8 @@ def build(tooling, commit, tooling_sha256, transfer, target, permission, *, sour
     output = io.BytesIO()
     with zipfile.ZipFile(output, 'w') as archive:
         for name, data in [(name, files[SERVER + name]) for name in SOURCES] + [(SELECTION, selection)]:
-            archive.writestr(zipfile.ZipInfo(name), data, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+            # Outer XZ compresses across source files while the installed ZIP remains importable.
+            archive.writestr(zipfile.ZipInfo(name), data)
     raw = output.getvalue()
     blob.need(len(raw) <= MAX_ARCHIVE)
     return raw
@@ -139,6 +140,12 @@ def serve(directory, raw_archive, request):
     name = handoff.offer_name(transfer, permission)
     blob.need(directory.name == name)
     raw = checked_document(request, handoff.sha(request), delivery.MAX_FRAME)
+    if raw.get('action') == 'runner':
+        expected = {'scope': delivery.SCOPE, 'action': 'runner', 'batch_sha256': transfer.pins['manifest_sha256']}
+        blob.need(raw == expected)
+        blob.host_identity(target)
+        return {'scope': delivery.SCOPE, 'batch_sha256': transfer.pins['manifest_sha256'],
+                'state': 'installed', 'archive_sha256': handoff.sha(raw_archive)}
     offer_root = directory / 'offers'
     public_path = offer_root / name / 'offer.json'
     with ExitStack() as stack:

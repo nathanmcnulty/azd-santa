@@ -242,12 +242,19 @@ the pinned entry point last. The operator can request the same boot-bound
 public offer again after losing its reply. The runner uses the saved offer
 and immutable selection for all subsequent frames.
 
-The command path still needs to deliver that package to the selected VM.
-The full source archive can exceed the 64 KiB per-command script bound after
-encoding, so installation needs bounded staging before acquiring the
-short-lived offer and capabilities. Maximum-size transfer timing, actual
-Azure request limits and off-host journal retention still require
-qualification.
+The operator's Run Command adapter can provision the package in one request
+before acquiring the short-lived offer or capabilities. It compresses the
+complete archive with XZ and checks the full script against the adapter's
+64 KiB bound. The Linux bootstrap limits the decoder memory and output
+size and verifies the archive SHA-256 before importing the reviewed source.
+The operator records the attempt before submission. Use the read-only
+runner observation after a missing or inconclusive reply. The observation
+requires the same VM and archive pins and leaves the offer and transfer
+journals untouched.
+
+CI exercises the full script size with a 33-part manifest. Maximum-size
+transfer timing, actual Azure request limits and off-host journal retention
+still require qualification.
 
 [action-run-command]: https://learn.microsoft.com/en-us/azure/virtual-machines/linux/run-command
 
