@@ -179,9 +179,28 @@ and an outer I/O deadline remain caller prerequisites.
 
 The Ubuntu test exports a disposable `linux/amd64` image, independently verifies
 a ciphertext copy, and loads the verified descriptor. It reads back the same
-image ID without starting a container. The reviewed restore tooling inventory,
-authenticated transfer, and live acceptance remain in
-[issue #97](https://github.com/nathanmcnulty/azd-santa/issues/97).
+image ID without starting a container.
+
+Retain an independently reviewed recovery toolset with
+`experiments/server/restore_tooling_bundle.py`. Its `build` command accepts a
+trusted local repository, the full reviewed commit ID, and a fresh destination
+file. It reads exact Git blobs for a fixed inventory covering image readback,
+native archive quarantine, restore census, offline rewrap, and their local
+dependencies, locks, documentation, and license notices. Git working-tree
+configuration, untracked files, and other committed paths are outside that
+inventory. Retain the emitted commit and bundle SHA-256 through a trusted
+channel alongside the recovery inventory.
+
+On a separate recovery machine, run a trusted copy of the tool's `verify`
+command with the bundle path and those external pins. `stage` accepts the same
+inputs plus a fresh local directory and writes the verified bytes as files. It
+does not run their contents. Failed staging leaves the partial directory for
+inspection. The reviewed public-source toolset excludes tenant configuration,
+images, workload data, private keys, and credential caches. Keep the historical
+installer bundle and confidential image or source artifacts private and retain
+their exact bytes independently. The bundled locks identify dependencies;
+platform/runtime binaries, authenticated transfer, and live acceptance still
+require qualification under [issue #97](https://github.com/nathanmcnulty/azd-santa/issues/97).
 
 The optional VM creation-time Storage endpoint setting and GET-only existing
 network proposal are described in [private Storage endpoint wiring](private-storage-endpoint.md).
