@@ -97,16 +97,9 @@ def plan(stream, completion_raw, *, completion_sha256, operation, seconds=600):
         raise PartsRejected('Santa image transfer planning rejected; preserve the original ciphertext') from None
 
 
-def assemble(manifest_raw, completion_raw, destination, open_part, *, manifest_sha256,
-             completion_sha256, operation, seconds=900):
-    """Use independent trusted pins to assemble one fresh ciphertext file.
-
-    The caller opens each exact object as a confidential binary stream, supplies
-    a private destination, and enforces an outer deadline for blocking I/O.
-    A failed attempt may leave a partial file and never reuses an existing path.
-    """
+def checked_manifest(manifest_raw, completion_raw, *, manifest_sha256, completion_sha256, operation):
     try:
-        deadline = start(seconds, operation)
+        start(1, operation)
         record = checked_completion(completion_raw, completion_sha256)
         manifest = checked_document(manifest_raw, manifest_sha256, MAX_MANIFEST)
         size = record['ciphertext_bytes']
@@ -122,6 +115,26 @@ def assemble(manifest_raw, completion_raw, destination, open_part, *, manifest_s
                  and all(type(part[key]) is type(value) and part[key] == value for key, value in binding.items())
                  and type(part['sha256']) is str and re.fullmatch(HEX, part['sha256'])
                  and type(part['md5']) is str and re.fullmatch(r'[a-f0-9]{32}', part['md5']))
+        return manifest
+    except (ValueError, KeyError, TypeError, RecursionError):
+        raise PartsRejected('Santa image transfer manifest rejected') from None
+
+
+def assemble(manifest_raw, completion_raw, destination, open_part, *, manifest_sha256,
+             completion_sha256, operation, seconds=900):
+    """Use independent trusted pins to assemble one fresh ciphertext file.
+
+    The caller opens each exact object as a confidential binary stream, supplies
+    a private destination, and enforces an outer deadline for blocking I/O.
+    A failed attempt may leave a partial file and never reuses an existing path.
+    """
+    try:
+        deadline = start(seconds, operation)
+        manifest = checked_manifest(manifest_raw, completion_raw, manifest_sha256=manifest_sha256,
+                                    completion_sha256=completion_sha256, operation=operation)
+        size = manifest['ciphertext_bytes']
+        ciphertext_sha256 = manifest['ciphertext_sha256']
+        parts = manifest['parts']
 
         whole = hashlib.sha256()
         fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

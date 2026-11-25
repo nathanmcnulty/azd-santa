@@ -190,6 +190,20 @@ preserves partial output for inspection. Open each part through an exact-object
 reader and apply an outer I/O deadline. The multipart image protocol does not
 change native capture or its 2 GiB cap.
 
+`experiments/server/retained_image_blob.py` provides the default-off HTTPS
+transport. It accepts the pinned plan, independently selected store and VM
+facts, and already issued exact-object SAS tokens through a trusted private
+caller. Upload uses only create permissions, binds each request to one planned
+part, and sends `If-None-Match: *`. It records intent before the first request,
+stops on an ambiguous result, and refuses to replay an existing operation on
+the same journal root. A separate VM instance with read-only tokens can verify
+the exact parts and reconstruct the ciphertext in a fresh journal. Neither
+role receives listing, overwrite, deletion, ARM or recipient-key credentials.
+The transport checks signed permission and expiry fields, while binding the
+token to the exact object depends on trusted issuance. Automatic issuance and
+delivery, durable off-host journal preservation, and live Azure evidence remain
+separate. Keep the persistent root and resolve unknown outcomes by readback.
+
 The Ubuntu test exports a disposable `linux/amd64` image, reassembles a
 ciphertext copy from a synthetic object store, authenticates it, and loads the
 verified descriptor. It reads back the same image ID without starting a container.
