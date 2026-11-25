@@ -21,7 +21,7 @@ The evidence below includes the November 25 native pilot follow-up.
 | Credential rotation | Earlier selected private server passed all76 observations | Repeat on the new candidate; supported admin lifecycle and Intune/native delivery |
 | Admission and proxy | Hosted Redis passed37 fenced Lua families; host cap accepted16/rejected4 connections; fresh private TLS passed24 synthetic sync requests, capacity429, Redis503/recovery200 and body413/header431 cases | Sustained-load containment, held-work/dependency fault matrix, native retries and broader application ingress qualification |
 | Worker shutdown | Actual standalone Linux TERM/forkserver idle, held and forced-deadline cases passed | Real Kombu/broker callback and acknowledgement behavior in the selected image |
-| Backup | One private synthetic stack completed native snapshot, worker drain, encrypted capture and original-runtime resume; independent Storage deployment succeeded and its protected configuration was selected | Off-host transfer, independent byte verification, portable keys/images, full restore and failure qualification; deployment observer normalization fix remains #102 |
+| Backup | A private stack completed a native encrypted capture and resumed its original runtime. A separate VM downloaded the capture from Azure Blob Storage and matched its length and SHA-256. The original Windows recovery key passed a local encrypted export and readback probe. | Durable key custody, retained image verification, real backup authentication, full restore and failure qualification |
 | Restore | Authority/encryption inventory; ciphertext authentication and bounded offline secret-rewrap primitives with actual synthetic crypto tests | Strict extraction, complete schema/row census, isolated application restoration, current-authority reconciliation and complete fault testing |
 | Operator access | Private application-level MFA/recovery tests; selected HTTPS pilot completed human password/TOTP enrollment and administrator login through a source-IP-restricted window, then restored deny-all ingress | Automated customer setup and controlled recovery on the current candidate; deferred Entra Easy Auth roadmap #108 |
 | Hostname TLS | Selected Azure hostname passed staging/production issuance; ordinary Windows and Linux trust verified the held endpoint; same certificate survived service restart; original deny policy restored | Renewal, DNS retirement/rate constraints, automated customer deployment and actual browser/Mac acceptance |
@@ -43,7 +43,9 @@ ownership/linkage/DNS-property readback and resolved to the expected IP. The
 restricted pilot verified TLS and one native sync. General ingress remains held
 closed; separately authorized bounded source-IP trials have their own evidence
 and explicit closure requirements. The successful native capture is recorded in
-[its qualification report](private-native-capture-qualification.md).
+[its qualification report](private-native-capture-qualification.md). The
+[off-host retention report](offhost-ciphertext-retention.md#azure-pilot-upload-and-independent-readback-2026-11-25)
+records the independent byte verification.
 
 ## Development order
 
