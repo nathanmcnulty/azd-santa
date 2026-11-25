@@ -453,6 +453,7 @@ Describe 'Managed endpoint health channels' {
         $post = Get-Content -Raw (Join-Path $script:root 'scripts/Post-Provision.ps1')
         $azure | Should -Match 'postprovision:'
         $post | Should -Match 'AZD_SANTA_DEPLOY_INTUNE_HEALTH_SCRIPT'
+        $post | Should -Match '-ReuseReceipt -Apply'
         $post | Should -Match 'AZD_SANTA_DEPLOY_INTUNE_PROFILES'
         $post | Should -Match 'AZD_SANTA_DEPLOY_INTUNE_PACKAGE'
         $post | Should -Match 'AZD_SANTA_PUBLISH_LIVE_RESPONSE_LIBRARY'

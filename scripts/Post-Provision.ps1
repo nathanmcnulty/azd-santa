@@ -89,6 +89,6 @@ if ($publishLiveResponse) {
             -MachineId (Assert-Setting 'AZD_SANTA_MDE_MACHINE_ID' '^[0-9a-fA-F]{40}$') `
             -ExpectedMachineName (Assert-Setting 'AZD_SANTA_MDE_MACHINE_NAME' '^[A-Za-z0-9._-]{1,255}$') `
             -ExpectedTenantId $tenantId -ExpectedAccount $mdeAccount `
-            -EnvironmentName $environmentName -Apply -Confirm:$false
+            -EnvironmentName $environmentName -ReuseReceipt -Apply -Confirm:$false
     }
 }
