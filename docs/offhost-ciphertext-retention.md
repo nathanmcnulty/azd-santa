@@ -254,6 +254,9 @@ matching the original source capture. The verifier was then deallocated.
 | Independent Azure readback receipt | `ecb1ebead8bd53a808fed1cdde6a192f296959c1ccc61d57a0589cf8c649ce8a` |
 
 This qualifies off-host byte retention for the selected Azure pilot capture.
+On the original Windows workstation, the CurrentUser DPAPI-protected recipient
+key was recovered in memory and its public key fingerprint matched the native
+capture receipt. The check establishes access from that Windows user profile.
 Recipient-side envelope authentication, exact image retention, full stack
 restore, and current authority remain open.
 
@@ -600,7 +603,7 @@ rebuilding the same source is not the same image. Image exports may exceed
 2GiB or the single-PUT bound. This API rejects larger/different artifacts rather
 than truncating them or treating them as native data captures.
 
-Independent verification of the original live recipient key, trustworthy receipts,
+Portable custody of the original recipient key, trustworthy receipts,
 account/region-loss protection, image/source artifacts and an independently
 authorized restore target remain prerequisites. CurrentUser DPAPI is test-only.
 LRS off-host retention does not establish regional disaster recovery or current
