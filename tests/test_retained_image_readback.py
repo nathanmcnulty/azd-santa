@@ -1,6 +1,7 @@
 """Exercise independent retained image readback using private synthetic files."""
 from contextlib import contextmanager
 import hashlib
+import json
 import os
 from pathlib import Path
 import sys
@@ -13,6 +14,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from test_retained_image_archive import fixture
 import retained_image_export as export
+import retained_image_load as loader
 import retained_image_readback as readback
 
 
@@ -100,3 +102,23 @@ class ReadbackTests(unittest.TestCase):
         with patch.object(readback, 'decrypt_staging', changed):
             with self.assertRaises(readback.ReadbackRejected), self.verify():
                 self.fail('Unexpected plaintext release')
+
+    def test_load_transport_failure_keeps_intent_and_blocks_replay(self):
+        with TemporaryDirectory(dir=Path.home()) as temporary:
+            attempt = Path(temporary) / 'attempt'
+            raw = export.encoded(self.result)
+            pins = dict(completion_sha256=sha(raw), inventory_sha256=self.inventory_sha256,
+                        image_name='core', image_id=self.image_id, socket='/fixture.sock', attempt=attempt)
+            with patch.object(loader, 'RecoveryDocker') as docker:
+                daemon = docker.return_value
+                daemon.path = Path('/fixture.sock')
+                daemon.identity = (10, 11)
+                daemon.run.side_effect = TimeoutError('synthetic missing load reply')
+                with self.assertRaises(TimeoutError):
+                    loader.verify_or_load(self.source, raw, self.key, self.home, **pins)
+                self.assertEqual(json.loads((attempt / 'intent.json').read_bytes())['state'], 'load-uncertain')
+                self.assertFalse((attempt / 'outcome.json').exists())
+                with self.assertRaises(FileExistsError):
+                    loader.verify_or_load(self.source, raw, self.key, self.home, **pins)
+                daemon.run.assert_called_once()
+                daemon.confirm_image.assert_not_called()

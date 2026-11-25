@@ -472,6 +472,30 @@ inputs and the selected verifier. Omit `--export-directory` for this role.
 The verifier reassembles and hashes the ciphertext. Authentication,
 immutable image import and application restore remain separate operations.
 
+On the isolated Linux recovery host, `retained_image_load.py verify`
+authenticates the image without contacting Docker. Use the same inputs
+with `load` and add `--docker-socket` for the explicit local recovery daemon
+and `--attempt` for a fresh directory under an owner-private parent.
+
+```bash
+python3 ./experiments/server/retained_image_load.py verify \
+  --ciphertext "$imageCiphertext" --completion "$exportCompletion" \
+  --completion-sha256 "$completionSha" --recipient-key "$recipientPrivateDer" \
+  --inventory-sha256 "$inventorySha" --image core --image-id "$expectedImageId" \
+  --staging "$privateStaging"
+```
+
+The load checks for containers on that daemon, records an exclusive intent,
+and passes only the verified anonymous archive to
+[`docker image load --platform linux/amd64`](https://docs.docker.com/reference/cli/docker/image/load/).
+It compares the resulting immutable image ID and platform and checks again
+that the daemon has no containers. Keep the attempt after a timeout or
+unverified reply. Docker may have received the archive, so inspect the same
+isolated daemon before taking further action. The command never starts a
+container or accepts application restore. Configure the daemon for isolated
+recovery and apply a host-level deadline and disk limit to the Docker process
+and its data directory.
+
 [action-run-command]: https://learn.microsoft.com/en-us/azure/virtual-machines/linux/run-command
 [docker-image-inspect]: https://docs.docker.com/reference/cli/docker/image/inspect/
 
