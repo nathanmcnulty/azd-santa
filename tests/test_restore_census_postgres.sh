@@ -4,10 +4,23 @@ cd "$(dirname "$0")/.."
 
 image="$(python -c 'import json; print(json.load(open("experiments/server/dependency-images.lock.json"))["postgres"])')"
 [[ "$image" =~ ^postgres@sha256:[0-9a-f]{64}$ ]]
+fixture_root="$(mktemp -d)"
+container=''
+cleanup() {
+  if [[ -n "$container" ]]; then docker rm -f "$container" >/dev/null; fi
+  rm -rf -- "$fixture_root"
+}
+trap cleanup EXIT
+mkdir -m 1777 "$fixture_root/socket"
+python -m venv "$fixture_root/venv"
+fixture_python="$fixture_root/venv/bin/python"
+"$fixture_python" -m pip install --only-binary=:all: \
+  Django==5.2.18 psycopg2-binary==2.9.11 asgiref==3.8.1 sqlparse==0.6.0
 container="$(docker run --detach --network none --memory 512m --cpus 1 --pids-limit 128 \
   --tmpfs /var/lib/postgresql:rw,size=256m --env POSTGRES_HOST_AUTH_METHOD=trust \
-  "$image" -c listen_addresses=)"
-trap 'docker rm -f "$container" >/dev/null' EXIT
+  --env POSTGRES_DB=santa_census_fixture \
+  --mount "type=bind,source=$fixture_root/socket,target=/fixture-socket" \
+  "$image" -c listen_addresses= -c unix_socket_directories=/var/run/postgresql,/fixture-socket)"
 
 # Wait for the actual postgres process, since initdb also starts a temporary
 # socket-only postmaster while the entrypoint still owns PID 1.
@@ -59,3 +72,6 @@ DO $$ DECLARE observed text[]; BEGIN
 END $$;
 SQL
 } | docker exec -i "$container" psql --no-psqlrc --username postgres --set ON_ERROR_STOP=1
+
+env -i HOME="$fixture_root" PATH="$PATH" LC_ALL=C.UTF-8 \
+  "$fixture_python" tests/run_restore_census_django.py "$fixture_root"
