@@ -6,7 +6,7 @@ param(
     [Parameter(Mandatory)][string] $ExpectedTenantId,
     [Parameter(Mandatory)][string] $ExpectedAccount,
     [string] $ScriptName = 'Get-SantaHealth.sh',
-    [ValidatePattern('^[0-9a-fA-F-]{36}$')][string] $ExistingActionId,
+    [ValidatePattern('^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$')][string] $ExistingActionId,
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')][string] $EnvironmentName = 'default',
     [string] $ResultPath,
     [string] $ReceiptPath,
@@ -146,7 +146,9 @@ if (Test-Path -LiteralPath $ReceiptPath) {
             Comment = "azd-santa health verification for $ExpectedMachineName"
         })
     }
-    if ([string]::IsNullOrWhiteSpace([string]$action.id)) { throw 'Defender did not return a Live Response action ID.' }
+    if ([string]$action.id -notmatch '^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$') {
+        throw 'Defender did not return a valid Live Response action ID. Preserve the private receipt.'
+    }
 
     $receipt.action.id = [string]$action.id
     Save-ActionReceipt -State 'submitted'
@@ -214,7 +216,6 @@ if (Test-Path -LiteralPath $ReceiptPath) {
         Save-ActionReceipt -State $state -Status 'Succeeded'
         throw 'Santa Live Response output did not verify a passed result.'
     }
-    Save-ActionReceipt -State 'verified-completion' -Status 'Succeeded'
     New-Item -ItemType Directory -Path (Split-Path -Parent $ResultPath) -Force | Out-Null
     [ordered]@{
         schemaVersion = '1.0'; template = 'azd-santa'; capturedUtc = [DateTime]::UtcNow.ToString('o')
@@ -223,6 +224,7 @@ if (Test-Path -LiteralPath $ReceiptPath) {
         action = [ordered]@{ id = $action.id; status = $completed.status; scriptName = $ScriptName }
         result = $result
     } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
+    Save-ActionReceipt -State 'verified-completion' -Status 'Succeeded'
     $completedLabel = if ($ScriptName -eq 'Get-SantaHealth.sh') { 'Live Response health check passed' } else { 'Live Response diagnostic completed' }
     Write-Host "$completedLabel for $ExpectedMachineName. Result: $ResultPath" -ForegroundColor Green
 } catch {

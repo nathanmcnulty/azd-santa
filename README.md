@@ -21,11 +21,21 @@ The deployment-only path must work without Azure compute, a sync server, GitHub,
 
 Santa’s native sync protocol is the correct central path for event upload, settings, and rule download. Offer profiles rather than forcing one server:
 
-1. **Workshop integration** — official managed service; recommended production option when an external service is acceptable.
-2. **Existing compatible server** — document integration with mature servers such as Zentral after version/protocol validation.
-3. **Azure-native sync service** — an advanced project profile, implemented only after a protocol compatibility and security spike.
+1. **Self-hosted Azure backend** — the current development focus: a pinned community Zentral core backend on a VM, followed by an equivalent Container Apps test deployment and cost comparison.
+2. **Existing compatible server** — integrate after version/protocol validation.
+3. **Workshop integration** — the official managed-service option when an external service is appropriate.
 
 For Git-backed operation, normalized Santa events produce deterministic candidate rule manifests. GitHub or Azure DevOps pull requests carry the proposed rule changes. Human approval gates publication to the selected sync server. Telemetry or AI output must never become an allow rule directly.
+
+The optional [private VM installation](experiments/vm/README.md) automates host
+provisioning and backend setup through azd. Its selected private server tests
+are separate from native Mac and production acceptance. Start with the
+[backend status and remaining gates](docs/backend-status.md); the default
+Intune path still needs no backend or Azure compute.
+
+The next stage is [real-server qualification](docs/server-qualification.md),
+including a private core-only Zentral build experiment. This is development
+tooling, not yet the simple supported backend deployment offered to admins.
 
 ## Recommended architecture
 
@@ -131,6 +141,15 @@ the [Phase 0 evidence snapshot](docs/phase-0-evidence.md).
 
 ## Primary references
 
+Optional sync and rule work is documented separately in the
+[sync-provider setup and qualification guide](docs/sync-profiles.md) and the
+[offline rule-candidate draft guide](docs/candidate-drafts.md). The local draft
+generator does not publish rules or change the deployment baseline. Provider/Mac
+qualification, approval and publication remain tracked in the backlog.
+The [owned sync-profile publisher](docs/intune-sync-profile-publisher.md) is
+default-off and requires separate explicit Apply; offline tests do not establish
+Intune delivery or native Santa sync behavior.
+
 - [Santa repository](https://github.com/northpolesec/santa)
 - [Santa deployment: getting started](https://northpole.dev/deployment/getting-started/)
 - [Install the Santa package](https://northpole.dev/deployment/install-package/)
@@ -155,3 +174,7 @@ dependencies retain their respective terms. See [third-party notices](THIRD_PART
 Phase 0 one-device deployment is in progress. The immutable upstream PKG passed SHA-256, installer-identity, Gatekeeper online-notarization, and package-metadata verification on macOS; the upstream artifact has no stapled ticket, so offline installability is not claimed. All five profiles reported remediated on the exact pilot Mac. The verified PKG was uploaded to Intune, published as `Santa 2026.8 (azd-santa pilot)`, and assigned Required only to the one-member pilot group. Intune reported the app installed on `C02GF7BBQ6L4` at `2026-09-22T00:37:18Z`. Defender Live Response verified that ASDF2 maps to `C02GF7BBQ6L4`, Santa `2026.8` is in Monitor mode, its doctor checks report no configuration errors, and the Santa Endpoint Security extension is activated and enabled. Intune also reported a successful run of the assigned health script on that exact Mac at `2026-09-22T06:41:26Z`. Sync-server compatibility and controlled rule behavior remain unproven.
 
 Saved package, assignment, required-profile and Mac-health artifacts can be inspected independently with the [local artifact inspector](docs/artifact-inspection.md) on PowerShell 7.6+. Its results describe artifact conformance; current Mac readiness stays pending until separately authorized service and endpoint evidence is collected.
+
+The [self-hosted Azure public-sync spike](docs/azure-sync-spike.md) compares a pinned
+maintained server with a minimal implementation and includes a loopback-only
+synthetic HTTP harness. It selects no production server and enables no sync.

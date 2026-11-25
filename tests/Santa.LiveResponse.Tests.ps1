@@ -106,6 +106,21 @@ Describe 'Private Live Response receipts and bounded polling' {
         (& $runner @parameters -WarningAction SilentlyContinue).state | Should -Be 'polling-timeout'
         (Get-Content $receiptPath -Raw | ConvertFrom-Json).action.id | Should -Be $actionId
     }
+    It 'keeps an uncertain receipt when Defender returns a malformed action ID' {
+        Add-Response @{ id = 'unexpected/path' }
+        { & $runner @parameters } | Should -Throw '*valid Live Response action ID*'
+        $receipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
+        $receipt.state | Should -Be 'submission-uncertain'
+        $receipt.action.id | Should -BeNullOrEmpty
+        @($handler.Requests | Where-Object { $_ -like '*machineactions/*' }).Count | Should -Be 0
+    }
+    It 'keeps completion unverified when the success artifact cannot be written' {
+        $null = New-Item -ItemType Directory -Path $resultPath
+        Add-Response @{ id = $actionId }
+        Add-Success
+        { & $runner @parameters } | Should -Throw
+        (Get-Content $receiptPath -Raw | ConvertFrom-Json).state | Should -Be 'result-unverified'
+    }
     It 'rejects wrong-target actions before interpreting failure or success' {
         Add-Response @{ id = $actionId }; Add-Action 'Failed' ('b' * 40)
         { & $runner @parameters } | Should -Throw '*expected action and machine*'

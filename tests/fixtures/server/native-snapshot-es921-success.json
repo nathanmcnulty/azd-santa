@@ -1,0 +1,35 @@
+{
+  "snapshots": [
+    {
+      "snapshot": "backup_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "uuid": "DDDDDDDDDDDDDDDDDDDDDD",
+      "repository": "azd_santa_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "version_id": 9039001,
+      "version": "9.2.0-9.2.1",
+      "indices": [
+        "santa-events"
+      ],
+      "data_streams": [],
+      "include_global_state": true,
+      "metadata": {
+        "azd_santa_binding_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "azd_santa_plan_sha256": "8de48f14a63fe3a4a1f7b6a7bfeb63c8ff1a8ed395c54fee99e3b3ffbe310ea4"
+      },
+      "state": "SUCCESS",
+      "start_time": "2026-11-07T00:00:00.000Z",
+      "start_time_in_millis": 1794009600000,
+      "end_time": "2026-11-07T00:00:01.000Z",
+      "end_time_in_millis": 1794009601000,
+      "duration_in_millis": 1000,
+      "failures": [],
+      "shards": {
+        "total": 1,
+        "failed": 0,
+        "successful": 1
+      },
+      "feature_states": []
+    }
+  ],
+  "total": 1,
+  "remaining": 0
+}

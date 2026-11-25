@@ -1,0 +1,84 @@
+{
+  "purpose": "Illustrative retail compute inputs, not selected resources or a complete quote",
+  "assumptions": {
+    "hoursPerMonth": 730,
+    "currency": "USD",
+    "region": "eastus",
+    "billing": "PAYG retail, no negotiated discount",
+    "capacityNotBenchmarked": true
+  },
+  "sources": [
+    {
+      "retrieved": "2026-10-19",
+      "sourceUrl": "https://prices.azure.com/api/retail/prices?%24filter=serviceName+eq+%27Azure+Container+Apps%27+and+armRegionName+eq+%27eastus%27+and+priceType+eq+%27Consumption%27&currencyCode=USD",
+      "meters": [
+        {
+          "meterId": "2937c12a-555a-58f0-86fb-11db356f5fb0",
+          "meterName": "Standard vCPU Idle Usage",
+          "skuName": "Standard",
+          "armRegionName": "eastus",
+          "currencyCode": "USD",
+          "retailPrice": 3e-06,
+          "unitOfMeasure": "1 Second",
+          "effectiveStartDate": "2022-06-01T00:00:00Z"
+        },
+        {
+          "meterId": "6182558d-40bc-542b-be54-ee63b15881e4",
+          "meterName": "Standard Requests",
+          "skuName": "Standard",
+          "armRegionName": "eastus",
+          "currencyCode": "USD",
+          "retailPrice": 0.4,
+          "unitOfMeasure": "1M",
+          "effectiveStartDate": "2022-06-01T00:00:00Z"
+        },
+        {
+          "meterId": "ac22f07d-3385-5dca-a67a-c888b544b546",
+          "meterName": "Standard Memory Idle Usage",
+          "skuName": "Standard",
+          "armRegionName": "eastus",
+          "currencyCode": "USD",
+          "retailPrice": 3e-06,
+          "unitOfMeasure": "1 GiB Second",
+          "effectiveStartDate": "2022-06-01T00:00:00Z"
+        },
+        {
+          "meterId": "ba69f1c7-e68f-56b1-bc7e-79aa26713625",
+          "meterName": "Standard vCPU Active Usage",
+          "skuName": "Standard",
+          "armRegionName": "eastus",
+          "currencyCode": "USD",
+          "retailPrice": 2.4e-05,
+          "unitOfMeasure": "1 Second",
+          "effectiveStartDate": "2022-06-01T00:00:00Z"
+        },
+        {
+          "meterId": "f3d673ac-8004-5c9e-a541-8c9eaac1dfea",
+          "meterName": "Standard Memory Active Usage",
+          "skuName": "Standard",
+          "armRegionName": "eastus",
+          "currencyCode": "USD",
+          "retailPrice": 3e-06,
+          "unitOfMeasure": "1 GiB Second",
+          "effectiveStartDate": "2022-06-01T00:00:00Z"
+        }
+      ]
+    },
+    {
+      "retrieved": "2026-10-19",
+      "sourceUrl": "https://prices.azure.com/api/retail/prices?%24filter=serviceName+eq+%27Virtual+Machines%27+and+armRegionName+eq+%27eastus%27+and+armSkuName+eq+%27Standard_D2as_v5%27+and+priceType+eq+%27Consumption%27&currencyCode=USD",
+      "meters": [
+        {
+          "meterId": "1b68f892-2b90-52b4-b5da-5c106f0be4f4",
+          "meterName": "D2as v5",
+          "skuName": "Standard_D2as_v5",
+          "armRegionName": "eastus",
+          "currencyCode": "USD",
+          "retailPrice": 0.086,
+          "unitOfMeasure": "1 Hour",
+          "effectiveStartDate": "2021-12-01T00:00:00Z"
+        }
+      ]
+    }
+  ]
+}

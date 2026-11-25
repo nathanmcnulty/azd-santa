@@ -1,0 +1,222 @@
+"""Prepare a private, synthetic Zentral evaluation; never enroll a real device.
+
+No network calls or upstream code execution. Full archive provenance and the
+source-to-built-image binding remain the caller's responsibility.
+"""
+import argparse
+import copy
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+
+COMMIT = '88e67b3ce49033aab028029937a6e14f7c489073'
+SOURCE_URL = f'https://github.com/zentralopensource/zentral/tree/{COMMIT}'
+SOURCE_HASHES = {
+    'Dockerfile': 'dd06e76e0b325684c0c07734cfb1b951218678fb454b8af18e719f309c2e94e1',
+    'LICENSE': '00f43b4775da6dcbe63d20b3b2c36e616f35af5595d02c590278e75d9d86793c',
+    'conf/start/zentral/base.json': 'ffd5c071c63d15ca5c529d522855345de814e8473f493eb973d2487aa7c44c2a',
+}
+DEPENDENCIES = ('postgres', 'redis', 'rabbitmq', 'elasticsearch')
+DIGEST_REF = re.compile(r'[a-z0-9][a-z0-9./:_-]*@sha256:[0-9a-f]{64}')
+IMAGE_ID = re.compile(r'sha256:[0-9a-f]{64}')
+REDIS_COMMAND = ['redis-server', '--appendonly', 'yes', '--appendfsync', 'always',
+                 '--aof-load-truncated', 'no', '--maxmemory-policy', 'noeviction',
+                 '--no-appendfsync-on-rewrite', 'no', '--save', '']
+OPTIONAL_APPS = ('zentral.contrib.jamf', 'zentral.contrib.munki',
+                 'zentral.contrib.osquery', 'zentral.contrib.turbo')
+
+
+def write_new(path, value, mode=0o600):
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
+    with os.fdopen(descriptor, 'w', encoding='utf-8', newline='\n') as stream:
+        stream.write(value)
+
+
+def json_text(value):
+    return json.dumps(value, indent=2, sort_keys=True) + '\n'
+
+
+def prepare(source, image, lock, destination, variant='upstream-evaluation', *, app_profile=None, https_origin=None):
+    if https_origin is not None and (type(https_origin) is not str or not re.fullmatch(
+            r'https://santa-[a-f0-9]{16}-[a-z0-9-]{2,32}-vm\.[a-z0-9]{2,32}\.cloudapp\.azure\.com', https_origin)):
+        raise ValueError('Canonical selected HTTPS origin required')
+    if https_origin is not None and variant != 'core-experiment':
+        raise ValueError('Fresh HTTPS origin requires the maintained core profile')
+    if variant not in ('upstream-evaluation', 'core-experiment'):
+        raise ValueError('Unknown evaluation image variant')
+    if app_profile is None:
+        app_profile = 'santa' if variant == 'core-experiment' else 'upstream'
+    if app_profile not in ('upstream', 'santa'):
+        raise ValueError('Unknown evaluation app profile')
+    split_roles = variant == 'core-experiment'
+    source = Path(source).resolve(strict=True)
+    if not source.is_dir() or not IMAGE_ID.fullmatch(image):
+        raise ValueError('A source directory and local sha256 image ID are required')
+    if not isinstance(lock, dict) or set(lock) != set(DEPENDENCIES):
+        raise ValueError('Image lock must contain exactly the four dependency names')
+    if any(not isinstance(ref, str) or not DIGEST_REF.fullmatch(ref)
+           for ref in lock.values()):
+        raise ValueError('Every dependency must have a digest-pinned image reference')
+    for name, expected in SOURCE_HASHES.items():
+        path = source / name
+        if path.is_symlink() or not path.resolve().is_relative_to(source):
+            raise ValueError('Source input escapes its root')
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise ValueError('Pinned source input differs: ' + name)
+    config = copy.deepcopy(json.loads((source / 'conf/start/zentral/base.json').read_text(encoding='utf-8')))
+    if app_profile == 'santa':
+        # Fresh-install qualification only. Keep core/inventory dependencies and
+        # all telemetry services; do not remove apps from an existing database.
+        for name in OPTIONAL_APPS:
+            config['apps'].pop(name, None)
+    config['api'] = {'fqdn': 'localhost:8000',
+                     'metrics_bearer_token': '{{ env:ZENTRAL_METRICS_TOKEN }}'}
+    config['extra_links'] = []
+    config['django'].update({
+        'DEBUG': False, 'STATIC_WHITENOISE': True,
+        'ALLOWED_HOSTS': ['localhost', '127.0.0.1'],
+        'SECRET_KEY': '{{ env:ZENTRAL_DJANGO_SECRET }}',
+        'POSTGRES_HOST': 'db', 'POSTGRES_NAME': 'zentral',
+        'POSTGRES_USER': '{{ env:POSTGRES_USER }}' if split_roles else 'zentral',
+        'POSTGRES_PASSWORD': '{{ env:POSTGRES_PASSWORD }}',
+        'CELERY_BROKER_URL': '{{ env:ZENTRAL_QUEUE_URL }}',
+    })
+    if https_origin is not None:
+        host = https_origin.removeprefix('https://')
+        # Pinned upstream api_base_url/APIDict derive HTTPS/tls_hostname from fqdn.
+        config['api']['fqdn'] = host
+        config['django'].update(ALLOWED_HOSTS=['localhost', '127.0.0.1', host],
+            CSRF_TRUSTED_ORIGINS=[https_origin], AZD_SANTA_HTTPS_ORIGIN=https_origin)
+    config['queues'] = {'backend': 'zentral.core.queues.backends.kombu',
+                        'backend_url': '{{ env:ZENTRAL_QUEUE_URL }}'}
+    # Keep the upstream supported Redis cache, notifications and ES store. This
+    # deliberately does not invent a DB-backed queue or silently drop telemetry.
+    config['notifier'] = {'url': 'redis://redis:6379/15'}
+    config['apps']['zentral.core.stores']['provisioning']['stores']['elasticsearch']['elasticsearch_kwargs']['hosts'] = ['http://elastic:9200']
+    rabbit_password = secrets.token_urlsafe(36)
+    database = {
+        'POSTGRES_DB': 'zentral', 'POSTGRES_USER': 'zentral_owner' if split_roles else 'zentral',
+        'POSTGRES_PASSWORD': secrets.token_urlsafe(48),
+    }
+    broker = {'RABBITMQ_DEFAULT_USER': 'zentral', 'RABBITMQ_DEFAULT_PASS': rabbit_password}
+    runtime = {
+        'POSTGRES_PASSWORD': secrets.token_urlsafe(48) if split_roles else database['POSTGRES_PASSWORD'],
+        'ZENTRAL_DJANGO_SECRET': secrets.token_urlsafe(64),
+        'ZENTRAL_METRICS_TOKEN': secrets.token_urlsafe(48),
+        'AZD_SANTA_SECURITY_STORE_ID': secrets.token_hex(32),
+        'ZENTRAL_QUEUE_URL': f'amqp://zentral:{rabbit_password}@rabbitmq:5672//',
+    }
+    if split_roles:
+        runtime['POSTGRES_USER'] = 'zentral_runtime'
+    logging = {'driver': 'json-file', 'options': {'max-size': '10m', 'max-file': '3'}}
+
+    def service(ref, memory):
+        return {'image': ref, 'pull_policy': 'never' if ref == image else 'missing',
+                'restart': 'no', 'mem_limit': memory, 'logging': copy.deepcopy(logging),
+                'security_opt': ['no-new-privileges:true']}
+
+    services = {
+        'db': {**service(lock['postgres'], '384m'), 'env_file': ['./db.env'],
+               'volumes': ['postgres_data:/var/lib/postgresql']},
+        'redis': {**service(lock['redis'], '128m'), 'command': list(REDIS_COMMAND),
+                  'volumes': ['redis_data:/data']},
+        'rabbitmq': {**service(lock['rabbitmq'], '320m'), 'hostname': 'rabbitmq',
+                     'env_file': ['./rabbitmq.env'],
+                     'volumes': ['rabbitmq_data:/var/lib/rabbitmq']},
+        'elastic': {**service(lock['elasticsearch'], '896m'),
+                    'environment': {'ES_JAVA_OPTS': '-Xms256m -Xmx256m',
+                                    'discovery.type': 'single-node',
+                                    'path.repo': '/mnt/azd-santa-snapshots',
+                                    'xpack.security.enabled': 'false'},
+                    'volumes': ['elasticsearch_data:/usr/share/elasticsearch/data',
+                                'elasticsearch_snapshots:/mnt/azd-santa-snapshots']},
+    }
+    for name, command, memory in (
+            ('web', ['gunicorn', '--bind', '0.0.0.0:8000', '--workers', '1', '--threads', '2'], '512m'),
+            ('workers', ['runworkers'], '640m'),
+            ('celery', ['celery', '--concurrency', '1'], '384m')):
+        services[name] = {
+            **service(image, memory), 'command': command,
+            'env_file': ['./runtime.env'],
+            'environment': {'ZENTRAL_CONF_DIR': '/zentral-eval-conf'},
+            'volumes': ['./conf:/zentral-eval-conf:ro', 'media_data:/var/zentral'],
+            'depends_on': ['db', 'redis', 'rabbitmq', 'elastic'],
+        }
+    services['web']['ports'] = ['127.0.0.1:8000:8000']
+    compose = {'name': 'santa-zentral-eval-' + secrets.token_hex(6), 'services': services,
+               'volumes': {name: {} for name in (
+                   'postgres_data', 'redis_data', 'rabbitmq_data', 'elasticsearch_data', 'media_data', 'elasticsearch_snapshots')}}
+    # Atomic reservation before any output. Failed preparation leaves evidence;
+    # callers must inspect it and choose a new destination rather than retry over it.
+    destination = Path(destination).absolute()
+    destination.mkdir(mode=0o700)
+    (destination / 'conf').mkdir(mode=0o755)
+    # Docker's non-root Zentral user must read this secret-free configuration,
+    # even when the invoking root bootstrap uses umask 077.
+    (destination / 'conf').chmod(0o755)
+    write_new(destination / 'conf/base.json', json_text(config), 0o644)
+    (destination / 'conf/base.json').chmod(0o644)
+    for filename, values in (('db.env', database), ('rabbitmq.env', broker), ('runtime.env', runtime)):
+        write_new(destination / filename, ''.join(f'{key}={value}\n' for key, value in values.items()))
+    if split_roles:
+        migration = {**runtime, 'POSTGRES_USER': database['POSTGRES_USER'],
+                     'POSTGRES_PASSWORD': database['POSTGRES_PASSWORD']}
+        # Never referenced by a normal service. Only explicit privileged jobs
+        # may receive this file; runtime's password remains in its own file.
+        write_new(destination / 'migration.env', ''.join(f'{key}={value}\n' for key, value in migration.items()))
+    write_new(destination / 'compose.json', json_text(compose))
+    write_new(destination / 'LICENSE.upstream', (source / 'LICENSE').read_text(encoding='utf-8'))
+    write_new(destination / 'provenance.json', json_text({
+        'scope': 'synthetic-loopback-evaluation-only', 'upstream_commit': COMMIT,
+        'upstream_source': SOURCE_URL, 'checked_source_files': SOURCE_HASHES,
+        'local_image_id': image, 'dependency_images': lock,
+        'declared_image_variant': variant,
+        'app_profile': app_profile,
+        'database_roles': ('fresh-only separated initialization/runtime; live qualification pending'
+                           if split_roles else 'upstream-evaluation shared role; unmodified entrypoint'),
+        'secret_environment_files': {
+            'db': 'db.env', 'rabbitmq': 'rabbitmq.env',
+            'web': 'runtime.env', 'workers': 'runtime.env', 'celery': 'runtime.env'},
+        'security_store': {'persistence': 'AOF always; no truncated load; no eviction',
+                           'initialization': 'not initialized; explicit privileged fresh/migrate command required',
+                           'restore_authority': 'not reconciled; marker is not an external rollback anchor'},
+        'limitations': ['Image variant is a caller declaration, not production license clearance',
+                        'Caller must verify full source archive and build binding',
+                        'Memory caps are test constraints, not proven sizing',
+                        'Database role/runtime grants and explicit initialization require separate live qualification',
+                        'No real device enrollment, public TLS or device authentication'],
+    }))
+    variant_notice = (
+        'Core derivation claimed; verify actual image contents and dependency licenses.\n'
+        if variant == 'core-experiment' else
+        'The standard upstream image includes ee/ under its evaluation license.\n')
+    write_new(destination / 'EVALUATION-ONLY.txt',
+              f'Private synthetic Zentral evaluation only. Source: {SOURCE_URL}\n'
+              + variant_notice +
+              'Do not publish this image or treat it as a core-only production package.\n'
+              'No real devices, public ingress or production credentials.\n'
+              'HTTP is loopback-only; generated payload HTTPS URLs are not qualified.\n'
+              'Keep upstream license and notices; consult upstream terms before further use.\n')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--source', required=True)
+    parser.add_argument('--image', required=True)
+    parser.add_argument('--lock', required=True)
+    parser.add_argument('--destination', required=True)
+    parser.add_argument('--variant', choices=('upstream-evaluation', 'core-experiment'), default='upstream-evaluation')
+    parser.add_argument('--app-profile', choices=('upstream', 'santa'),
+                        help='Fresh only: defaults to Santa for core, upstream for upstream evaluation')
+    args = parser.parse_args()
+    with open(args.lock, encoding='utf-8') as stream:
+        lock = json.load(stream)
+    prepare(args.source, args.image, lock, args.destination, args.variant, app_profile=args.app_profile)
+    print('Prepared private synthetic evaluation; no service started.')
+
+
+if __name__ == '__main__':
+    main()

@@ -22,6 +22,11 @@ script_name. No automatic POST retry occurs. Invocations sharing a receipt are s
 using a persistent, empty `.lock` file; a stopped process releases the lock.
 Do not choose a new receipt path to bypass an uncertain submission.
 
+If an azd postprovision run already created a receipt, use the same action
+runner with `-ExistingActionId` to collect the result. Leave automatic Live
+Response execution disabled for subsequent `azd up` runs in that environment
+unless you intend to start a separate diagnostic.
+
 Receipt states:
 
 - `submitted`, `not-yet-visible`, `pending`: polling is still underway.

@@ -5,9 +5,9 @@
 
 - **Schema version:** 1.0.0
 - **Repository:** nathanmcnulty/azd-santa
-- **Source revision:** `bc9c9a4124796a11db677aea90c038727da46f4f`
-- **Captured:** 2026-10-04
-- **Items:** 6
+- **Source revision:** `4b837cd9447fcf231706b72005545bbe4092f25d`
+- **Captured:** 2026-10-19
+- **Items:** 8
 
 ## SANTA-001: Reconcile this backlog with current source and active work
 
@@ -244,7 +244,7 @@ Review SANTA-005 against the current repository state. Its status or authorizati
 
 - **Kind:** discovery
 - **Priority:** P2
-- **Status:** proposed
+- **Status:** done
 - **Wave:** 3
 - **Authorization:** local-only
 - **Blocker:** _none_
@@ -282,10 +282,16 @@ Santa native sync is required for scalable rules; custom Azure hosting is only a
 **Sources:**
 
 - README.md
+- docs/sync-profiles.md
+- package/santa.lock.json
+- https&colon;//github.com/northpolesec/santa/blob/dbe97b0aa0f5929feece5f4cbd2c69362c271abc/docs/docs/features/sync.md
+- https&colon;//northpole.security/docs/workshop/settings
+- https&colon;//www.zentral.com/docs/zentral/apps/santa/
 
 **Evidence:**
 
-- _none_
+- 2026-10-16 discovery against repository b636b4c10cf2947348114839a3c4b226558c6de5 and pinned Santa 2026.8.244 source dbe97b0aa0f5929feece5f4cbd2c69362c271abc. docs/sync-profiles.md describes Workshop and existing Zentral setup packets, independently selected provider revisions, protocol/version evidence, secret-bearing enrollment profiles and MDM ownership boundaries. No particular live server/client pair is claimed compatible.
+- The Azure-native option remains an unimplemented scoped protocol/security spike. Baseline profiles and runtime retain Monitor mode and no SyncBaseURL; no provider profile is generated, merged, uploaded or assigned by this discovery change. SANTA-002 and SANTA-007 retain real-Mac/profile/provider/rule/rollback qualification.
 
 **Review and authorization note:**
 
@@ -295,11 +301,14 @@ Review SANTA-003 against the current repository state. Its status or authorizati
 
 - **Kind:** discovery
 - **Priority:** P2
-- **Status:** proposed
+- **Status:** in-progress
 - **Wave:** 3
 - **Authorization:** local-only
 - **Blocker:** _none_
-- **Claim:** _none_
+- **Claim owner:** codex-santa-candidates
+- **Claim worktree:** C&colon;&bsol;azd-reconciliation-20261015&bsol;santa-action-maintenance
+- **Claim base revision:** `b636b4c10cf2947348114839a3c4b226558c6de5`
+- **Claim started:** 2026-10-16T11&colon;20&colon;41.8010717+00&colon;00
 
 **Problem:**
 
@@ -308,7 +317,9 @@ Optional telemetry must never directly authorize allow rules.
 **Scope:**
 
 - docs/
-- config/
+- scripts/Santa.Candidates.psm1
+- scripts/New-SantaRuleCandidate.ps1
+- schemas/candidate-1.1.schema.json
 - tests/
 
 **Acceptance:**
@@ -333,6 +344,71 @@ Optional telemetry must never directly authorize allow rules.
 **Sources:**
 
 - README.md
+- docs/candidate-drafts.md
+- scripts/New-SantaRuleCandidate.ps1
+- scripts/Santa.Candidates.psm1
+- schemas/event.schema.json
+- schemas/candidate-1.1.schema.json
+- tests/Santa.Candidates.Tests.ps1
+
+**Evidence:**
+
+- Source implementation adds a local-only deterministic 1.1 draft generator with an explicit binary policy, bounded normalized input, evidence/identity/output digests, review expiry, aggregate-only output and unperformed-counterfactual null. The existing 1.0 candidate/rule contracts remain unchanged. docs/candidate-drafts.md defines evidence, approval, conflict, publication and rollback boundaries.
+- Partial progress only&colon; normalization/provenance, performed counterfactuals against effective rules, bound human approval, optional GitHub/Azure DevOps transports, authorized publisher and real endpoint/rollback/Monitor-to-Lockdown gates remain open. A generated draft is not approval, rule delivery, effective enforcement or a live rule expiry mechanism.
+- PowerShell 7.6.6/Pester 6.2.0 required offline validation passed all 111 repository tests &lpar;14 candidate cases&rpar;, with zero parser/analyzer findings. Independent review recomputed all three digest stages and exact output bytes outside the production implementation. Existing generated Monitor profiles, package and 1.0 contracts remain unchanged; no service, Graph, assignment, rule publication or endpoint operation occurred.
+
+**Review and authorization note:**
+
+Review SANTA-004 against the current repository state. Its status or authorization class is not eligible for an actionable generated handoff. Do not claim or execute it without explicit selection, satisfied dependencies, and every required authorization. Never interpret this generated view as approval.
+
+## SANTA-007: Qualify a selected sync provider on the one-device Monitor pilot
+
+- **Kind:** verification
+- **Priority:** P2
+- **Status:** proposed
+- **Wave:** 3
+- **Authorization:** tenant-write
+- **Blocker:** _none_
+- **Claim:** _none_
+
+**Problem:**
+
+Provider documentation and protocol fixtures do not prove pinned-client compatibility, actual rule application or rollback on the selected Mac.
+
+**Scope:**
+
+- docs/sync-profiles.md
+- Private provider configuration and one-device endpoint evidence
+- Owned pilot profiles, credentials and rule receipts
+
+**Acceptance:**
+
+- Select and authorize the exact provider release/configuration, pilot Mac, authentication, MDM objects/assignment and harmless test rule before mutation; preserve one-device Monitor mode.
+- Prove effective profile delivery, prerequisites, authenticated preflight, event handling, complete paged rule download, postflight and controlled client behavior separately; source/fixtures/server acceptance do not prove endpoint application.
+- Exercise authentication failure, interrupted download, stale/offline client and provider switching with a reviewed preservation plan; prove exact owned-rule/configuration rollback and effective client state.
+- Remove or rotate only confirmed owned unshared pilot credentials, rules, profiles and assignments; retain redacted source/provider/target-bound receipts. No broader assignment or Lockdown promotion is authorized by this item.
+
+**Validation:**
+
+- ./scripts/Test-SantaTemplate.ps1
+- Invoke-Pester ./tests -CI
+- Follow docs/sync-profiles.md with separately selected provider/target and authorization; retain private service and endpoint evidence.
+
+**Dependencies:**
+
+- nathanmcnulty/azd-santa&colon;SANTA-002
+- nathanmcnulty/azd-santa&colon;SANTA-003
+
+**Components:**
+
+- _none_
+
+**Sources:**
+
+- docs/sync-profiles.md
+- docs/candidate-drafts.md
+- AGENTS.md
+- package/santa.lock.json
 
 **Evidence:**
 
@@ -340,4 +416,65 @@ Optional telemetry must never directly authorize allow rules.
 
 **Review and authorization note:**
 
-Review SANTA-004 against the current repository state. Its status or authorization class is not eligible for an actionable generated handoff. Do not claim or execute it without explicit selection, satisfied dependencies, and every required authorization. Never interpret this generated view as approval.
+Review SANTA-007 against the current repository state. Its status or authorization class is not eligible for an actionable generated handoff. Do not claim or execute it without explicit selection, satisfied dependencies, and every required authorization. Never interpret this generated view as approval.
+
+## SANTA-008: Spike self-hosted Azure public sync architecture and protocol security
+
+- **Kind:** discovery
+- **Priority:** P2
+- **Status:** in-progress
+- **Wave:** 3
+- **Authorization:** local-only
+- **Blocker:** _none_
+- **Claim owner:** codex-santa-backend-coordinator
+- **Claim worktree:** E&colon;/azd-santa-worktrees/durable-spike-20261022
+- **Claim base revision:** `7b396fd4f8eda7b970d7294b525d8cfcd2c627cc`
+- **Claim started:** 2026-11-06T19&colon;28&colon;04Z
+
+**Problem:**
+
+The operator selected self-hosted Azure, but server implementation, identity binding, cost and native compatibility remain unqualified.
+
+**Scope:**
+
+- docs/azure-sync-spike.md
+- tools/sync&lowbar;spike/
+- tests/Santa.SyncSpike.Tests.ps1
+- azd-permissions.json
+
+**Acceptance:**
+
+- Compare a pinned maintained server with a minimal custom design before selecting implementation; preserve default compute-free baseline.
+- Trace pinned public client/proto behavior and exercise synthetic local HTTP stages and adversarial cases without claiming native interoperability.
+- Separate per-device enrollment, operator administration and explicitly approved immutable rule publication; record remaining deployment/native gates.
+
+**Validation:**
+
+- python tools/sync&lowbar;spike/test&lowbar;conformance.py
+- ./scripts/Test-SantaTemplate.ps1
+- Invoke-Pester ./tests -CI
+
+**Dependencies:**
+
+- nathanmcnulty/azd-santa&colon;SANTA-003
+
+**Components:**
+
+- _none_
+
+**Sources:**
+
+- https&colon;//github.com/nathanmcnulty/azd-santa/issues/37
+- https&colon;//github.com/nathanmcnulty/azd-santa/pull/31
+- docs/azure-sync-spike.md
+- tools/sync&lowbar;spike/model.py
+
+**Evidence:**
+
+- 2026-10-19 reconciled main and all open drafts; reuse exact reviewed PR &num;31 4b837cd9447fcf231706b72005545bbe4092f25d and &num;32 receipt. &num;36 retains profile planning; &num;33 retains native and selected-provider qualification.
+- Original loopback-only public-v1 subset models bounded synthetic authentication, compressed JSON, replay handling, immutable paging and empty/rollback refusal. This is not a production server, native Santa test, permission grant or deployment.
+- Offline template validation passed on PowerShell 7.6.6/Pester 6.2.0 with 112/112 repository tests, including the registered 20-case local HTTP harness. Canonical permission schema and backlog rendering checks passed; generated baseline profiles remain unchanged. Native/Azure qualification, deployment and publication are not authorized or completed.
+
+**Review and authorization note:**
+
+Review SANTA-008 against the current repository state. Its status or authorization class is not eligible for an actionable generated handoff. Do not claim or execute it without explicit selection, satisfied dependencies, and every required authorization. Never interpret this generated view as approval.

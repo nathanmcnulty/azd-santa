@@ -3,8 +3,378 @@
   "solutionId": "azd-santa",
   "status": "implemented",
   "coverage": "partial",
-  "reviewedOn": "2026-10-11",
+  "reviewedOn": "2026-11-06",
   "requirements": [
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "principal": "Explicit selected cached Azure CLI user (existing rights only)",
+      "phase": "deployment",
+      "feature": "pilot-enrollment-transport",
+      "defaultEnabled": false,
+      "scope": "One exact bound private pilot VM and one explicit serial/hardware UUID only",
+      "rationale": "Default Plan has no cloud calls. Explicit Create reuses read-only host attestation and one recipient-sealed enrollment worker; exclusive local intent precedes one bounded Run Command. Optional same-invocation Observe cannot create. Full Monitor profile is written owner-private without console credential exposure. No new scopes, grants, authentication, operator reset or MDM assignment.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "experiments/server/PilotEnrollmentTransport.psm1",
+          "sha256": "eaee072836dce277596abf51af5f3d82a76512aa4349ba40ca27a31b6631c47c"
+        },
+        {
+          "path": "experiments/server/Invoke-SantaPilotEnrollment.ps1",
+          "sha256": "bd9603bc44cd4e8cd16a6f4588b279c3d789bb6d10bc2109f645578b56077558"
+        },
+        {
+          "path": "experiments/server/PilotEnrollmentProfile.cs",
+          "sha256": "203e0a000c11b096c54e1c6a753b713ae910e8acf8a391928b6a41f1b9ebf3a0"
+        },
+        {
+          "path": "experiments/server/pilot_enrollment_host.py",
+          "sha256": "a7f208f323100a20a5fe4e9a98c07a72f6ed95f4a1100817de705adec822fefb"
+        },
+        {
+          "path": "experiments/server/pilot_enrollment.py",
+          "sha256": "8194305b0e6eb1f59845b00a2dff8e9327e972b4a50228c2024c43a746469513"
+        },
+        {
+          "path": "experiments/server/SetupTransport.psm1",
+          "sha256": "8ffe65711792b9a9ab42ac4083b44b66060c2db7a7af4c70f25b4e0c24450219"
+        },
+        {
+          "path": "experiments/server/HttpsEndpoint.psm1",
+          "sha256": "b548c7161c9db5efa35199ca6c12fc430b9393c272b1b0d762fd433c2be65b9d"
+        }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/providers/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Resources/subscriptions/resourceGroups/write; Microsoft.Resources/deployments/read; Microsoft.Resources/deployments/write; Microsoft.Resources/deployments/validate/action; Microsoft.Resources/deployments/whatIf/action; Microsoft.Resources/deployments/exportTemplate/action; Microsoft.Storage/checkNameAvailability/read; Microsoft.Storage/storageAccounts/write; Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/blobServices/write; Microsoft.Storage/storageAccounts/blobServices/containers/write; Microsoft.Storage/storageAccounts/blobServices/containers/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/virtualNetworks/subnets/joinViaServiceEndpoint/action; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read",
+      "principal": "Explicit selected cached independent backup-store deployment operator (existing rights only)",
+      "phase": "deployment",
+      "feature": "independent-backup-store-creation",
+      "defaultEnabled": false,
+      "scope": "Generated fresh independent resource group/storage/deployment in the selected subscription; exact selected source and optional verifier owned subnets only",
+      "rationale": "Default is a no-cloud plan. Explicit Apply verifies cached context, fresh generated names, provider/region and actual owned successful regional Storage endpoints, validates/what-ifs the existing template, repeats preflight and writes exclusive local intent before one fixed-ARM application PUT using an in-memory cached token. Observe never submits; on Succeeded it reads the exact selected subscription deployment through az deployment sub export, which requires Microsoft.Resources/deployments/exportTemplate/action. Export is read-only; an unavailable, denied or malformed export fails closed. No provider registration, network/policy remediation, role grant, SAS/key request, automatic replay or deletion is performed; control-plane races and actual Azure acceptance remain gaps.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "experiments/server/BackupStoreDeployment.psm1",
+          "sha256": "b14e6381fe6078bcdc06a45d943e901e03035a3086b70e8ea9daab58957fe7a0"
+        },
+        {
+          "path": "experiments/server/Invoke-SantaBackupStoreDeployment.ps1",
+          "sha256": "bcb995d8700bd46107282d3364c4c87e5f4589278566a7e1d807d154fcb55d80"
+        },
+        {
+          "path": "experiments/server/HttpsEndpoint.psm1",
+          "sha256": "b548c7161c9db5efa35199ca6c12fc430b9393c272b1b0d762fd433c2be65b9d"
+        },
+        {
+          "path": "experiments/server/BackupStoreSelection.psm1",
+          "sha256": "9e6b14153d46d6b7799718deb87aa50e3c1146ded1db13801926595dbcf11f4b"
+        },
+        {
+          "path": "experiments/backup-store/main.bicep",
+          "sha256": "a4e0e2b6e930b0f79d93ab0f77047dd962aa7bdfc99885732634857279d8e11e"
+        },
+        {
+          "path": "experiments/backup-store/store.bicep",
+          "sha256": "ae6d29b913905beed2949fdbf4c885202c4f68bdfbacdf8c31ef00e208a08d64"
+        }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/virtualNetworks/subnets/write",
+      "principal": "Explicit current cached ARM operator with existing selected-subnet authority, not a workload identity",
+      "phase": "deployment",
+      "feature": "optional-private-vm-storage-endpoint-update",
+      "defaultEnabled": false,
+      "scope": "Exact selected owned canonical subnet and VM instance only, conditional on fresh target/network/ETag checks",
+      "rationale": "Explicit Apply reserves one local attempt, invokes fresh preservation-aware selection, captures cached ARM token only in memory, repeats selection and issues one direct If-Match subnet PUT without proxy/redirect/retry. GET-only same-handle observation cannot replay or infer a lost response. No Bicep/VNet/NSG/VM write, role/provider grant, credential persistence or ingress change. Bounded shared CLI capture is integrated offline; actual cached-token acquisition, selected-network readback and outer invocation containment remain separate required gates.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "experiments/vm/PrivateStorageEndpointUpdate.psm1",
+          "sha256": "aa3fe97def8c437cd4657920299dfbae51a9e2b21b259c52ffc18431999f88f8"
+        },
+        {
+          "path": "experiments/vm/PrivateStorageEndpoint.psm1",
+          "sha256": "34db373583a7ace65a63b76f5d6e01fde4c8d2580537b75075d4189553b25242"
+        },
+        {
+          "path": "experiments/server/HttpsEndpoint.psm1",
+          "sha256": "b548c7161c9db5efa35199ca6c12fc430b9393c272b1b0d762fd433c2be65b9d"
+        }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/virtualNetworks/write; Microsoft.Network/virtualNetworks/subnets/write",
+      "principal": "Explicit selected optional VM deployment operator using existing cached authority; no runtime identity grant",
+      "phase": "deployment",
+      "feature": "optional-private-vm-storage-endpoint",
+      "defaultEnabled": false,
+      "scope": "Exact solution-owned canonical VM network and selected VM instance only; never an unrelated operator subnet or default Intune path",
+      "rationale": "Default-off creation-time Bicep wiring can add regional Microsoft.Storage and retain supplied endpoint entries. GET-only existing-network producer validates current ownership, VM/NIC/subnet links, supported properties, deny-all inbound, ETags and complete before/after reads, returning a subnet-only preservation proposal. It does not deploy or enforce atomic If-Match. Existing-resource authorization, fresh revalidation, provider concurrency and live mutation remain separate gates; metadata authorizes no grant.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "experiments/vm/infra/main.bicep",
+          "sha256": "9d439be79c295a27a74949859ff429841373aaefbcb4b160c3b27c0f069e3e61"
+        },
+        {
+          "path": "experiments/vm/infra/host.bicep",
+          "sha256": "40ffa81ef7d62d22cf28ff8fe538777059a7ee402c5a410e289a2fa28d5a6ce8"
+        },
+        {
+          "path": "experiments/vm/infra/main.parameters.json",
+          "sha256": "be4f6fcd052cde0d775d0ffa57610b2068fbc9c68793acc22394eda71878483b"
+        },
+        {
+          "path": "experiments/vm/PrivateStorageEndpoint.psm1",
+          "sha256": "34db373583a7ace65a63b76f5d6e01fde4c8d2580537b75075d4189553b25242"
+        }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "principal": "Explicit selected cached ARM operator, existing privileged guest Run Command authority only",
+      "phase": "runtime",
+      "feature": "exact-disable-only-presnapshot-continuation",
+      "defaultEnabled": false,
+      "scope": "Exact same-boot privatehook3 pilot and explicitly reviewed failed disable-only predecessor operation; never general backup resume or restore",
+      "rationale": "An explicit offline-plan/default and ContinueDisableOnly Apply route bind the original immutable failed operation, typed loaded commands and positive terminal cgroups before one separate journaled retirement/rebind/start. It creates no role or scope grants and preserves the original ACTIVE/failure. Source/decompression is capped at64KiB and the actual combined transport body independently remains64KiB. Offline tests do not establish live continuation or backup/restore acceptance.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "experiments/server/presnapshot_recovery.py",
+          "sha256": "c27dd335c6a49b7ecf9215180d9f3e7294c162e742ba86d18babdda998430e10"
+        },
+        {
+          "path": "experiments/vm/PrivateHelperUpgrade.psm1",
+          "sha256": "529221780ee1cfd3667aaa8e133b04bcad832222a3d51ba7d7460754a4585249"
+        },
+        {
+          "path": "experiments/vm/PrivatePreSnapshotRecovery.psm1",
+          "sha256": "bc48e68dcf1cf840e1d97557608cadda9a6cba011532434275629ee77e93073b"
+        },
+        {
+          "path": "experiments/vm/Repair-PrivatePreSnapshotFailure.ps1",
+          "sha256": "9ce59ffaf61db19ac92d4838c14fe5bdc3be8b92de3ee9ed6063e8e35e389bbb"
+        }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/blobServices/containers/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read",
+      "principal": "Explicit cached CLI operator selecting an existing independently owned backup store",
+      "phase": "discovery",
+      "feature": "offhost-backup-store-selection",
+      "defaultEnabled": false,
+      "scope": "Exact selected tenant/subscription, independent store RG/account/container and one or two explicitly selected solution VM instances and owned networks",
+      "rationale": "GET-only producer defaults to a no-CLI plan; explicit ReadArm validates cached context, independent RG ownership, VM/network linkage and before/after observations. No authentication fallback, SAS, provisioning, network changes or role grants. Copied receipts are not authority; missing or unrelated resources cannot become create/update eligibility.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "experiments/server/BackupStoreSelection.psm1",
+          "sha256": "9e6b14153d46d6b7799718deb87aa50e3c1146ded1db13801926595dbcf11f4b"
+        },
+        {
+          "path": "experiments/server/backup_store_selection.py",
+          "sha256": "3934eeb139470803086ecbbeba26ed20a2c982c5bd4125a4b88d6e4e2ccd6bdc"
+        },
+        {
+          "path": "experiments/server/HttpsEndpoint.psm1",
+          "sha256": "b548c7161c9db5efa35199ca6c12fc430b9393c272b1b0d762fd433c2be65b9d"
+        }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Resources/subscriptions/resourceGroups/write; Microsoft.Resources/deployments/read; Microsoft.Resources/deployments/write; Microsoft.Resources/deployments/validate/action; Microsoft.Resources/deployments/operations/read; Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/write; Microsoft.Storage/storageAccounts/blobServices/read; Microsoft.Storage/storageAccounts/blobServices/write; Microsoft.Storage/storageAccounts/blobServices/containers/read; Microsoft.Storage/storageAccounts/blobServices/containers/write; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/write; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/virtualNetworks/subnets/write; Microsoft.Network/virtualNetworks/subnets/joinViaServiceEndpoint/action",
+      "principal": "Explicit independent backup-store deployment operator using existing cached authority only",
+      "phase": "deployment",
+      "feature": "offhost-backup-store",
+      "defaultEnabled": false,
+      "scope": "Independently selected backup RG/account with exact ownership marker and only explicitly selected solution-owned source/restore subnets; never unrelated operator networks or the default Intune deployment",
+      "rationale": "Independent opt-in Bicep provides a private container, HTTPS/TLS, default-deny service-endpoint network ACLs and limited soft delete/versioning. Endpoint enablement/provisioning orchestration and independent teardown-preservation proof remain proposed integration. Raw template submission is not ownership preflight, permission approval or permission to register providers, weaken policy, adopt unrelated resources or assign roles.",
+      "evidenceState": "proposed",
+      "evidence": [
+        { "path": "experiments/backup-store/main.bicep", "sha256": "a4e0e2b6e930b0f79d93ab0f77047dd962aa7bdfc99885732634857279d8e11e" },
+        { "path": "experiments/backup-store/store.bicep", "sha256": "ae6d29b913905beed2949fdbf4c885202c4f68bdfbacdf8c31ef00e208a08d64" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/blobServices/containers/read; Microsoft.Storage/storageAccounts/listServiceSas/action; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "principal": "Explicit selected cached ARM operator; source and independent verifier receive only private exact-blob capabilities",
+      "phase": "runtime",
+      "feature": "offhost-ciphertext-retention",
+      "defaultEnabled": false,
+      "scope": "Exact independently owned Storage account/container/blob and verified solution VM instance/NIC/subnet/NSG bindings; one source target and a different selected owned verifier",
+      "rationale": "The private cached-CLI callback reuses the existing selector for fresh independent RG/VM/network readbacks and one exact listServiceSas request and handles short-lived HTTPS create-only/read-only capabilities without account-key retrieval or role assignment. listServiceSas is powerful account-level authority; code blob restriction does not narrow that RBAC action. The typed source relay adds recipient crypto, a once-only journal and strict manager/cgroup terminal checks; actual cached ARM delivery and guest terminal behavior remain integration gates. Blob byte verification does not authenticate the envelope, retain images/portable keys, establish current authority or restore applications.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/server/blob_retention.py", "sha256": "f5aa619725104fa3a4bbe174a7ea4ceb236d9eab68675b8730d90984cb3e1818" },
+        { "path": "experiments/server/blob_capability_relay.py", "sha256": "eb6a5eee83ededf08e78c6203aeb7babc8e36129cf836f2af7ef80be0f6a9a1c" },
+        { "path": "experiments/server/private_arm_adapter.py", "sha256": "5da1bd9c26fe0fead5c1b1c75197dfbd4a2df0ef5de5ab2fd0162ea6b52fbdc4" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/publicIPAddresses/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/networkSecurityGroups/read",
+      "principal": "Explicit selected cached Azure CLI endpoint observer (existing rights only)",
+      "phase": "deployment",
+      "feature": "https-endpoint-readback",
+      "defaultEnabled": false,
+      "scope": "Exact selected tenant/subscription, immutable VM instance and tagged rg-azd-santa-vm-<environment> with linked existing NIC/PIP/subnet/NSG only",
+      "rationale": "Read-only cached selected ARM endpoint producer verifies linked resources and deny-all inbound, then supplies digest-bound nonsecret facts to held-closed offline HTTPS rendering. The existing PIP template adds a stable Azure DNS label only on future authorized provision. No authentication, grants, ingress, certificate order or service startup occurs.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "experiments/server/HttpsEndpoint.psm1",
+          "sha256": "b548c7161c9db5efa35199ca6c12fc430b9393c272b1b0d762fd433c2be65b9d"
+        },
+        {
+          "path": "experiments/server/New-SantaHttpsCandidate.ps1",
+          "sha256": "e9d676487a9fa891cf2df6eef9fd0172fb84aa31a553fec6b385869afc76c119"
+        },
+        {
+          "path": "experiments/server/prepare_https_proxy.py",
+          "sha256": "4c60bc0428cd55a36b108dc937628ba505958b1913fd271bf17874e0746ca9ec"
+        },
+        {
+          "path": "experiments/vm/infra/host.bicep",
+          "sha256": "40ffa81ef7d62d22cf28ff8fe538777059a7ee402c5a410e289a2fa28d5a6ce8"
+        }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action; Microsoft.DevTestLab/schedules/read; Microsoft.DevTestLab/schedules/write",
+      "principal": "Selected optional VM lab azd operator (existing rights only)",
+      "phase": "deployment",
+      "feature": "optional-private-vm-host-and-backend-lifecycle",
+      "defaultEnabled": false,
+      "scope": "Explicit selected environment/subscription and tagged rg-azd-santa-vm-<environment>/vm-santa-lab only",
+      "rationale": "Nested VM postprovision validates the selected account/group/VM outputs and schedules two-hour shutdown for that exact VM, including host-only mode. When SANTA_PRIVATE_BACKEND_INSTALL=true, it additionally transports bounded pinned sources, submits one durable privileged fresh-install job and observes it before nonmutating finalization. SANTA_PRIVATE_HTTPS_ORIGIN=true optionally consumes the existing selected cached HTTPS endpoint reader for a fresh origin-bound profile only. No root Intune hook, network admission, tenant grant or operator reset is added; actual complete ARM/hook/cold-install delivery remains unqualified.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "4d8e11f20af8476e40b98f2ab48b8eadd854729a5eafbdc30a222be4ad298126" },
+        { "path": "experiments/vm/Install-PrivateBackend.ps1", "sha256": "33c620439f5abadef688f4a6f0477e80e4676986beac0cb6d43b975c092320d5" },
+        { "path": "experiments/server/private_install.py", "sha256": "02c02f7c5dea94a2bff9200a225cbb07ddcc062c2bc512027ea80da4abb38f60" },
+        { "path": "experiments/server/private_install_transport.py", "sha256": "38695ddeee431c111339aeaa7210f4a0a79d2bf9702f2076d7fe9fa559c972ef" },
+        { "path": "experiments/server/prepare_zentral_eval.py", "sha256": "879290e2a7e74e0a43e0f2e66f5d537a64a69a069f1021c94403cdcc38384451" },
+        { "path": "experiments/server/stage_runtime.py", "sha256": "61d6bb2c5e32eb981b4879a57ec7337e8ef17e4ef8e5553797d57b88e0135129" },
+        { "path": "experiments/server/operator_mfa.py", "sha256": "759206c03387e3166878623a9456d3b8d42a12149f706e4707968cf9377e6a43" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "principal": "Explicit selected cached Azure CLI installation operator (existing rights only)",
+      "phase": "deployment",
+      "feature": "backend-installation-finalization",
+      "defaultEnabled": false,
+      "scope": "Exact selected tenant/subscription, deployment/environment and tagged private pilot RG/VM only",
+      "rationale": "Source-pinned read-only host observer verifies selected initialized runtime and machine-produces a nonsecret installation receipt and local operator binding. No setup mutation, cloud deployment, service restart, marker initialization, grant or authentication flow is performed by finalization; the actual installer/hook remains a separate gate.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/server/SetupTransport.psm1", "sha256": "8ffe65711792b9a9ab42ac4083b44b66060c2db7a7af4c70f25b4e0c24450219" },
+        { "path": "experiments/server/installation_readback.py", "sha256": "78ee746115226404f1239febf5cc2c9a90dc0de0ffff3a93484779161bb887dd" },
+        { "path": "experiments/server/operator_setup_host.py", "sha256": "00b09980283d5ed4b09e0c7dcbc7e70baa31b40c8466c2b692b1cdcec04f67a2" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read",
+      "principal": "Explicit selected cached Azure CLI installation operator (existing rights only)",
+      "phase": "deployment",
+      "feature": "operator-binding-generation",
+      "defaultEnabled": false,
+      "scope": "Exact selected tenant/subscription, environment and tagged private pilot RG/VM only",
+      "rationale": "Generate a local operator binding from a trusted checksum-pinned selected installation receipt after reusing read-only account/group/immutable-VM preflight. This function does not invoke Run Command, authenticate, mutate azd state or grant permissions; receipt producer and live qualification remain separate gates.",
+      "evidenceState": "code",
+      "evidence": [{ "path": "experiments/server/SetupTransport.psm1", "sha256": "8ffe65711792b9a9ab42ac4083b44b66060c2db7a7af4c70f25b4e0c24450219" }]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "principal": "Explicit selected cached Azure CLI operator (existing rights only)",
+      "phase": "deployment",
+      "feature": "operator-setup-transport",
+      "defaultEnabled": false,
+      "scope": "Exact selected tenant/subscription and tagged private pilot RG/VM only",
+      "rationale": "Optional operator setup checks cached selected account/group/VM, then sends a hash-pinned stdlib host program to verify private runtime bindings and invoke the installed sealed operator command or ciphertext-only readback. It creates no grants and enables no azd hook; runtime checks are not live acceptance evidence.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/server/SetupTransport.psm1", "sha256": "8ffe65711792b9a9ab42ac4083b44b66060c2db7a7af4c70f25b4e0c24450219" },
+        { "path": "experiments/server/Invoke-SantaOperatorSetup.ps1", "sha256": "cf7d4e36a2dea3a44e5342deb1bbd5b6402250a7495e8165fbf2f9cc09b25e49" },
+        { "path": "experiments/server/operator_setup_host.py", "sha256": "00b09980283d5ed4b09e0c7dcbc7e70baa31b40c8466c2b692b1cdcec04f67a2" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/runCommand/action; Microsoft.DevTestLab/schedules/write",
+      "principal": "Selected interactive qualification operator (existing permissions only)",
+      "phase": "deployment",
+      "feature": "server-qualification",
+      "defaultEnabled": false,
+      "scope": "Explicit selected subscription and tagged rg-azd-santa-vm-<environment>/vm-santa-lab only",
+      "rationale": "Privileged nonproduction evaluation installs Docker tooling, acquires checksum-verified upstream source and submits a bounded private build. It performs no real device enrollment, tenant grant, image publication or production deployment.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/server/Start-ZentralQualification.ps1", "sha256": "9ab3f9a789e90875dde90b5147d6f682c90982ad89de9c0e59ef6e3e8a0da586" },
+        { "path": "experiments/server/bootstrap-host.sh", "sha256": "18db776f866994dc1abaf18c53bab42e272875b7d270217b7ec2a52c504a3a8c" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/deployments/* and Microsoft.Resources/subscriptions/resourceGroups/write; Microsoft.Compute/virtualMachines/write, Microsoft.Compute/disks/write and Microsoft.Network resource write/join actions for the isolated VM lab",
+      "principal": "Selected interactive deployment operator (existing permissions only)",
+      "phase": "deployment",
+      "feature": "synthetic-vm-lab",
+      "defaultEnabled": false,
+      "scope": "Explicit selected subscription deployment and rg-azd-santa-vm-<environment>; the template requests no role assignment or workload identity",
+      "rationale": "Optional nested azd project provisions a synthetic-only test host, disk and isolated network. This inventories operations, not consent or authorization to grant Contributor. A minimal custom deployment role has not been established.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/vm/infra/main.bicep", "sha256": "9d439be79c295a27a74949859ff429841373aaefbcb4b160c3b27c0f069e3e61" },
+        { "path": "experiments/vm/infra/host.bicep", "sha256": "40ffa81ef7d62d22cf28ff8fe538777059a7ee402c5a410e289a2fa28d5a6ce8" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "principal": "Selected interactive lab operator (existing permissions only)",
+      "phase": "deployment",
+      "feature": "synthetic-vm-lab",
+      "defaultEnabled": false,
+      "scope": "Explicit selected subscription and tagged rg-azd-santa-vm-<environment>/vm-santa-lab only",
+      "rationale": "Run Command is privileged guest execution. The opt-in test helper transports original fixture sources and records synthetic disk receipts; it performs no Intune or device enrollment operation.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/vm/Test-VmLab.ps1", "sha256": "fb438ceaed22a25bc948a6143e223fe5809156b4422d9783180fbe5c9cbad645" }
+      ]
+    },
     {
       "resource": "Microsoft Graph",
       "kind": "delegated",
@@ -19,7 +389,7 @@
       "evidence": [
         {
           "path": "scripts/Invoke-SantaIntunePackage.ps1",
-          "sha256": "07fa1cf846279be1a1bcdde2a5071a6626d00a64245f09339fae1c73a5881089",
+          "sha256": "583a1e2df40eb616b44c401ee86648d9597154a322f601742718bf5cb3b25d6f",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntunePackage.ps1"
         }
       ]
@@ -38,7 +408,7 @@
       "evidence": [
         {
           "path": "scripts/Invoke-SantaIntunePackage.ps1",
-          "sha256": "07fa1cf846279be1a1bcdde2a5071a6626d00a64245f09339fae1c73a5881089",
+          "sha256": "583a1e2df40eb616b44c401ee86648d9597154a322f601742718bf5cb3b25d6f",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntunePackage.ps1"
         }
       ]
@@ -57,7 +427,7 @@
       "evidence": [
         {
           "path": "scripts/Invoke-SantaIntunePackage.ps1",
-          "sha256": "07fa1cf846279be1a1bcdde2a5071a6626d00a64245f09339fae1c73a5881089",
+          "sha256": "583a1e2df40eb616b44c401ee86648d9597154a322f601742718bf5cb3b25d6f",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntunePackage.ps1"
         }
       ]
@@ -76,7 +446,7 @@
       "evidence": [
         {
           "path": "scripts/Invoke-SantaIntunePackage.ps1",
-          "sha256": "07fa1cf846279be1a1bcdde2a5071a6626d00a64245f09339fae1c73a5881089",
+          "sha256": "583a1e2df40eb616b44c401ee86648d9597154a322f601742718bf5cb3b25d6f",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntunePackage.ps1"
         }
       ]
@@ -95,7 +465,7 @@
       "evidence": [
         {
           "path": "scripts/Invoke-SantaIntuneProfiles.ps1",
-          "sha256": "13c7bad5155aec57deba3dcbaaf0bfd24128da172272583685c4ca14c05883a8",
+          "sha256": "abfe8321ccc723e849407097ab4438669471d3e170f3de2024ebea990e814885",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntuneProfiles.ps1"
         }
       ]
@@ -114,7 +484,7 @@
       "evidence": [
         {
           "path": "scripts/Invoke-SantaIntuneProfiles.ps1",
-          "sha256": "13c7bad5155aec57deba3dcbaaf0bfd24128da172272583685c4ca14c05883a8",
+          "sha256": "abfe8321ccc723e849407097ab4438669471d3e170f3de2024ebea990e814885",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Invoke-SantaIntuneProfiles.ps1"
         }
       ]
@@ -133,7 +503,7 @@
       "evidence": [
         {
           "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
-          "sha256": "f6a99ad9cb9ea90f31a1f04f6b52df515263a7f27cb6fa53db4a24193ea91282",
+          "sha256": "e9fd134196fb4a6d7e9afe17f2a571c52041d68cbc533c7d102c61bce26faded",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
         }
       ]
@@ -152,7 +522,7 @@
       "evidence": [
         {
           "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
-          "sha256": "f6a99ad9cb9ea90f31a1f04f6b52df515263a7f27cb6fa53db4a24193ea91282",
+          "sha256": "e9fd134196fb4a6d7e9afe17f2a571c52041d68cbc533c7d102c61bce26faded",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
         }
       ]
@@ -171,7 +541,7 @@
       "evidence": [
         {
           "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
-          "sha256": "f6a99ad9cb9ea90f31a1f04f6b52df515263a7f27cb6fa53db4a24193ea91282",
+          "sha256": "e9fd134196fb4a6d7e9afe17f2a571c52041d68cbc533c7d102c61bce26faded",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
         }
       ]
@@ -190,16 +560,138 @@
       "evidence": [
         {
           "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
-          "sha256": "f6a99ad9cb9ea90f31a1f04f6b52df515263a7f27cb6fa53db4a24193ea91282",
+          "sha256": "e9fd134196fb4a6d7e9afe17f2a571c52041d68cbc533c7d102c61bce26faded",
           "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
         }
       ]
+    },
+    {
+      "principal": "Explicit selected cached delegated operator",
+      "phase": "deployment",
+      "evidence": [
+        {
+          "sha256": "58ec1dc5786bfe1ea02222d1c7312c461a3e588dde7ac88f8d60f7fde01c6fc1",
+          "path": "scripts/Santa.SyncProfilePublisher.psm1"
+        },
+        {
+          "sha256": "76fb14665de1c8261a0a2ce6fbf77345cf5ad796874b6dff36f8a87b0aea81e5",
+          "path": "scripts/Invoke-SantaIntuneSyncProfile.ps1"
+        },
+        {
+          "sha256": "1d183be5d7a08d27e72c336203d531fdbf001506cecec7d91ee23bfa949229cd",
+          "path": "scripts/Santa.ProviderPlan.psm1"
+        }
+      ],
+      "kind": "delegated",
+      "feature": "intune-sync-profile-publication",
+      "defaultEnabled": false,
+      "evidenceState": "code",
+      "resource": "Microsoft Graph",
+      "scope": "Exact existing owned configuration and unchanged static one-Mac pilot group/device in the selected tenant",
+      "rationale": "Default disabled. Inspect/Observe are read-only; explicit Apply verifies exact cached identity and scope, source-reviewed private provider payload, fresh current hash and exclusive intent before one no-retry PATCH. No authentication, consent, profile creation or assignment mutation.",
+      "permission": "DeviceManagementConfiguration.ReadWrite.All"
+    },
+    {
+      "principal": "Explicit selected cached delegated operator",
+      "phase": "deployment",
+      "evidence": [
+        {
+          "sha256": "58ec1dc5786bfe1ea02222d1c7312c461a3e588dde7ac88f8d60f7fde01c6fc1",
+          "path": "scripts/Santa.SyncProfilePublisher.psm1"
+        },
+        {
+          "sha256": "76fb14665de1c8261a0a2ce6fbf77345cf5ad796874b6dff36f8a87b0aea81e5",
+          "path": "scripts/Invoke-SantaIntuneSyncProfile.ps1"
+        },
+        {
+          "sha256": "1d183be5d7a08d27e72c336203d531fdbf001506cecec7d91ee23bfa949229cd",
+          "path": "scripts/Santa.ProviderPlan.psm1"
+        }
+      ],
+      "kind": "delegated",
+      "feature": "intune-sync-profile-publication",
+      "defaultEnabled": false,
+      "evidenceState": "code",
+      "resource": "Microsoft Graph",
+      "scope": "Exact existing owned configuration and unchanged static one-Mac pilot group/device in the selected tenant",
+      "rationale": "Default disabled. Inspect/Observe are read-only; explicit Apply verifies exact cached identity and scope, source-reviewed private provider payload, fresh current hash and exclusive intent before one no-retry PATCH. No authentication, consent, profile creation or assignment mutation.",
+      "permission": "Group.Read.All"
+    },
+    {
+      "principal": "Explicit selected cached delegated operator",
+      "phase": "deployment",
+      "evidence": [
+        {
+          "sha256": "58ec1dc5786bfe1ea02222d1c7312c461a3e588dde7ac88f8d60f7fde01c6fc1",
+          "path": "scripts/Santa.SyncProfilePublisher.psm1"
+        },
+        {
+          "sha256": "76fb14665de1c8261a0a2ce6fbf77345cf5ad796874b6dff36f8a87b0aea81e5",
+          "path": "scripts/Invoke-SantaIntuneSyncProfile.ps1"
+        },
+        {
+          "sha256": "1d183be5d7a08d27e72c336203d531fdbf001506cecec7d91ee23bfa949229cd",
+          "path": "scripts/Santa.ProviderPlan.psm1"
+        }
+      ],
+      "kind": "delegated",
+      "feature": "intune-sync-profile-publication",
+      "defaultEnabled": false,
+      "evidenceState": "code",
+      "resource": "Microsoft Graph",
+      "scope": "Exact existing owned configuration and unchanged static one-Mac pilot group/device in the selected tenant",
+      "rationale": "Default disabled. Inspect/Observe are read-only; explicit Apply verifies exact cached identity and scope, source-reviewed private provider payload, fresh current hash and exclusive intent before one no-retry PATCH. No authentication, consent, profile creation or assignment mutation.",
+      "permission": "Device.Read.All"
     }
   ],
   "gaps": [
+    "Pilot enrollment transport is source/offline only. Stored factor/last-login checks are not current human MFA proof. One local intent plus one Run Command submission does not prove device delivery, actual ORM creation or exactly-once distributed execution. Same-invocation Observe retains its ephemeral key only; after process exit, preserve uncertain state and reconcile rather than select a fresh output path or recreate enrollment. No new grant or MDM assignment is supplied. See docs/pilot-enrollment-transport.md.",
+    "$134f43bb5407b256f853c422edff85b723631f77e0dbee177be4c03f9585bd12e renders profiles/units without cloud calls. Its explicit restrictive firewall command needs selected Linux root/CAP_NET_ADMIN authority; maintained remote service/account installation and NSG activation are not implemented by this component. No Azure/Graph grant or new paid service is added. Private Linux connection/resource/header/admission proof, public TLS/MFA, reboot and real Mac acceptance remain separate gates; direct pilot source budgeting is conservatively shared, not client attribution.",
+    "The default-off fresh HTTPS origin profile reuses existing cached endpoint graph reads and binds one selected Azure hostname through context, guest IMDS-region validation, rendered configuration and completion. It adds no grant, existing-runtime migration, DNS write, ingress, proxy or certificate service. Direct admission remains unchanged; actual fresh image/guest delivery, trusted edge headers/TLS, MFA and native one-Mac acceptance remain unqualified. See docs/fresh-https-origin.md.",
+    "Independent backup-store creation orchestration is source/offline only: no actual ARM token, validate/what-if, provider-policy acceptance, deployment/hash parity or protected post-selection is proven. One application PUT is not atomic multi-resource create-only CAS or exactly-once distributed effects. Missing prerequisites are rejected without grants/remediation; unknown submission is preserved for exact Observe, never automatically replayed. Retention/data capability, lifecycle and current-authority restore remain separate gates.",
+    "The private cached ARM Python callback adds explicit bounded cached-CLI acquisition, exact graph GETs and a single in-memory exact-blob SAS POST attempt. Offline controlled protocol tests are not actual token/API/RBAC/minting proof. No token export, auth fallback, grant or policy/key operation is provided. Durable cross-process operator attempt reconciliation and full confidential Run Command orchestration remain unimplemented; OS DNS/CLI internals remain trusted deadline prerequisites. See docs/private-cached-arm.md.",
+    "The guarded existing-subnet setter now integrates bounded per-call CLI/token capture. HTTP/body cancellation, fresh readback and flushed once-only local evidence are source/offline checks, not overall invocation deadline, total CLI/OS memory containment, filesystem power-loss durability or live selected-network acceptance. Copied receipts do not authorize writes; lost responses remain unknown and cannot trigger automatic replacement attempts. A separate empty-network ETag probe does not qualify raw Bicep CAS, atomic multi-resource selection, off-host retention or restore.",
+    "The confidential exact-capture source-VM Blob relay adds local recipient crypto and a once-only guest upload journal only. It requires fresh existing cached ARM ownership/target selection and exact create-only SAS minting outside the envelope. No ARM token, backup private key, new grant, policy change or Azure orchestration is supplied. Actual selected-VM cryptography41/Linux descriptor tests and a read-only installed-capture/IMDS/cgroup preflight passed; actual upload service/Run Command delivery, create-only PUT and separate verifier download remain unqualified; envelopes and receipts are not authority. See docs/blob-capability-relay.md.",
+    "Issue #90 supplies default-off new canonical VM network Storage endpoint wiring and a GET-only ownership/ETag/preservation-aware existing-network plan. No existing subnet/VNet write, automatic azd adoption, provider-enforced conditional mutation, endpoint delivery or retention/restore acceptance is qualified. A raw Bicep deployment is create-or-update and can erase unprovided endpoint arrays; existing changes require current independently selected authority and fresh plan consumption/revalidation. Source subnet disappearance still requires explicit restricted-firewall reconciliation; no operator-network modification, public-IP fallback or grant is added.",
+    "The restore-census primitive observes an already-open isolated PostgreSQL connection and reviewed Django registry only. It adds no Azure/Graph grant, connection/authentication, restore, row transformation or activation. Controlled SQL/registry adapters do not prove real Django/PostgreSQL18 catalog compatibility, isolated database coverage, sequence quiescence, trusted source/image/authority or native restoration. See docs/restore-census.md.",
+    "The first exact pre-snapshot recovery failed after disabling runtime boot start; original ACTIVE/intent/failure and old request/source tuple were retained. A separately explicit, source-bound disable-only continuation now requires fresh selected authority, pinned predecessor artifacts, reviewed reload-cleared profiles, typed loaded path/argv/ignore definitions and positive terminal cgroups. No live continuation, runtime start, native backup, portable key/image retention, full-stack restore or complete application/schema census is established by this code. No new grant, automatic replay or permission sufficiency claim is added.",
+    "The explicit one-case pre-snapshot failed-request retirement uses existing selected cached ARM read/Run Command rights only. It requires positive current IMDS/same-boot, terminal-unit/cgroup, original stopped-ID and no-native-effect evidence; preserves original request/source/history; stages one cold-helper replacement and starts the original runtime once. No grants or generic recovery/resume are added. Offline tests and the separate read-only namespace probe do not establish live recovery or native backup/restore acceptance. See docs/presnapshot-recovery.md.",
+    "Issue #85 now includes a GET-only cached ARM existing-store selector with independent RG ownership and before/after checks. Live cached reader/API sufficiency, safe create-only lifecycle and provider/policy preflight remain unqualified; observation receipts are not authority or atomic snapshots. Source subnet deletion requires explicit network reconciliation; no stale ACL removal, endpoint change or provisioning is performed. Retention, independent download, portable key/image lifecycle and actual restore remain separate unqualified gates.",
+    "Issue #85 first layer added independent backup-store templates and private native-ciphertext protocol APIs only. Actual provider/permission/policy sufficiency, cached ARM SAS/delivery integration, ownership preflight before deployment, service-endpoint integration, confidential selected-VM capability delivery, durable terminal job proof, independent verifier selection and VM/azd-down lifecycle preservation remain unqualified. Public-IP/SAS signedIp cannot authorize same-region Azure VMs/operators; only owned same-region endpoint targets are supported, with no fallback or unrelated subnet mutation. Restrictive Shared Key/SAS/network policy is a stop condition, not permission to change it. Root/VM azure.yaml and frozen source/controller/installer/upgrade paths are unchanged.",
+    "Off-host native ciphertext retention is separate from exact container image/source/tooling retention, portable recipient-key recovery, regional disaster recovery, sealed authentication, quarantine, actual DB/ES restoration and current authority. The current locally built core image has no authoritative registry publication; rebuilding its source does not prove the same image. Native data is capped at 2GiB and does not include or truncate image exports. No retention/recoverability claim follows from source, mock or template validation.",
+    "The explicit one-helper host maintenance candidate reuses existing selected cached ARM/Run Command authority to stage immutable source, disable/stop/rebind/re-enable/start the preserved original private runtime. No Azure/Graph grant, image/security/worker change or fresh installer replay is added. Durable source/target intent and terminal proof are evidence, not external authorization. Live Linux/systemd/Run Command interruption/reboot qualification and native backup/restore/current-authority gates remain open. See docs/private-helper-upgrade.md.",
+    "Authenticated archive quarantine adds only an offline Linux private extraction primitive after independently trusted ciphertext digest/recipient authentication. No SQL, cloud request, service start, credential grant or activation is added. Original cipher discard API and frozen installer/controller/producer are unchanged. Linux descriptor/crash qualification, complete schema/census, isolated PostgreSQL/native ES restore, current-authority reconciliation and fresh administrator/device reissue remain gates. See docs/authenticated-archive-quarantine.md.",
+    "Issue #79 adds only an offline in-memory Store/probe Action/StateVersion secret-rewrap projection primitive using pinned Fernet/noop semantics; no Azure/Graph permission, SQL, installer hook or activation is added. Complete database/schema census, independently trusted row/context provenance, KMS migration, isolated restoration, current-authority reconciliation and native reissue remain gates. Fernet/noop do not authenticate token context. See docs/offline-secret-rewrap.md.",
+    "Issue #53 automatic abandoned-permit recovery candidate uses existing privileged supervisor and normal runtime DB/Redis authority, with no cloud grant. It requires the exact original generation and stopped app PIDs under the existing flock, bounded readonly same-role/database PostgreSQL session drain, valid existing marker/config/counters and one fenced Redis transition. No automatic initialization, invalid-state repair, rate-counter reset, credential/MFA reset or backup restoration is added. Old27 Redis and earlier reboot receipts remain source-specific; new fence/Lua, killed-handler/DB-backend, delayed-job and bounded-retry actual faults remain unqualified. See docs/santa-admission.md.",
+    "Issue #54 native-snapshot encrypted capture adds no cloud/API permission or online service. The sixth local snapshot volume, controller-owned original-generation publisher close/queue drain/native snapshot/stop/encrypted capture and completion-gated resume are integrated offline. Raw Elasticsearch directory copies are excluded. The worker gate requires reviewed installed hashes, current original CID/StartedAt/startup nonce, joined clean children, exit0/PID0 and final whole-queue zero; exit143 or empty queues alone cannot authorize snapshot submission. Actual application snapshot/capture/resume, fresh six-volume installation, supported crypto supplier integration, off-host retention and isolated current-authority restore remain unqualified. Restored Redis markers never establish current authority. See docs/cold-backup.md.",
+    "Graceful worker lifecycle source adds no Azure/Graph permission or online service. Module sha256 e86d20287324eca25ef24c4c405e7d923feafb2d2760c1f22b799f0a02d0a50f and derived command sha256 be379c804120c5a0dd3620bab14adbd5f8a0b89f51ed43ee2284d6eb1f0d9515 are bound into runtime manifests. Selected standalone actual Linux TERM/forkserver idle, held-callback/requeue and20-second forced-deadline checks passed; they do not prove real Kombu/broker acknowledgement, rebuilt image, queue drain or application backup. See docs/worker-posix-qualification.md.",
+    "Issue64 endpoint source/mocks/Bicep compile do not qualify actual PIP DNS label update, ARM linkage readback, DNS resolution, effective network, certificate or native/browser acceptance. The producer uses only existing selected operator read rights; missing rights remain a blocker, never approval for a role grant. Commercial Azure single-NIC unscoped DNS layout only; all inbound denied and HTTPS503 hold retained.",
+    "Shared admission adds no Azure/Graph grant or new online service. Earlier source937ef10433eeb3bf901aaf5b87aaddf37b73b9c4c135a927cb6f9f5e1a0c5235 passed27 isolated Redis observations. Fenced sourceebe2abef0cb9786f677a08dacf96b27acd944fcdd4e1465afa5c74701249629b subsequently passed37 actual hosted Lua families in run43637751447, with independently checked source-bound receipt; earlier count26 CI failures remain unexplained. See docs/admission-redis-qualification.md. Actual Django/HTTP integration, killed-handler/PG quiescence, Redis restart/failure, proxy/native retries and memory/backlog qualification remain open. Public ingress and backup/current-authority restoration remain held.",
+    "Optional hosted Redis qualification uses an ephemeral GitHub-hosted Linux runner, bounded network-isolated Docker container and job-scoped artifact session; its workflow declares contents:read and persists no checkout credential. Only a whitelisted nonsecret success receipt is uploaded. It performs no Azure authentication/deployment/grant or application Redis access and changes no required checks/catalog enforcement. Hosted execution is separate from source guards and selected VM/application/native proof.",
+    "Earlier credential rotation harness (#52) sha256 776a1c3f8d96849091e3c3aa85f4f02bea19d1055fd05befb0ceb371f9c97433 passed76 selected private HTTP/ORM observations. The admission-aware candidate experiments/server/test_credential_rotation_live.py sha256 a05fe829ca8cc6c89f9bebd5664a9afa4879a9326e0d5a08e05caed489689a57 preserves all76 observations but needs new source/image/helper/view bindings and live qualification; rate-limit waits are recorded separately. Neither version adds cloud/Graph grants or azd hooks. Native credential delivery, client-local rule application, supported administrator rotation and backup/restore authority remain open; issue52 is not closed.",
+    "Optional nested private VM azd installation has selected actual ARM, pinned prerequisite/source-build, fresh initialization/runtime, warm same-source azd repeat and original-container reboot evidence. Post-reboot selected credential/rule state matched and seventeen synthetic HTTP checks passed. The initial cold invocation failed at finalization after guest success; its cause remains unexplained, so first-attempt cold end-to-end acceptance remains open. Failed/unknown or differently sourced installation state is retained rather than reinitialized. Trusted reachable HTTPS, native Mac enrollment and customer MFA remain pending; no new grant or public ingress is authorized by metadata.",
+    "Offline held-closed HTTPS candidate (#64/#58) adds no Azure/Graph permission, ingress, DNS or certificate order. experiments\\server\\prepare_https_proxy.py sha256 4c60bc0428cd55a36b108dc937628ba505958b1913fd271bf17874e0746ca9ec; experiments\\server\\caddy.lock.json sha256 d1919c8a19b9e282a1985d91383139eff5d9b45c382093ad5d22c138d4c0c5ea. Selected cached ARM endpoint facts producer is implemented but not invoked/qualified; Linux proxy/load/admission budgets and trusted TLS/renewal remain unqualified; Windows Caddy validate is provisioning-only and does not close those gates.",
+    "Recovery13 passed selected owner-only disposable fixture setup, thirteen request cases under runtime-only credentials, exact name/OID/no-active-backend teardown and independent verification of database absence. No Azure/Graph permission or normal runtime privilege was added; see docs/operator-recovery.md. Failed/unknown outcome retention has offline coverage and needs live fault qualification. Held-restart fixture adaptation, browser/TLS/native and restore gates remain open.",
+    "Fresh core role separation passed selected private initialization, ten administrative SQL denials, original empty-inventory TEMP cleanup, normal sync/indexing/MFA/recovery and reboot qualification. Owner-only developer fixture jobs and normal runtime requests have separate receipts; see docs/database-role-separation.md. It adds no Azure/Graph permission or tenant grant. Nonempty retention, unknown initializer fault recovery, upgrades/default grants and existing-volume rotation remain unqualified.",
+    "The bounded finalizer passed selected private actual Run Command observation of restricted database authority, schema/Store/security state, search and event consumers, then machine-produced the installation receipt and operator binding. See docs/backend-installation-finalization.md. The opt-in nested private VM hook now supplies machine-generated build/init and deployment facts to this producer; the complete cold ARM/hook path remains live-unqualified. Trusted HTTPS/browser, native endpoint and backup/restore acceptance remain open; no automatic grants are supplied.",
+    "The optional initialized-runtime systemd controller uses existing privileged Linux host authority, not new Azure/Graph permissions. Selected private Docker/systemd startup, clean restart, web-container failure, VM reboot and isolated empty-data rejection passed with independent state readback; see docs/runtime-service.md. Automatic azd installation, startup cancellation, Docker-daemon restart propagation, continuous application health, upgrades and backup/current-authority behavior remain unqualified. Metadata is not service-installation authorization.",
+    "Per-service outputs separate db.env, rabbitmq.env and application runtime.env without adding cloud/API permissions. Shared-role and fresh restricted-role layouts have separate selected private environment/readiness receipts; earlier receipts do not qualify a different image. Existing-volume rotation and restoration remain unqualified. See docs/service-secret-separation.md and docs/database-role-separation.md.",
+    "Private operator setup has selected actual ARM/IMDS, Docker/image/Compose/module/security-store and encrypted delivery receipts. The coordinated restricted-role stack separately passed six-gate producer-to-binding finalization and bootstrap/recovery; see docs/database-role-separation.md. This is not automated azd deployment, trusted HTTPS or browser/password/MFA completion. The host program never repairs legacy shared-secret containers automatically; no automatic hook is supplied.",
+    "The optional sealed transport adds no Azure permission. Selected actual Run Command setup/recovery and owner-only local delivery passed, including recovery of original ciphertext after an intentionally truncated reply without repeating the mutation. A network disconnect or timeout while the mutator is running, trusted HTTPS and real-browser delivery remain unqualified. The portable module is not completed azd setup.",
+    "The local operator_access bootstrap/recovery command uses existing privileged host/container and local application-database authority; it grants no Azure/Graph role. Selected private bootstrap/recovery preserved the synthetic target's flags, rotated its password and produced indexed audit records; see docs/setup-transport-slice.md. These cases do not qualify every audit path, real-browser/TLS, customer delivery or backup/restore. Metadata is not recovery authorization.",
+    "The private real-server qualification tooling uses existing privileged Azure Run Command rights, not a new workload role. Generated Compose and source acquisition need no tenant permission. Community-only production packaging, trusted ingress, operator MFA, unique device enrollment, rotation/revocation, backup/restore and Container Apps parity remain unqualified; private evaluation must not be promoted by inference.",
+    "Evidence sha256 fields bind current repository file bytes, not historical documentationUrl content. Existing immutable documentationUrl values preserve the earlier source provenance and may refer to different bytes. The 2026-11-06 reconciliation found only the added PowerShell 7.6 requirement header in the three previously stale Graph scripts; their requested delegated scope sets are unchanged. Current hashes and explicit scope declarations do not prove effective tenant grants or permission sufficiency.",
+    "Live sub-mvp inventory found an environment-added system-assigned VM identity and AzurePolicyforLinux extension absent from this template. Existing subscription policy appears responsible; a direct principal role lookup returned no entries, but full effective authority and policy ownership are not audited here. Preserve these environment-managed resources rather than removing them as drift.",
+    "The optional VM lab inventories deployment and privileged Run Command operations but does not establish a least-privilege custom role. VM restart, deallocate/start and lab-group deletion need their corresponding ARM actions; no grants are created. No real sync server, device credential, operator API, telemetry backend or backup service is deployed.",
+    "The optional local SQLite durability spike adds no cloud/API permission and is not a runtime storage selection. Production persistent state, restore anchors, revocation/deletion ledgers and their exact identities/data roles remain unqualified; synthetic fixture labels grant no publication authority.",
     "Local artifact inspection adds no Graph, Azure, connector or recipient permission; catalog display metadata and this manifest do not authorize grants.",
     "Minimum read sufficiency, tenant consent, Intune licensing and effective current target authority are not proven by requested scope metadata or local artifacts.",
     "Defender Live Response, Intune health-script publication/status, optional compute/sync hosting and cleanup permissions still need a complete source-specific review; existing behavior is unchanged.",
-    "Candidate deployment-receipt replacement, authenticated observer provenance and optional notification transports are deferred; no permissions for those future paths are claimed."
+    "Candidate deployment-receipt replacement, authenticated observer provenance and optional notification transports are deferred; no permissions for those future paths are claimed.",
+    "Offline candidate drafting adds no Graph, Azure, provider, GitHub or Azure DevOps permissions and cannot publish rules. Sync-provider administration, profile distribution, publisher authority and selected-target live proof require separate source-specific review; enrollment profiles and credentials stay outside Git.",
+    "Proposed optional self-hosted Azure sync (#37): hosting deployment identity, resource scopes/SKUs, durable state data roles and cleanup rights remain unselected; no Azure permission or grant is added by the loopback-only model.",
+    "Proposed optional sync administration (#37): separate Entra operator audience, app roles and approval/publisher separation need exact-target review. Device enrollment is not operator authentication; certificate issuance, trusted-ingress binding, rotation/revocation and secure MDM delivery permissions remain gaps.",
+    "Proposed rule publication and telemetry retention (#37) need approved immutable snapshot scope, rollback, privacy and backup/deletion authority. Fixture approval labels, synthetic bearers, candidate drafts and this manifest authorize no live access or rule/profile publication.",
+    "The default-off Intune sync-profile publisher has offline mocked boundary coverage only. Actual cached Graph PATCH/readback, concurrent control-plane behavior, native Mac profile delivery/sync/rule receipt/execution and clearing previously downloaded rules on rollback remain unqualified. Existing scopes are inventoried, not granted; no new consent is requested by this command."
   ]
 }
