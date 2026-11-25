@@ -140,7 +140,7 @@ jobs:
       - name: Confirm committed generated profiles are reproducible
         run: git diff --exit-code -- profiles/generated
 
-      - name: Verify sealed PostgreSQL and Elasticsearch fixture recovery
+      - name: Verify sealed backend fixture recovery
         if: runner.os == 'Linux'
         shell: bash
         run: timeout 420s bash tests/test_restore_census_postgres.sh

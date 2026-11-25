@@ -9,6 +9,7 @@ import time
 from test_restore_quarantine import Quarantine, producer, quarantine
 import elastic_restore_fixture as elastic
 import redis_recovery_fixture as redis
+import rabbit_recovery_fixture as rabbit
 
 MAXIMUM = 192 * 1024**2
 MAXIMUM_FILES = 10000
@@ -47,6 +48,8 @@ def run(root):
     roots['volumes/postgres_data'] = cluster
     redis_data, historical_identity, historical_generation, redis_files = redis.capture(root)
     roots['volumes/redis_data'] = redis_data
+    rabbit_data, historical_password, rabbit_files = rabbit.capture(root)
+    roots['volumes/rabbitmq_data'] = rabbit_data
     capture = root / 'sealed'
     capture.mkdir(mode=0o700)
     control_digest = hashlib.sha256((cluster / 'global/pg_control').read_bytes()).digest()
@@ -73,6 +76,8 @@ def run(root):
     elastic.restore(root, repository, compatibility['native_snapshot']['plan'])
     redis.verify(root, destination / 'contents' / 'volumes' / 'redis_data',
                  historical_identity, historical_generation, redis_files)
+    rabbit.verify(root, destination / 'contents' / 'volumes' / 'rabbitmq_data',
+                  historical_password, rabbit_files)
 
 
 if __name__ == '__main__':
