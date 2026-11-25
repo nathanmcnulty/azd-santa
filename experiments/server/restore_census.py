@@ -138,6 +138,16 @@ SCHEMA_OBJECTS="""WITH RECURSIVE objects(classid,objid,objsubid) AS (
 """
 CATALOG = {
  'schemas':"SELECT json_build_object('name',n.nspname,'owner',pg_get_userbyid(n.nspowner),'acl',n.nspacl)::text FROM pg_namespace n WHERE "+NS,
+ 'default_privileges':"""SELECT json_build_object('owner',pg_get_userbyid(d.defaclrole),
+ 'schema',n.nspname,'object_type',d.defaclobjtype,'grants',COALESCE((
+   SELECT json_agg(json_build_object('grantor',g.grantor,'grantee',g.grantee,
+     'privilege',g.privilege_type,'grantable',g.is_grantable)
+     ORDER BY g.grantor COLLATE "C",g.grantee COLLATE "C",g.privilege_type COLLATE "C",g.is_grantable)
+   FROM (SELECT pg_get_userbyid(a.grantor)::text AS grantor,
+     CASE WHEN a.grantee<>0 THEN pg_get_userbyid(a.grantee)::text END AS grantee,
+     a.privilege_type,a.is_grantable FROM aclexplode(d.defaclacl) a) g
+ ),'[]'::json))::text FROM pg_default_acl d
+ LEFT JOIN pg_namespace n ON n.oid=d.defaclnamespace""",
  'relations':"""SELECT json_build_object('schema',n.nspname,'name',c.relname,'kind',c.relkind,
  'owner',pg_get_userbyid(c.relowner),'persistence',c.relpersistence,'options',c.reloptions,'acl',c.relacl,
  'replica_identity',c.relreplident,'populated',c.relispopulated,
@@ -214,7 +224,7 @@ CATALOG = {
  'database':"SELECT json_build_object('version',current_setting('server_version_num'),'encoding',current_setting('server_encoding'),'database',current_database(),'user',current_user,'collation',d.datcollate,'ctype',d.datctype,'collation_provider',d.datlocprovider,'collation_version',d.datcollversion,'locale',to_jsonb(d)->>'datlocale','tablespace',sp.spcname,'read_only',current_setting('transaction_read_only'),'isolation',current_setting('transaction_isolation'))::text FROM pg_database d JOIN pg_tablespace sp ON sp.oid=d.dattablespace WHERE d.datname=current_database()",
 }
 SUPPORTED_CATALOGS=frozenset(('pg_namespace','pg_class','pg_type','pg_proc','pg_constraint',
-    'pg_attrdef','pg_trigger','pg_rewrite','pg_policy'))
+    'pg_attrdef','pg_trigger','pg_rewrite','pg_policy','pg_default_acl'))
 
 
 def registry_manifest(registry,connection):

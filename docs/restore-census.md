@@ -59,6 +59,12 @@ The private manifest contains:
   sequence definitions, extensions and database/collation observations. Recursive
   dependency identities expose unsupported catalog classes. This is a supported
   schema census, not an implementation of every PostgreSQL object kind.
+- Database-wide and schema-specific default privileges are recorded with their
+  owner, object type, named grantor and grantee, privilege, and grant option.
+  Database-wide scope and grants to PUBLIC have explicit null fields. The
+  comparator checks these settings even when existing object ACLs and rows
+  match. This covers the initial privileges PostgreSQL assigns when new
+  objects are created. See [the PostgreSQL default privilege catalog](https://www.postgresql.org/docs/18/catalog-pg-default-acl.html).
 - A count and keyed canonical multiset fingerprint of every supported physical
   table, partition, materialized view and sequence, including empty relations and
   duplicate rows. `ONLY` prevents inheritance/partition double counting. Plain
@@ -131,7 +137,9 @@ The fixture uses Django's real auth and contenttypes migrations and synthetic
 Santa app labels and models. It checks migration graph and applied rows, exact
 comparison and duplicate rows, a custom table access method, quoted identifiers,
 column tombstones, raw transaction refusal, statement timeout, interruption,
-and rollback. The database
+and rollback. It also reproduces the VM installer's schema default grants and
+checks that comparison rejects a changed grant or an added database-wide grant.
+The database
 and input data are disposable. The complete Zentral app registry and restored
 application data still require separate qualification, along with administrator
 and device reissue and native postflight.

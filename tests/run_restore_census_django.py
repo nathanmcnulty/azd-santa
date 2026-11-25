@@ -79,6 +79,9 @@ def run(root):
             cursor.execute('CREATE TABLE "probe%s%rows" (name text, tombstone integer)')
             cursor.execute('ALTER TABLE "probe%s%rows" DROP COLUMN tombstone')
             cursor.execute('INSERT INTO "probe%s%rows" VALUES (\'same row\'), (\'same row\')')
+            cursor.execute('CREATE ROLE census_runtime NOLOGIN')
+            cursor.execute('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO census_runtime')
+            cursor.execute('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO census_runtime')
 
         def observe(**kwargs):
             return census.collect(db, apps, fingerprint_key=KEY, **kwargs)
@@ -86,6 +89,14 @@ def run(root):
         baseline = observe()
         assert baseline.receipt['complete_supported_data'], baseline.manifest['unsupported']
         assert not baseline.receipt['schema_complete']
+        grants = {row['object_type']: row for row in baseline.manifest['catalog']['default_privileges']}
+        assert set(grants) == {'r', 'S'}, grants
+        for object_type, privileges in (('r', ['DELETE', 'INSERT', 'SELECT', 'UPDATE']), ('S', ['SELECT', 'USAGE'])):
+            assert grants[object_type] == {
+                'owner': 'postgres', 'schema': 'public', 'object_type': object_type,
+                'grants': [{'grantor': 'postgres', 'grantee': 'census_runtime',
+                            'privilege': privilege, 'grantable': False} for privilege in privileges],
+            }, grants
         models = {row['label']: row for row in baseline.manifest['registry']['models']}
         assert models['accounts.userproxy']['proxy']
         assert models['auth.user']['swapped'] == 'accounts.User'
@@ -110,6 +121,24 @@ def run(root):
         def compare(observed):
             return census.compare(observed, baseline, dispositions, fingerprint_key=KEY)
 
+        assert compare(observe())['exact_match']
+        with db.cursor() as cursor:
+            cursor.execute('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE UPDATE ON TABLES FROM census_runtime')
+        changed_grants = observe()
+        assert changed_grants.manifest['data'] == baseline.manifest['data']
+        assert changed_grants.receipt['complete_supported_data']
+        reject(lambda: compare(changed_grants))
+        with db.cursor() as cursor:
+            cursor.execute('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT UPDATE ON TABLES TO census_runtime')
+            cursor.execute('ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO PUBLIC')
+        global_grants = observe()
+        assert global_grants.receipt['complete_supported_data']
+        assert any(row['schema'] is None and row['object_type'] == 'r'
+                   and any(grant['grantee'] is None and grant['privilege'] == 'SELECT' for grant in row['grants'])
+                   for row in global_grants.manifest['catalog']['default_privileges'])
+        reject(lambda: compare(global_grants))
+        with db.cursor() as cursor:
+            cursor.execute('ALTER DEFAULT PRIVILEGES REVOKE SELECT ON TABLES FROM PUBLIC')
         assert compare(observe())['exact_match']
         with db.cursor() as cursor:
             cursor.execute('CREATE ACCESS METHOD census_heap TYPE TABLE HANDLER pg_catalog.heap_tableam_handler')
@@ -167,7 +196,7 @@ def run(root):
         blocked = observe()
         assert blocked.manifest['data'] == {} and not blocked.receipt['complete_supported_data']
         reject(lambda: compare(blocked))
-        print('Django migration, schema, row and transaction census fixture passed')
+        print('Django migration, schema, default privilege, row and transaction census fixture passed')
     finally:
         db.close()
 
