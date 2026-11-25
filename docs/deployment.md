@@ -192,6 +192,11 @@ name, Santa version, and pass marker, and the endpoint captured it after the
 script's last update and within the last 24 hours. Use
 `-MaximumEvidenceAgeHours` to choose a window from 1 to 168 hours.
 
+If Santa's sync preflight times out, the script records
+`syncPreflight=timed-out` and still checks the Endpoint Security extension.
+`endpointSecurity=active` confirms the expected team and extension state;
+the timeout still yields a failed overall health result.
+
 - `stale` means a valid successful capture exceeded that window.
 - `invalid-evidence` means an otherwise successful result has missing,
   malformed, future, or mismatched timing evidence.
