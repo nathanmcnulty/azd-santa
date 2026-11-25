@@ -101,7 +101,10 @@ class ExportCommandTests(unittest.TestCase):
                     operation.apply(operator, operation.plan_sha256)
             self.assertEqual(posts, ['start'])
             self.assertTrue((operation.job.artifact / 'image.sealed').is_file())
-            receipt = operation.observe(operator, operation.plan_sha256, collect=True)
+            try:
+                receipt = operation.observe(operator, operation.plan_sha256, collect=True)
+            except command.blob.RetentionRejected as error:
+                raise AssertionError(f'Synthetic export collection failed after {posts}') from error.__context__
             self.assertEqual(posts, ['start', 'observe', 'page'])
             metadata = Path(receipt['metadata_directory'])
             self.assertEqual(sha((metadata / 'complete.json').read_bytes()), receipt['completion_sha256'])
