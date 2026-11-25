@@ -216,9 +216,18 @@ role. The guest consumes the offer once, unlinks the ephemeral private-key file,
 and checks the entire packet set before calling the transfer code. Use the
 trusted operator channel to obtain the offer and deliver the packets. Recipient
 encryption protects the SAS in transit and relies on that channel for sender
-authorization. The handoff has no ARM token or storage account key. Automated
-VM transport, off-host journal preservation, and live Azure verification remain
-separate.
+authorization. The handoff has no ARM token or storage account key.
+
+`retained_image_delivery.py` defines the bounded request/reply protocol for
+that channel. The operator reserves the operation before the first request.
+The guest stages one exact encrypted packet per part, verifies the full batch
+before starting a transfer, then keeps a marker and result for observation.
+Requests are capped at 14 KiB before outer command framing and responses expose
+only the fixed receipt fields. Plan sends nothing. An uncertain reply stops
+the operator, who can observe the same batch without replay. The live VM
+transport must still provision and select the guest program, authenticate the
+target, and qualify its actual outer request limit. Off-host journal
+preservation and live Azure verification remain separate.
 
 The Ubuntu test exports a disposable `linux/amd64` image, reassembles a
 ciphertext copy from a synthetic object store, authenticates it, and loads the
