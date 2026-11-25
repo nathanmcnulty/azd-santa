@@ -593,6 +593,11 @@ configuration, untracked files, and other committed paths are outside that
 inventory. Retain the emitted commit and bundle SHA-256 through a trusted
 channel alongside the recovery inventory.
 
+Use `build --version 2` to include the Windows recipient exporter, restore
+authority planner and transaction adapter, and their reviewed design.
+New verification and staging commands accept the exact inventories for both
+versions. Historical bundles retain their original commit and digest pins.
+
 On a separate recovery machine, run a trusted copy of the tool's `verify`
 command with the bundle path and those external pins. `stage` accepts the same
 inputs plus a fresh local directory and writes the verified bytes as files. It

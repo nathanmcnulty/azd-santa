@@ -45,6 +45,34 @@ class BundleTests(unittest.TestCase):
             with self.assertRaises(bundle.ToolingRejected):
                 bundle.verify(self.raw, commit=commit, bundle_sha256=digest)
 
+    def test_authority_version_stages_complete_tools_without_changing_v1(self):
+        raw = bundle.build(ROOT, self.commit, version=2)
+        pins = {'commit': self.commit, 'bundle_sha256': bundle.sha(raw)}
+        files = bundle.verify(raw, **pins)
+        self.assertEqual(set(files) - set(bundle.PATHS), {
+            'docs/restore-quarantine-design.md',
+            bundle.SERVER + 'Export-SantaRecoveryRecipient.ps1',
+            bundle.SERVER + 'restore_authority_plan.py',
+            bundle.SERVER + 'restore_authority_transaction.py',
+        })
+        self.assertEqual({path: files[path] for path in bundle.PATHS},
+                         bundle.verify(self.raw, commit=self.commit, bundle_sha256=self.digest))
+        self.assertEqual(bundle.build(ROOT, self.commit, version=1), self.raw)
+        with tempfile.TemporaryDirectory() as folder:
+            destination = Path(folder) / 'toolset'
+            bundle.stage(raw, destination, **pins)
+            completed = subprocess.run([sys.executable, '-B', '-c',
+                                        'import restore_authority_plan, restore_authority_transaction'],
+                                       cwd=destination / bundle.SERVER, check=False, timeout=10,
+                                       capture_output=True)
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+        for source, scope in ((raw, bundle.SCOPE), (self.raw, bundle.AUTHORITY_SCOPE)):
+            doc = json.loads(source)
+            doc['scope'] = scope
+            changed = bundle.encoded(doc)
+            with self.assertRaises(bundle.ToolingRejected):
+                bundle.verify(changed, commit=self.commit, bundle_sha256=bundle.sha(changed))
+
     def test_rejects_missing_extra_or_mismatched_source_even_with_new_digest(self):
         for change in ('missing', 'extra', 'bytes'):
             with self.subTest(change=change):
@@ -76,5 +104,7 @@ class BundleTests(unittest.TestCase):
             (root / 'LICENSE').write_bytes(b'worktree-only sentinel')
             raw = bundle.build(root, commit)
             files = bundle.verify(raw, commit=commit, bundle_sha256=bundle.sha(raw))
+            with self.assertRaises(bundle.ToolingRejected):
+                bundle.build(root, commit, version=2)
             self.assertEqual(set(files), set(bundle.PATHS))
             self.assertEqual(set(files.values()), {b'committed fixture\n'})
