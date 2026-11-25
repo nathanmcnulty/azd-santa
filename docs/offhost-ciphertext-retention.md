@@ -144,7 +144,12 @@ length, SHA-256 and local image ID from an independently authenticated receipt.
 It caps each image archive at 16 GiB, streams the complete byte check, and rejects
 wrong platforms, tagged or multiple images, missing layers, and conflicting OCI
 metadata. It reads the image configuration and archive metadata without extracting
-layers. Use an outer wall-clock deadline to bound blocking disk I/O.
+layers. Classic Docker identifies images by the configuration digest, while the
+containerd image store can identify a single-platform image by its OCI manifest
+digest. The verifier checks the selected identity against the corresponding
+hashed bytes and binds both to the same configuration. A multi-platform index
+as the selected ID requires separate qualification. Use an outer wall-clock
+deadline to bound blocking disk I/O.
 
 The Ubuntu test exports a disposable `linux/amd64` image by immutable ID,
 removes only that fixture image, verifies the archive, loads it, and reads back

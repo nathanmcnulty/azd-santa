@@ -44,32 +44,48 @@ class MetadataReader:
         return self.stream.tell()
 
 
-def read_json(archive, members, name, expected=None):
+def read_metadata(archive, members, name):
     member = members[name]
     need(member.isreg() and 0 < member.size <= CHUNK)
     with archive.extractfile(member) as source:
         raw = source.read(member.size)
     need(len(raw) == member.size)
-    if expected is not None:
-        need('sha256:' + hashlib.sha256(raw).hexdigest() == expected)
+    return raw
+
+
+def parse(raw):
     return json.loads(raw, object_pairs_hook=unique, parse_constant=lambda _: need(False))
 
 
-def verify_oci_index(archive, members, image_id, config_path, layers):
-    need(config_path == 'blobs/sha256/' + image_id[7:])
-    index = read_json(archive, members, 'index.json')
+def content_id(raw):
+    return 'sha256:' + hashlib.sha256(raw).hexdigest()
+
+
+def blob_path(digest):
+    need(type(digest) is str and re.fullmatch(IMAGE_ID, digest))
+    return 'blobs/sha256/' + digest[7:]
+
+
+def verify_oci_index(archive, members, config_id, selected, diff_ids):
+    need(selected['Config'] == blob_path(config_id))
+    index = parse(read_metadata(archive, members, 'index.json'))
     manifests = index['manifests']
     need(index['schemaVersion'] == 2 and type(manifests) is list and len(manifests) == 1)
     descriptor = manifests[0]
     need(descriptor['mediaType'] in ('application/vnd.oci.image.manifest.v1+json',
                                      'application/vnd.docker.distribution.manifest.v2+json'))
     digest = descriptor['digest']
-    need(type(digest) is str and re.fullmatch(IMAGE_ID, digest))
-    manifest = read_json(archive, members, 'blobs/sha256/' + digest[7:], digest)
-    need(manifest['schemaVersion'] == 2 and manifest['config']['digest'] == image_id)
-    digests = [layer['digest'] for layer in manifest['layers']]
-    need(all(type(digest) is str and re.fullmatch(IMAGE_ID, digest) for digest in digests)
-         and ['blobs/sha256/' + digest[7:] for digest in digests] == layers)
+    raw = read_metadata(archive, members, blob_path(digest))
+    need(content_id(raw) == digest)
+    manifest = parse(raw)
+    need(manifest['schemaVersion'] == 2 and manifest['config']['digest'] == config_id)
+    need(type(manifest['layers']) is list and len(manifest['layers']) == len(diff_ids))
+    for path, descriptor, diff_id in zip(selected['Layers'], manifest['layers'], diff_ids):
+        if path != blob_path(descriptor['digest']):
+            # The classic Docker store exports uncompressed layers and records
+            # the original registry descriptors separately in LayerSources.
+            need(path == blob_path(diff_id) and selected['LayerSources'][diff_id]['digest'] == descriptor['digest'])
+    return digest
 
 
 def verify_archive(stream, *, archive_sha256, archive_bytes, image_id,
@@ -116,11 +132,13 @@ def verify_archive(stream, *, archive_sha256, archive_bytes, image_id,
             need(1024 <= padding <= 10240 and padding % 512 == 0)
             reader.seek(archive.offset)
             need(reader.read(padding) == bytes(padding))
-            manifest = read_json(archive, members, 'manifest.json')
+            manifest = parse(read_metadata(archive, members, 'manifest.json'))
             need(type(manifest) is list and len(manifest) == 1)
             selected = manifest[0]
             need(type(selected) is dict and not selected.get('RepoTags') and not selected.get('Parent'))
-            config = read_json(archive, members, selected['Config'], image_id)
+            raw_config = read_metadata(archive, members, selected['Config'])
+            config_id = content_id(raw_config)
+            config = parse(raw_config)
             need(config['os'] == 'linux' and config['architecture'] == 'amd64' and not config.get('variant'))
             layers = selected['Layers']
             diff_ids = config['rootfs']['diff_ids']
@@ -129,11 +147,14 @@ def verify_archive(stream, *, archive_sha256, archive_bytes, image_id,
                  and all(members[name].isreg() and members[name].size > 0 for name in layers)
                  and all(type(value) is str and re.fullmatch(IMAGE_ID, value) for value in diff_ids))
             if 'repositories' in members:
-                need(read_json(archive, members, 'repositories') == {})
+                need(parse(read_metadata(archive, members, 'repositories')) == {})
+            manifest_id = None
             if 'index.json' in members:
-                verify_oci_index(archive, members, image_id, selected['Config'], layers)
+                manifest_id = verify_oci_index(archive, members, config_id, selected, diff_ids)
+            need(image_id in (config_id, manifest_id))
         need(time.monotonic() < deadline)
         return {'scope': 'azd-santa-retained-image-archive-v1', 'image_id': image_id,
+                'config_id': config_id,
                 'platform': 'linux/amd64', 'archive_sha256': archive_sha256,
                 'archive_bytes': archive_bytes, 'image_loaded': False}
     except (ValueError, KeyError, TypeError, OSError, EOFError, RecursionError, tarfile.TarError):
