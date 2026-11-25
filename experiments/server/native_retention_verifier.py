@@ -4,12 +4,14 @@ from contextlib import ExitStack
 from copy import deepcopy
 from dataclasses import asdict, replace
 import datetime as dt
+import io
 import os
 from pathlib import Path
 import re
 import stat
 import time
 import uuid
+import zipfile
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
@@ -26,6 +28,8 @@ from retained_image_sas import sync_directory, write_record
 ROOT = '/var/lib/azd-santa-qualification/native-retention-verify'
 SCOPE = 'azd-santa-native-retention-verifier-v1'
 DOMAIN = b'azd-santa/native-verify-read-sas/v1\0'
+MAX_PACKET = 1536
+CONFIG = 'native-verifier.json'
 
 
 def oaep():
@@ -114,8 +118,10 @@ class Verifier:
         secret, nonce = AESGCM.generate_key(bit_length=256), os.urandom(12)
         # The encrypted token and expiry are bound to the entire offer.
         body = blob.encoded({'token': checked._token, 'expires': int(checked.expires.timestamp())})
-        return blob.encoded({'offer_sha256': sha(offer), 'key': b64(key.encrypt(secret, oaep())),
+        packet = blob.encoded({'offer_sha256': sha(offer), 'key': b64(key.encrypt(secret, oaep())),
             'nonce': b64(nonce), 'ciphertext': b64(AESGCM(secret).encrypt(nonce, body, DOMAIN + offer))})
+        blob.need(len(packet) <= MAX_PACKET)
+        return packet
 
     def issue(self, offer, journal_root, *, apply=False):
         """Keep the exact read SAS in the operator process and return sealed bytes only."""
@@ -150,7 +156,7 @@ class Verifier:
             blob.need(sha(offer) == offer_sha256 and boot(self.target) == value['boot_id'])
             intent = read_at(folder, 'intent.json', 4096)
             blob.need(intent == blob.encoded({'offer_sha256': offer_sha256, **self.binding}))
-            envelope = checked_document(packet, sha(packet), 8192)
+            envelope = checked_document(packet, sha(packet), MAX_PACKET)
             blob.need(set(envelope) == {'offer_sha256', 'key', 'nonce', 'ciphertext'}
                       and envelope['offer_sha256'] == offer_sha256)
             private = serialization.load_der_private_key(read_at(folder, 'recipient.der', 8192), password=None)
@@ -176,6 +182,8 @@ class Verifier:
     def observe(self):
         """Read durable verification evidence without minting or repeating a GET."""
         blob.host_identity(self.target)
+        if not self.path.exists():
+            return {'state': 'not-attempted'}
         with ExitStack() as stack:
             folder, _ = blob.parent(self.path / 'offer.json', stack)
             offer = read_at(folder, 'offer.json', 4096)
@@ -191,11 +199,43 @@ class Verifier:
                 raw = read_at(attempt, 'verified.json', 4096)
             except FileNotFoundError:
                 return {'state': 'submitted-unknown'}
-            value = checked_document(raw, sha(raw), 4096)
-            blob.need(value['scope'] == 'independent-native-ciphertext-verification-v1'
+            return {'state': 'verified', 'result': self.check_result(checked_document(raw, sha(raw), 4096))}
+
+    def check_result(self, value):
+        flags = {'independent_bytes_verified': True, 'sealed_authenticated': False, 'exact_image_retained': False,
+                 'restore_accepted': False, 'current_authority_established': False}
+        fields = {'scope', 'blob_uri', 'ciphertext_sha256', 'ciphertext_bytes', 'etag', 'verifier_vm_id'}
+        blob.need(set(value) == fields | set(flags) and all(value[key] is flag for key, flag in flags.items())
+                      and value['scope'] == 'independent-native-ciphertext-verification-v1'
                       and value['blob_uri'] == self.record['blob_uri']
                       and value['ciphertext_sha256'] == self.record['complete']['ciphertext_sha256']
+                      and type(value['ciphertext_bytes']) is int
                       and value['ciphertext_bytes'] == self.record['complete']['ciphertext_bytes']
-                      and value['verifier_vm_id'] == self.target.vm_id and value['independent_bytes_verified'] is True
-                      and value['sealed_authenticated'] is False and value['restore_accepted'] is False)
-            return {'state': 'verified', 'result': value}
+                      and value['verifier_vm_id'] == self.target.vm_id and re.fullmatch(r'"[A-Za-z0-9._-]{1,128}"', value['etag']))
+        return value
+
+
+def dispatch(archive_bytes, request_bytes):
+    """Dispatch the fixed guest operations from a digest-verified tooling archive."""
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        entry = archive.getinfo(CONFIG)
+        blob.need(0 < entry.file_size <= 8192)
+        raw = archive.read(entry)
+    config = checked_document(raw, sha(raw), 8192)
+    blob.need(set(config) == {'tenant', 'subscription', 'source', 'verifier', 'store', 'record'})
+    facts = config['store']
+    blob.need(set(facts) == {'blob', 'region', 'owned_subnets', 'ownership_id'} and type(facts['owned_subnets']) is list)
+    store = blob.Store(blob.Blob(**facts['blob']), facts['region'], tuple(facts['owned_subnets']), facts['ownership_id'])
+    selection = Selection(config['tenant'], config['subscription'], store, blob.SelectedTarget(**config['source']),
+                          blob.SelectedTarget(**config['verifier']))
+    job = Verifier(selection, config['record'])
+    request = checked_document(request_bytes, sha(request_bytes), 4096)
+    verb = request['action']
+    if verb == 'receive':
+        blob.need(set(request) == {'action', 'packet', 'offer_sha256'})
+        result = job.receive(decode(request['packet'], MAX_PACKET), request['offer_sha256'], apply=True)
+        reply = {'state': 'verified', 'result': job.check_result(result)}
+    else:
+        blob.need(set(request) == {'action'} and verb in ('offer', 'observe'))
+        reply = {'state': 'offered', 'offer': b64(job.offer(apply=True))} if verb == 'offer' else job.observe()
+    return {**reply, 'scope': SCOPE, 'batch_sha256': sha(request_bytes), 'record_sha256': job.binding['record_sha256']}

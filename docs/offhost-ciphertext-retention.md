@@ -138,8 +138,30 @@ removes the ephemeral recipient key before requesting the blob.
 After a lost reply, observation can read the existing byte-verification
 receipt without issuing a second GET. The ciphertext is retained privately as
 `download/backup.sealed` under the verifier operation directory. Sealed
-authentication requires the separate, original capture recipient. The
-native verifier still needs an Azure command adapter and live qualification.
+authentication requires the separate, original capture recipient.
+
+`experiments/server/native_retention_verify_command.py` uses the existing
+Run Command channel to verify one capture on the selected verifier. It
+accepts the backup-store selection receipt, the independently pinned native
+capture record and the reviewed tooling bundle. The plan contacts no Azure
+services.
+
+```powershell
+$verifyInputs = @(
+    '--selection', $selectionReceipt, '--capture-record', $nativeCaptureRecord,
+    '--capture-record-sha256', $nativeCaptureRecordSha, '--tooling', $toolingBundle,
+    '--commit', $reviewedCommit, '--tooling-sha256', $toolingSha
+)
+$verifyPlan = python ./experiments/server/native_retention_verify_command.py plan @verifyInputs |
+    ConvertFrom-Json
+python ./experiments/server/native_retention_verify_command.py apply @verifyInputs `
+    --journal-root $journalRoot --plan-sha256 $verifyPlan.plan_sha256
+```
+
+Use `observe` with the same arguments to inspect a lost reply. The report
+gives the verified ciphertext path on the verifier for the compatibility
+recovery command. The operator receives neither backup contents nor a
+private key. Live upload and download remain acceptance gates.
 
 `experiments/server/retention_image_inventory.py` implements the image selection
 for a separate retention contract. It checks the exact compatibility document
