@@ -101,6 +101,12 @@ def cached_cli(arguments, seconds, *, application=None):
              and arguments[2] == '--subscription' and re.fullmatch(retention.GUID, arguments[3])
              and ((arguments[1] == 'show' and len(arguments) == 4) or
                   (arguments[1] == 'get-access-token' and arguments[4:] == ['--resource', RESOURCE]))))
+    return bounded_cli(arguments, seconds, application=application)
+
+
+def bounded_cli(arguments, seconds, *, application=None):
+    """Run arguments prevalidated by a fixed-purpose CLI adapter."""
+    require(0 < seconds <= 1200)
     deadline = time.monotonic() + seconds
     path, identity = application if application is not None else resolve_cli()
     require(file_identity(path) == identity)
@@ -115,7 +121,7 @@ def cached_cli(arguments, seconds, *, application=None):
     flags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
     argv = [str(path), *arguments, '--only-show-errors', '--output', 'json']
     # Batch launch is an OS shell boundary even with shell=False. All arguments
-    # above are fixed words/validated GUIDs; quote the trusted path explicitly.
+    # must be validated by the caller; quote the trusted path explicitly.
     command = ('"' + str(path) + '" ' + subprocess.list2cmdline(argv[1:])) if os.name == 'nt' else argv
     process = subprocess.Popen(command,
         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -221,21 +227,13 @@ def https(method, url, body, token, deadline):
         connection.close()
 
 
-class CachedArm:
-    """One operator attempt. Injected adapters are protocol-test seams, not authority.
+class CachedStoreObservation:
+    """Shared cached context, bounded ARM transport and exact store readback."""
 
-    Call initialize(live=True), then mint(apply=True), passing its private result
-    directly to seal_offer. There is no token/capability export or resume API.
-    """
-    def __init__(self, selection, record, target, permission, *, seconds=180,
-                 cli=cached_cli, transport=https):
+    def __init__(self, selection, *, seconds, cli, transport):
         require(type(selection) is Selection and type(seconds) is int and 1 <= seconds <= 300)
         self._intent = selection.intent()
-        require(target == (selection.source if permission == 'c' else selection.verifier))
-        retention.selection(record, selection.store.blob, selection.store, target, permission)
         self._selection = selection
-        self._record = copy.deepcopy(record)
-        self._target, self._permission = target, permission
         self._urls = frozenset(selector.plan(self._intent)[2])
         self._post = RESOURCE.rstrip('/') + selection.store.blob.account_id + '/listServiceSas?api-version=2025-06-01'
         self._cli, self._transport, self._seconds = cli, transport, seconds
@@ -325,6 +323,18 @@ class CachedArm:
         except Exception:
             self._state, self._token = 'closed', None
             raise ArmRejected() from None
+
+
+class CachedArm(CachedStoreObservation):
+    """One native capture capability attempt. Call initialize, then mint and seal."""
+
+    def __init__(self, selection, record, target, permission, *, seconds=180,
+                 cli=cached_cli, transport=https):
+        super().__init__(selection, seconds=seconds, cli=cli, transport=transport)
+        require(target == (selection.source if permission == 'c' else selection.verifier))
+        retention.selection(record, selection.store.blob, selection.store, target, permission)
+        self._record = copy.deepcopy(record)
+        self._target, self._permission = target, permission
 
     def __call__(self, method, url, body):
         require(self._busy.acquire(blocking=False))

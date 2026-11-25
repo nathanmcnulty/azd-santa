@@ -222,12 +222,43 @@
       "feature": "offhost-ciphertext-retention",
       "defaultEnabled": false,
       "scope": "Exact independently owned Storage account/container/blob and verified solution VM instance/NIC/subnet/NSG bindings; one source target and a different selected owned verifier",
-      "rationale": "The private cached-CLI callback reuses the existing selector for fresh independent RG/VM/network readbacks and one exact listServiceSas request and handles short-lived HTTPS create-only/read-only capabilities without account-key retrieval or role assignment. listServiceSas is powerful account-level authority; code blob restriction does not narrow that RBAC action. The typed source relay adds recipient crypto, a once-only journal and strict manager/cgroup terminal checks; actual cached ARM delivery and guest terminal behavior remain integration gates. Blob byte verification does not authenticate the envelope, retain images/portable keys, establish current authority or restore applications.",
+      "rationale": "The private cached-CLI callback reuses the existing selector for fresh independent RG/VM/network readbacks and one exact listServiceSas request and handles short-lived HTTPS create-only/read-only capabilities without account-key retrieval or role assignment. listServiceSas is powerful account-level authority; code blob restriction does not narrow that RBAC action. The source command uses Action Run Command to deliver the sealed capability to a once-only relay with manager/cgroup terminal checks. Actual Azure delivery and guest terminal behavior remain qualification gates. Blob byte verification does not authenticate the envelope, retain images/portable keys, establish current authority or restore applications.",
       "evidenceState": "code",
       "evidence": [
         { "path": "experiments/server/blob_retention.py", "sha256": "f5aa619725104fa3a4bbe174a7ea4ceb236d9eab68675b8730d90984cb3e1818" },
+        { "path": "experiments/server/native_retention_verifier.py", "sha256": "fb99e7b19af802bc6a88222cca235c5946845351afdbd3809fa7b5fe9aec7ea1" },
+        { "path": "experiments/server/native_retention_verify_command.py", "sha256": "2299b4bb50c5878ce44babfbb2afcd4761b1bcbe0a49669f12b2040c7e9d236e" },
+        { "path": "experiments/server/native_retention_upload_command.py", "sha256": "c603f32bfc2a1341ff8a290101fa8ff45d2019401640bef9af4afd13089d6e58" },
+        { "path": "experiments/server/native_retention_upload_guest.py", "sha256": "ad1746baa879c86f1809763c21cb202ff8f302bcf386e54ed1ecaccf1122cf3c" },
+        { "path": "experiments/server/native_capture_record_command.py", "sha256": "365377b462d09c4e8eda67cb1b58bb7f9a491a9c38754a57305a2dda48ce338a" },
         { "path": "experiments/server/blob_capability_relay.py", "sha256": "eb6a5eee83ededf08e78c6203aeb7babc8e36129cf836f2af7ef80be0f6a9a1c" },
-        { "path": "experiments/server/private_arm_adapter.py", "sha256": "5da1bd9c26fe0fead5c1b1c75197dfbd4a2df0ef5de5ab2fd0162ea6b52fbdc4" }
+        { "path": "experiments/server/private_arm_adapter.py", "sha256": "69a8abfdbe60e0826a7e000a092794ec4bb32425522fc06d41ce1f64da22e82f" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/blobServices/containers/read; Microsoft.Storage/storageAccounts/listServiceSas/action; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/networkSecurityGroups/read; Microsoft.Network/virtualNetworks/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "principal": "Explicit cached ARM operator for the selected retained image operation",
+      "phase": "runtime",
+      "feature": "offhost-image-artifact-retention",
+      "defaultEnabled": false,
+      "scope": "Selected owned account, source and verifier networks, and one role for an exact pinned image part manifest",
+      "rationale": "The issuer reuses cached ARM context and fresh owned store and VM checks, then requests one exact-object create or read SAS per part. The journal prevents replay on the retained root. Storage authorization is account-scoped and remains subject to the existing role and policy. Action Run Command supports encrypted delivery to a digest-pinned runner on the exact selected VM. An explicit Action Run Command installs the digest-bound guest runner before acquiring an offer or capabilities. Live Azure archive delivery and image transfer remain qualification gates.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/server/private_arm_adapter.py", "sha256": "69a8abfdbe60e0826a7e000a092794ec4bb32425522fc06d41ce1f64da22e82f" },
+        { "path": "experiments/server/retained_image_sas.py", "sha256": "2323d8a3db16a413dd43ce41de552cd92d8ebd2df08be3bc1f70ab6fb24cee0c" },
+        { "path": "experiments/server/retained_image_run_command.py", "sha256": "79dc452639b3c82285123d0b8a0272dd5019cfc34cbd98414870bc55ffa63bb0" },
+        { "path": "experiments/server/retained_image_delivery.py", "sha256": "55807fd74ed3f4a67a00a103964e4b7a1b21516ca9b315b3eccc72059bcb0cab" },
+        { "path": "experiments/server/retained_image_export.py", "sha256": "b59dea54ae45516acbd7b3d938b762cbdd0312d054dffe86f1d90b6abb8612e2" },
+        { "path": "experiments/server/retained_image_export_job.py", "sha256": "745aa9f963c1526924babcc2adf9b0829048ec54763a1bec2746b5729fff52b6" },
+        { "path": "experiments/server/retained_image_parts.py", "sha256": "5aa4084892d248b0d36a6d3ea59edc8c520c4ba017af13f81dfd6e4cbac204c3" },
+        { "path": "experiments/server/retained_image_export_command.py", "sha256": "fa35247a4da93a0edbd21a48f1804e295be9b703ac3a5c2f51931f5c0855cb74" },
+        { "path": "experiments/server/retention_image_inventory.py", "sha256": "1743939d67a7e0ccf02f2c63ea50e03b4e25dd25f13be6d08f2dc56e61a68b93" },
+        { "path": "experiments/server/retained_image_inventory_command.py", "sha256": "4f54cd13580d9da5d12d0eaf10eb1f2b557773a2d85c28155fcee63565913a2a" },
+        { "path": "experiments/server/retained_image_operator.py", "sha256": "e2fecb1b530fbd1986e346100ead0f85191f60671935fd3cdac4bdaf39fea6aa" },
+        { "path": "experiments/server/retained_image_runner.py", "sha256": "8033c367e86bc5452ad0c5d8815411cfa08483cbd5182d08ee62c32d3110a0d5" }
       ]
     },
     {
@@ -272,10 +303,10 @@
       "rationale": "Nested VM postprovision validates the selected account/group/VM outputs and schedules two-hour shutdown for that exact VM, including host-only mode. When SANTA_PRIVATE_BACKEND_INSTALL=true, it additionally transports bounded pinned sources, submits one durable privileged fresh-install job and observes it before nonmutating finalization. SANTA_PRIVATE_HTTPS_ORIGIN=true optionally consumes the existing selected cached HTTPS endpoint reader for a fresh origin-bound profile only. No root Intune hook, network admission, tenant grant or operator reset is added; actual complete ARM/hook/cold-install delivery remains unqualified.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "4d8e11f20af8476e40b98f2ab48b8eadd854729a5eafbdc30a222be4ad298126" },
+        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "5a9c0f545ed52e83d16476d5b75d91ba49d71b6d6772820bc7642d0be373f0d2" },
         { "path": "experiments/vm/Install-PrivateBackend.ps1", "sha256": "33c620439f5abadef688f4a6f0477e80e4676986beac0cb6d43b975c092320d5" },
-        { "path": "experiments/server/private_install.py", "sha256": "02c02f7c5dea94a2bff9200a225cbb07ddcc062c2bc512027ea80da4abb38f60" },
-        { "path": "experiments/server/private_install_transport.py", "sha256": "38695ddeee431c111339aeaa7210f4a0a79d2bf9702f2076d7fe9fa559c972ef" },
+        { "path": "experiments/server/private_install.py", "sha256": "8b2c2e3867ed19e462a8d26e2df873077946596541c1cf767952e5c207e710dc" },
+        { "path": "experiments/server/private_install_transport.py", "sha256": "ec26e620151179eef05e97d4d274d88a90717126c68a3d6eedd488357d273a16" },
         { "path": "experiments/server/prepare_zentral_eval.py", "sha256": "879290e2a7e74e0a43e0f2e66f5d537a64a69a069f1021c94403cdcc38384451" },
         { "path": "experiments/server/stage_runtime.py", "sha256": "61d6bb2c5e32eb981b4879a57ec7337e8ef17e4ef8e5553797d57b88e0135129" },
         { "path": "experiments/server/operator_mfa.py", "sha256": "759206c03387e3166878623a9456d3b8d42a12149f706e4707968cf9377e6a43" }
@@ -498,13 +529,12 @@
       "feature": "intune-profile-status",
       "defaultEnabled": false,
       "scope": "Explicit selected tenant and one-device Santa pilot",
-      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "rationale": "The profile reader requires this scope. UseExistingSession checks the delegated Graph session without starting sign-in.",
       "evidenceState": "code",
       "evidence": [
         {
           "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
-          "sha256": "e9fd134196fb4a6d7e9afe17f2a571c52041d68cbc533c7d102c61bce26faded",
-          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
+          "sha256": "a1bc61509c3b95e61e166608a22fc6f3c19269c2fb0bbea6f61445ec214ba5f0"
         }
       ]
     },
@@ -517,13 +547,12 @@
       "feature": "intune-profile-status",
       "defaultEnabled": false,
       "scope": "Explicit selected tenant and one-device Santa pilot",
-      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "rationale": "The profile reader requires this scope. UseExistingSession checks the delegated Graph session without starting sign-in.",
       "evidenceState": "code",
       "evidence": [
         {
           "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
-          "sha256": "e9fd134196fb4a6d7e9afe17f2a571c52041d68cbc533c7d102c61bce26faded",
-          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
+          "sha256": "a1bc61509c3b95e61e166608a22fc6f3c19269c2fb0bbea6f61445ec214ba5f0"
         }
       ]
     },
@@ -536,13 +565,12 @@
       "feature": "intune-profile-status",
       "defaultEnabled": false,
       "scope": "Explicit selected tenant and one-device Santa pilot",
-      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "rationale": "The profile reader requires this scope. UseExistingSession checks the delegated Graph session without starting sign-in.",
       "evidenceState": "code",
       "evidence": [
         {
           "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
-          "sha256": "e9fd134196fb4a6d7e9afe17f2a571c52041d68cbc533c7d102c61bce26faded",
-          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
+          "sha256": "a1bc61509c3b95e61e166608a22fc6f3c19269c2fb0bbea6f61445ec214ba5f0"
         }
       ]
     },
@@ -555,13 +583,12 @@
       "feature": "intune-profile-status",
       "defaultEnabled": false,
       "scope": "Explicit selected tenant and one-device Santa pilot",
-      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "rationale": "The profile reader requires this scope. UseExistingSession checks the delegated Graph session without starting sign-in.",
       "evidenceState": "code",
       "evidence": [
         {
           "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
-          "sha256": "e9fd134196fb4a6d7e9afe17f2a571c52041d68cbc533c7d102c61bce26faded",
-          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
+          "sha256": "a1bc61509c3b95e61e166608a22fc6f3c19269c2fb0bbea6f61445ec214ba5f0"
         }
       ]
     },

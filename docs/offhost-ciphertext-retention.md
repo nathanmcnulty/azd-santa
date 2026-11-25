@@ -83,8 +83,8 @@ and [SAS IP behavior](https://learn.microsoft.com/en-us/rest/api/storageservices
 - Capability objects suppress their secret in repr. The callback's raw response
   remains private; callers must not serialize capabilities or print raw callback
   errors. Fixed exceptions and public receipts omit SAS, headers, account keys,
-  plaintext and arbitrary provider errors. A cached ARM adapter and confidential
-  selected-VM delivery still need packaging; the VM must never receive ARM tokens.
+  plaintext and arbitrary provider errors. The VM receives the encrypted
+  capability through the selected-VM command.
 - `upload_file` defaults to a plan. Apply requires an exact source-VM capability
   and IMDS match, a stable owner-private Linux `backup.sealed` descriptor with
   no symlinks/hardlinks, complete SHA/length and a fresh private attempt directory.
@@ -126,6 +126,379 @@ writers. No stage should assume an uploaded MD5/metadata SHA equals independent
 byte verification; download and compare with the separately retained expected SHA.
 
 ## Recovery artifacts and remaining integration
+
+Use `experiments/server/native_capture_record_command.py` to collect the input
+record for both transfers. Take the request SHA-256, ciphertext SHA-256 and
+length, source bundle SHA-256, and image ID from independently retained capture
+evidence. The planned read targets the original source instance. The guest
+checks the original request, completion and ciphertext against those values
+and returns only the transfer record. It creates no upload state and uses no
+Storage capability.
+
+```powershell
+$recordInputs = @(
+    '--selection', $selectionReceipt, '--operation', $captureOperation,
+    '--request-sha256', $requestSha, '--ciphertext-sha256', $ciphertextSha,
+    '--ciphertext-bytes', "$ciphertextBytes", '--source-bundle-sha256', $sourceBundleSha,
+    '--image-id', $sourceImageId, '--tooling', $toolingBundle,
+    '--commit', $reviewedCommit, '--tooling-sha256', $toolingSha
+)
+$recordPlan = python ./experiments/server/native_capture_record_command.py plan @recordInputs |
+    ConvertFrom-Json
+$recordRead = python ./experiments/server/native_capture_record_command.py read @recordInputs `
+    --output $nativeCaptureRecord --plan-sha256 $recordPlan.plan_sha256 | ConvertFrom-Json
+$nativeCaptureRecordSha = $recordRead.capture_record_sha256
+```
+
+Use a new output file in the existing private local journal directory. The
+reported SHA-256 is the digest of the exact record file written for transfer.
+
+`experiments/server/native_retention_upload_command.py` plans or submits one
+create-only upload from the selected source VM. It accepts the backup-store
+selection receipt, a capture record and its independently trusted digest, and
+the reviewed tooling bundle with its commit and digest. The offline plan pins
+the selected source and exact guest program. Apply writes a local intent, starts
+one guest offer, and uses the cached ARM operator's existing rights to request
+one exact-blob create capability. The bounded Run Command receives only the
+sealed capability packet. The private systemd upload can outlive the command.
+
+```powershell
+$uploadInputs = @(
+    '--selection', $selectionReceipt, '--capture-record', $nativeCaptureRecord,
+    '--capture-record-sha256', $nativeCaptureRecordSha, '--tooling', $toolingBundle,
+    '--commit', $reviewedCommit, '--tooling-sha256', $toolingSha
+)
+$uploadPlan = python ./experiments/server/native_retention_upload_command.py plan @uploadInputs |
+    ConvertFrom-Json
+python ./experiments/server/native_retention_upload_command.py apply @uploadInputs `
+    --journal-root $journalRoot --plan-sha256 $uploadPlan.plan_sha256
+```
+
+After submission, use `observe` with the same arguments to check the saved
+attempt, including after a lost reply. Wait for `uploaded-unverified` before
+interpreting source-side terminal success. For an unknown upload result, preserve
+the journal and use independent verification of the exact object with the
+original expected SHA. The observation command never requests a SAS or resubmits
+an upload.
+
+`experiments/server/native_retention_verifier.py` connects the cached ARM
+issuer to the native ciphertext download on one independently selected VM.
+Its short-lived offer binds the exact blob, capture record, verifier instance
+and current boot. The operator journals the request before requesting a
+read-only SAS and returns only an encrypted packet. The verifier checks the
+packet and signed permission, saves its exclusive submission marker, and
+removes the ephemeral recipient key before requesting the blob.
+
+After a lost reply, observation can read the existing byte-verification
+receipt without issuing a second GET. The ciphertext is retained privately as
+`download/backup.sealed` under the verifier operation directory. Sealed
+authentication requires the separate, original capture recipient.
+
+`experiments/server/native_retention_verify_command.py` uses the existing
+Run Command channel to verify one capture on the selected verifier. It
+accepts the backup-store selection receipt, the independently pinned native
+capture record and the reviewed tooling bundle. The plan contacts no Azure
+services.
+
+```powershell
+$verifyInputs = @(
+    '--selection', $selectionReceipt, '--capture-record', $nativeCaptureRecord,
+    '--capture-record-sha256', $nativeCaptureRecordSha, '--tooling', $toolingBundle,
+    '--commit', $reviewedCommit, '--tooling-sha256', $toolingSha
+)
+$verifyPlan = python ./experiments/server/native_retention_verify_command.py plan @verifyInputs |
+    ConvertFrom-Json
+python ./experiments/server/native_retention_verify_command.py apply @verifyInputs `
+    --journal-root $journalRoot --plan-sha256 $verifyPlan.plan_sha256
+```
+
+Use `observe` with the same arguments to inspect a lost reply. The report
+gives the verified ciphertext path on the verifier for the compatibility
+recovery command. The operator receives neither backup contents nor a
+private key. Live upload and download remain acceptance gates.
+
+`experiments/server/retention_image_inventory.py` implements the image selection
+for a separate retention contract. It checks the exact compatibility document
+from an authenticated native capture and the reviewed dependency lock against
+independently pinned SHA-256 values. It then verifies Docker image observations
+keyed by immutable local image ID. For the current `linux/amd64` host selection,
+the three core services must share one exact ID and each of the four dependencies
+must match its own ID and pinned registry digest. Incomplete and unexpected
+selections fail. The inventory carries the capture generation, runtime manifest
+digest and source commit so later retention can bind the same selection.
+
+Treat the capture document and inventory as private. Image exports may include
+restricted source or configuration. `experiments/server/retained_image_archive.py`
+checks an owned, stable, seekable plaintext Docker export against the archive
+length, SHA-256 and local image ID from an independently authenticated receipt.
+It caps each image archive at 16 GiB, streams the complete byte check, and rejects
+wrong platforms, tagged or multiple images, missing layers, and conflicting OCI
+metadata. It reads the image configuration and archive metadata without extracting
+layers. Classic Docker identifies images by the configuration digest, while the
+containerd image store can identify a single-platform image by its OCI manifest
+digest. The verifier checks the selected identity against the corresponding
+hashed bytes and binds both to the same configuration. A multi-platform index
+as the selected ID requires separate qualification. Use an outer wall-clock
+deadline to bound blocking disk I/O.
+
+`experiments/server/retained_image_export.py` streams a single selected image by
+exact ID and platform from the local Linux Docker socket. It needs Docker API
+1.48 or later for platform selection. The caller pins the previously verified
+inventory and the recipient's RSA public key. The exporter creates a fresh
+private directory, records its intent first, and writes only encrypted output.
+Docker may use its own temporary storage internally, so the daemon also needs
+adequate private disk space and an external deadline. An interrupted or oversized
+export leaves its directory for inspection. A successful export publishes a
+receipt that binds the intent, plaintext image archive, and ciphertext hashes and
+sizes. The receipt must be captured via a trusted producer channel before it can
+be used as independent provenance. Anyone with the public key can encrypt bytes.
+
+When an operation ID is supplied, the exporter records part hashes as it writes
+ciphertext and commits the part manifest before publishing completion. It
+does not reread the ciphertext to produce the manifest or create separate part
+files. The uploader still independently checks the selected ciphertext before
+its first write to Blob.
+
+`retained_image_export_job.py` reserves the operation on the selected guest
+after checking its Azure VM identity. It gives the operator a completion
+record and bounded manifest pages with a shared SHA-256 pin. A failed export
+preserves its reservation and cannot publish a complete receipt. The
+encrypted image stays on the source VM for the upload workflow.
+
+The envelope reuses the native RSA-OAEP and AES-GCM implementation. A separate
+encrypted image marker and intent precede the Docker tar bytes. The image receipt
+and payload are separate from native database capture and Blob transfer.
+`experiments/server/retained_image_readback.py` checks a downloaded ciphertext
+against an independently pinned producer receipt and image inventory. It verifies
+the complete ciphertext before creating anonymous plaintext staging on the
+selected owner-private Linux filesystem. A second authenticated pass stages the
+bytes. The reader checks the encrypted intent and verifies the exact archive
+before exposing a read-only file descriptor positioned at the Docker tar. The caller
+consumes from that position within the context. The context closes the anonymous
+file and leaves no plaintext path. The staging filesystem needs space for one
+archive and protection appropriate for confidential data. A trusted isolated host
+and an outer I/O deadline remain caller prerequisites.
+
+`experiments/server/retained_image_parts.py` plans ordered 512 MiB ciphertext
+parts under `image-artifacts/<operation>/<index>.sealed-part`, with at most 33
+parts per image. The plan binds the producer completion digest and the full
+ciphertext length and SHA-256. Per-part lengths and SHA-256 support independent
+readback, while per-part MD5 is available for transport integrity. Generation
+reads at most 1 MiB at a time and creates no local part files. A receiver checks
+the independently retained manifest and producer completion digests, streams
+the validated object sequence to an exclusive new file, and verifies the full
+length and SHA-256 before reporting success. An interrupted or invalid attempt
+preserves partial output for inspection. Open each part through an exact-object
+reader and apply an outer I/O deadline. The multipart image protocol does not
+change native capture or its 2 GiB cap.
+
+`experiments/server/retained_image_blob.py` provides the default-off HTTPS
+transport. It accepts the pinned plan, independently selected store and VM
+facts, and already issued exact-object SAS tokens through a trusted private
+caller. Upload uses only create permissions, binds each request to one planned
+part, and sends `If-None-Match: *`. It records intent before the first request,
+stops on an ambiguous result, and refuses to replay an existing operation on
+the same journal root. A separate VM instance with read-only tokens can verify
+the exact parts and reconstruct the ciphertext in a fresh journal. Neither
+role receives listing, overwrite, deletion, ARM or recipient-key credentials.
+The transport checks signed permission and expiry fields, while binding the
+token to the exact object depends on trusted issuance. The operator-side
+`retained_image_sas.py` module can issue that batch explicitly using cached ARM
+authority. A default plan sends no requests. Apply reserves a private journal,
+checks current store and VM facts, and invokes `listServiceSas` once per exact
+part for one role. The selected source receives create-only scope and a separate
+verifier receives read-only scope. The private in-process batch can only be
+taken once for the pinned manifest and target. The journal records no tokens.
+Keep the persistent root and resolve unknown outcomes by readback.
+
+`retained_image_handoff.py` creates a short-lived recipient offer on the selected
+Linux VM. It encrypts one packet per blob and binds each packet to the shared
+manifest, exact object, account, target VM instance, current boot and transfer
+role. The guest consumes the offer once, unlinks the ephemeral private-key file,
+and checks the entire packet set before calling the transfer code. Use the
+trusted operator channel to obtain the offer and deliver the packets. Recipient
+encryption protects the SAS in transit and relies on that channel for sender
+authorization. The handoff has no ARM token or storage account key.
+
+`retained_image_delivery.py` defines the bounded request/reply protocol for
+that channel. The operator reserves the operation before the first request.
+The operator groups consecutive encrypted packets in each request using
+the serialized size. Each request is capped at 14 KiB before outer command
+framing. The guest validates the complete group before staging any member,
+then checks the full batch before starting a transfer. A 33-part fixture
+with 1,600-byte packets needs six packet requests plus begin and finish.
+Plan sends nothing. An uncertain reply stops the operator, who can observe
+staged packet indexes or the saved transfer result without replay.
+
+`retained_image_run_command.py` adapts that callback to Linux Azure Action
+Run Command. Each frame checks the cached tenant and subscription and reads
+back the selected VM resource ID, instance ID and region before submission.
+The guest loads a digest-pinned, root-owned runner from the selected operation
+and role directory. The adapter returns only a structured reply followed by
+the current request's completion marker. It caps the JSON at 3 KiB to fit
+within [Action Run Command's 4 KiB output limit][action-run-command].
+
+`retained_image_runner.py` builds the selected guest package from the exact
+reviewed recovery-tooling bundle. It binds the guest manifest, completion,
+VM identities and transfer role into a private archive. Its Linux installer
+validates guest identity, reserves a fresh operation directory and writes
+the pinned entry point last. The operator can request the same boot-bound
+public offer again after losing its reply. The runner uses the saved offer
+and immutable selection for all subsequent frames.
+
+The operator's Run Command adapter can provision the package in one request
+before acquiring the short-lived offer or capabilities. It compresses the
+complete archive with XZ and checks the full script against the adapter's
+64 KiB bound. The Linux bootstrap limits the decoder memory and output
+size and verifies the archive SHA-256 before importing the reviewed source.
+The operator records the attempt before submission. Use the read-only
+runner observation after a missing or inconclusive reply. The observation
+requires the same VM and archive pins and leaves the offer and transfer
+journals untouched.
+
+CI exercises the full script size with a 33-part manifest. Maximum-size
+transfer timing, actual Azure request limits and off-host journal retention
+still require qualification.
+
+### Run a selected image transfer
+
+On the independent Linux recovery host, use the retained native ciphertext
+and its independently obtained SHA-256 to recover the compatibility record.
+Keep the recipient's private DER key and output in an owner-private
+directory on that host.
+
+```bash
+python3 ./experiments/server/retained_image_compatibility.py \
+  --ciphertext "$ciphertext" --ciphertext-sha256 "$ciphertextSha" \
+  --recipient-key "$recipientPrivateDer" --output "$authenticatedCompatibility"
+```
+
+The command reads and authenticates the complete seal before parsing the
+bounded first archive member. It writes only the verified
+`compatibility.json` and prints its SHA-256 for the next command. Full
+archive validation and application restore remain separate checks.
+
+To collect a fresh source inventory, use
+`experiments/server/retained_image_inventory_command.py`. It verifies the
+independently authenticated `compatibility.json` and requires its source VM
+instance to match the backup-store selection. It takes the dependency lock
+from the reviewed tooling bundle. The plan shows the five expected IDs and
+contacts no Azure services. During explicit readback, the selected guest uses
+[`docker image inspect`][docker-image-inspect] for those exact IDs and
+returns only the confirmed inventory. Container configuration and daemon
+diagnostics stay on the guest.
+
+```powershell
+$inventoryInputs = @(
+    '--selection', $selectionReceipt, '--operation', $operationId,
+    '--compatibility', $authenticatedCompatibility,
+    '--compatibility-sha256', $compatibilitySha, '--tooling', $toolingBundle,
+    '--commit', $reviewedCommit, '--tooling-sha256', $toolingSha
+)
+$inventoryPlan = python ./experiments/server/retained_image_inventory_command.py plan @inventoryInputs |
+    ConvertFrom-Json
+$inventory = python ./experiments/server/retained_image_inventory_command.py read @inventoryInputs `
+    --plan-sha256 $inventoryPlan.plan_sha256 --output $imageInventory | ConvertFrom-Json
+$inventorySha = $inventory.inventory_sha256
+```
+
+For a fresh export, use `experiments/server/retained_image_export_command.py`.
+It accepts the same backup-store selection and reviewed tooling bundle as the
+transfer command, plus the reviewed image inventory and recovery recipient's
+DER public key. The plan prints the exact source VM, image ID, maximum
+archive size, and plan digest. It contacts Azure only during explicit apply
+or readback. The selected archive and deadline limits must fit the lab's
+disk and runtime budget.
+
+```powershell
+$exportInputs = @(
+    '--selection', $selectionReceipt, '--operation', $operationId,
+    '--inventory', $imageInventory, '--inventory-sha256', $inventorySha,
+    '--image', 'core', '--recipient', $recipientPublicDer,
+    '--recipient-sha256', $recipientSha, '--tooling', $toolingBundle,
+    '--commit', $reviewedCommit, '--tooling-sha256', $toolingSha
+)
+$exportPlan = python ./experiments/server/retained_image_export_command.py plan @exportInputs |
+    ConvertFrom-Json
+python ./experiments/server/retained_image_export_command.py apply @exportInputs `
+    --journal-root $journalRoot --plan-sha256 $exportPlan.plan_sha256
+python ./experiments/server/retained_image_export_command.py collect @exportInputs `
+    --journal-root $journalRoot --plan-sha256 $exportPlan.plan_sha256
+```
+
+The journal reserves export before submission. When its reply is lost, use
+`observe` with the same inputs to inspect the guest without resubmitting.
+`collect` checks every manifest page before publishing the local
+`complete.json`, `parts.json`, and `export.json` files together. Its report
+supplies `metadata_directory`, `export_directory` on the source VM, and both
+hashes for the transfer below. This path is qualified against a synthetic
+Azure response in CI. Live guest export and receipt delivery remain open.
+
+`experiments/server/retained_image_operator.py` accepts the JSON output of
+`Get-SantaBackupStoreSelection -ReadArm`, the pinned export completion and
+part manifest, and the reviewed recovery-tooling bundle. Save the selection
+producer's output with `ConvertTo-Json -Depth 12`. The receipt names the
+owned store and the source and verifier VM instances. The operator refreshes
+ARM facts before issuing the selected Blob capabilities.
+
+Use `plan` first. This reads the local inputs and prints the intended target,
+object count, script size and `plan_sha256` without calling Azure. The
+following example reuses paths and hashes from an existing recovery
+operation. Create the private journal directory once and retain it across
+invocations.
+
+```powershell
+$inputs = @(
+    '--role', 'upload', '--selection', $selectionReceipt,
+    '--operation', $operationId, '--export-directory', $sourceExportDirectory,
+    '--manifest', $partManifest, '--manifest-sha256', $manifestSha,
+    '--completion', $exportCompletion, '--completion-sha256', $completionSha,
+    '--tooling', $toolingBundle, '--commit', $reviewedCommit,
+    '--tooling-sha256', $toolingSha
+)
+$plan = python ./experiments/server/retained_image_operator.py plan @inputs | ConvertFrom-Json
+$plan
+```
+
+After reviewing the plan, run the same command with `apply` in place of
+`plan`, adding `--journal-root $journalRoot --plan-sha256 $plan.plan_sha256`.
+The command installs the runner, obtains the public offer, issues and seals
+the exact-object capabilities in memory, and transfers the parts. A reported
+upload outcome of `unknown` returns exit code 2. Use `observe` with the same
+inputs and journal to inspect an interrupted run without resubmitting it.
+
+Run an independent `verify` plan and apply with the same pinned image
+inputs and the selected verifier. Omit `--export-directory` for this role.
+The verifier reassembles and hashes the ciphertext. Authentication,
+immutable image import and application restore remain separate operations.
+
+[action-run-command]: https://learn.microsoft.com/en-us/azure/virtual-machines/linux/run-command
+[docker-image-inspect]: https://docs.docker.com/reference/cli/docker/image/inspect/
+
+The Ubuntu test exports a disposable `linux/amd64` image, reassembles a
+ciphertext copy from a synthetic object store, authenticates it, and loads the
+verified descriptor. It reads back the same image ID without starting a container.
+
+Retain an independently reviewed recovery toolset with
+`experiments/server/restore_tooling_bundle.py`. Its `build` command accepts a
+trusted local repository, the full reviewed commit ID, and a fresh destination
+file. It reads exact Git blobs for a fixed inventory covering image readback,
+native archive quarantine, restore census, offline rewrap, and their local
+dependencies, locks, documentation, and license notices. Git working-tree
+configuration, untracked files, and other committed paths are outside that
+inventory. Retain the emitted commit and bundle SHA-256 through a trusted
+channel alongside the recovery inventory.
+
+On a separate recovery machine, run a trusted copy of the tool's `verify`
+command with the bundle path and those external pins. `stage` accepts the same
+inputs plus a fresh local directory and writes the verified bytes as files. It
+does not run their contents. Failed staging leaves the partial directory for
+inspection. The reviewed public-source toolset excludes tenant configuration,
+images, workload data, private keys, and credential caches. Keep the historical
+installer bundle and confidential image or source artifacts private and retain
+their exact bytes independently. The bundled locks identify dependencies;
+platform/runtime binaries, authenticated transfer, and live acceptance still
+require qualification under [issue #97](https://github.com/nathanmcnulty/azd-santa/issues/97).
 
 The optional VM creation-time Storage endpoint setting and GET-only existing
 network proposal are described in [private Storage endpoint wiring](private-storage-endpoint.md).

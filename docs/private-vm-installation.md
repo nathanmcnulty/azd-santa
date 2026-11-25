@@ -143,6 +143,15 @@ readback requires this retained proof and an active runtime before the normal
 six readiness gates run again. A missing proof or a currently failed installer
 unit cannot be accepted just because a completion file exists.
 
+For a failed installer unit that systemd still has loaded, the hook can report
+a `SantaInstall` failure code and a next check. Codes distinguish source
+verification, VM identity, existing runtime state, Docker prerequisites, source
+build, and runtime initialization. The observer requires the original context
+and reports only known codes from the selected unit's exit status. If the code
+is unavailable, retain and inspect the existing job and its private evidence.
+These codes apply to jobs created from the updated installer bundle. Keep the
+original bundle when observing an older job.
+
 The job verifies immutable IMDS VM/subscription identity and pilot tags, then:
 
 1. Installs the exact qualified Ubuntu packages `docker.io=29.1.3-0ubuntu3~24.04.2`

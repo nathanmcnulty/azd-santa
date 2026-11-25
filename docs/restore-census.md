@@ -78,18 +78,26 @@ casts. The private observation retains blocker identities and reports
 partial coverage. Other catalog classes remain explicit blockers until their
 schema and execution semantics receive a reviewed adapter.
 
-Referenced excluded/global definitions remain an explicit unproven gate. Namespace
-selection omits pg_catalog, other pg_* namespaces and information_schema; the
-recursive dependency inventory follows dependents, not every referenced object.
-A custom routine, collation or operator class in an excluded namespace can retain
-its name while its definition changes. A stored column's qualified collation
-name or an index definition alone cannot detect that change. Before full restore
-acceptance, independently inventory and bind these referenced definitions and
-relevant global objects against the reviewed engine/source baseline. Neither
-column builtin-OID guards nor exact_match closes this gap. Both observation and
-comparison therefore return `referenced_definitions='unproven'` and
-`schema_complete=false`; no schema-complete or restore approval follows from a
-successful comparison. Issues54 and79 remain open.
+The collector follows recorded `pg_depend` references out of the inventoried
+objects. References into `pg_catalog`, other `pg_*` namespaces,
+`information_schema`, and database-local objects that have no namespace and
+fall outside the census become private `unreviewed_reference` blockers.
+A custom table access method is one example. Unresolved identities also stop
+collection. The extension catalog supplies the existing extension observations.
+PostgreSQL's automatic dependency from a generated TOAST index to its own heap
+is treated as internal storage. These checks run before application row reads
+and prevent comparison even when two object names match. Recollect older
+manifests because they lack the updated catalog inventory.
+
+Referenced definitions remain an explicit unproven gate. PostgreSQL omits
+dependency edges to pinned objects and may omit dependencies inside routine
+bodies. Namespace-less and external objects still require independent review.
+Bind those definitions and relevant global objects against the reviewed
+engine/source baseline before full restore acceptance. Observation and
+comparison continue to report `referenced_definitions='unproven'` and
+`schema_complete=false`. See the PostgreSQL documentation for
+[catalog dependency records](https://www.postgresql.org/docs/18/catalog-pg-depend.html)
+and [dependencies inside routines](https://www.postgresql.org/docs/18/ddl-depend.html).
 
 Sequence values are not MVCC-consistent even inside repeatable-read. The receipt
 always leaves `sequence_quiescence_proven=false`; independently proven stopped
@@ -114,9 +122,16 @@ private manifest remain confidential. Use the same retained key for comparison.
 
 Offline tests use controlled SQL/registry/loader adapters to exercise transaction
 order, rollback/redaction, exact coverage, changes, unsupported objects and
-limits. They do not execute PostgreSQL or Django, prove catalog SQL/API
-compatibility, or qualify an isolated restore. The next actual gate must execute
-this exact source against the pinned PostgreSQL18 image and complete real Django
-registry/migrations inside a non-listening disposable destination, then reconcile
-all blockers without filtering them out. Full administrator/device reissue and
-application/native postflight remain closed.
+limits. The Linux check uses the pinned PostgreSQL 18 image with Docker networking
+disabled. It checks the exact outbound reference query and runs the full
+collector through a private Unix socket with Django 5.2.18 and psycopg2-binary
+2.9.11. The test pins those versions to the reviewed
+[Zentral constraints](https://github.com/zentralopensource/zentral/blob/88e67b3ce49033aab028029937a6e14f7c489073/requirements_constraints.txt).
+The fixture uses Django's real auth and contenttypes migrations and synthetic
+Santa app labels and models. It checks migration graph and applied rows, exact
+comparison and duplicate rows, a custom table access method, quoted identifiers,
+column tombstones, raw transaction refusal, statement timeout, interruption,
+and rollback. The database
+and input data are disposable. The complete Zentral app registry and restored
+application data still require separate qualification, along with administrator
+and device reissue and native postflight.

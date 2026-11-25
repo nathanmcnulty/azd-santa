@@ -62,10 +62,12 @@ Collect current assignment and per-profile device status without changing Intune
 ./scripts/Get-SantaIntuneProfileStatus.ps1 `
   -TenantId '<tenant-id>' `
   -ExpectedAccount '<expected-upn>' `
-  -ExpectedDeviceName '<exact-device-name>'
+  -ExpectedDeviceName '<exact-device-name>' -UseExistingSession
 ```
 
-The collector requests read-only Graph scopes, reads the five exact object IDs from the apply receipt, and writes `.azure/azd-santa/intune-profile-status.json`. It verifies that the pilot group still contains exactly the recorded Entra device, resolves that identity to exactly one Intune managed device, and reads that device's configuration-state inventory. Assignment proof and device delivery are reported separately. Package readiness remains false until every required profile has a successful state on that managed device, plus a matching per-device success row reported after the profile's last modification, with no failed or error count. This prevents an old remediated summary from masking a newly updated profile. The optional notifications profile does not gate readiness.
+For readback in a host where interactive sign-in is unavailable, use `-UseExistingSession` in the PowerShell session that already has the approved delegated Graph sign-in. Both collectors then verify the tenant, account and required read scopes before making Graph requests. A missing session or scope stops collection without prompting. Check the selected context with `Get-MgContext`. This mode skips SDK sign-in, which can fall back to device-code authentication after a browser-launch failure. [Microsoft Graph PowerShell authentication source](https://github.com/microsoftgraph/msgraph-sdk-powershell/blob/v2.38.0/src/Authentication/Authentication.Core/Utilities/AuthenticationHelpers.cs#L227-L254)
+
+The profile collector reads the five exact object IDs from the apply receipt and writes `.azure/azd-santa/intune-profile-status.json`. It verifies that the pilot group still contains exactly the recorded Entra device, resolves that identity to exactly one Intune managed device, and reads that device's configuration-state inventory. Assignment proof and device delivery are reported separately. Package readiness remains false until every required profile has a successful state on that managed device, plus a matching per-device success row reported after the profile's last modification, with no failed or error count. This prevents an old remediated summary from masking a newly updated profile. The optional notifications profile does not gate readiness.
 
 After macOS verification and exact-device profile readiness, upload and assign the verified bytes with:
 
@@ -179,7 +181,7 @@ command refreshes the result after a later check-in:
 ./scripts/Get-SantaIntuneHealthStatus.ps1 `
   -TenantId '<tenant-id>' `
   -ExpectedAccount '<intune-reader-upn>' `
-  -EnvironmentName '<azd-environment-name>'
+  -EnvironmentName '<azd-environment-name>' -UseExistingSession
 ```
 
 The collector verifies the publication hash, the one-member pilot group, the

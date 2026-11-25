@@ -41,6 +41,17 @@ def decode(value, length):
 
 def authenticate(stream, size, expected_sha256, private_key, *, maximum=32*1024**3, seconds=1800):
     """Stream-discard decrypted bytes; return only after digest AND GCM verify."""
+    result, _ = _authenticate(stream, size, expected_sha256, private_key, maximum, seconds, 0)
+    return result
+
+
+def authenticate_prefix(stream, size, expected_sha256, private_key, *, prefix_limit, maximum, seconds):
+    """Return a bounded plaintext prefix only after verifying the whole seal."""
+    need(type(prefix_limit) is int and 1 <= prefix_limit <= CHUNK + 8192)
+    return _authenticate(stream, size, expected_sha256, private_key, maximum, seconds, prefix_limit)
+
+
+def _authenticate(stream, size, expected_sha256, private_key, maximum, seconds, prefix_limit):
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import padding, rsa
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -78,22 +89,27 @@ def authenticate(stream, size, expected_sha256, private_key, *, maximum=32*1024*
     stream.seek(offset)
     remaining = size-offset-16
     plaintext_bytes = 0
+    retained = bytearray()
     while remaining:
         need(time.monotonic() < deadline)
         chunk = stream.read(min(CHUNK, remaining))
         need(0 < len(chunk) <= remaining)
         hasher.update(chunk)
-        # No callback, output stream, archive parser or plaintext file exists.
-        plaintext_bytes += len(decryptor.update(chunk))
+        plaintext = decryptor.update(chunk)
+        plaintext_bytes += len(plaintext)
+        if len(retained) < prefix_limit:
+            retained.extend(plaintext[:prefix_limit - len(retained)])
         remaining -= len(chunk)
     need(stream.read(16) == tag and stream.read(1) == b'')
     hasher.update(tag)
-    plaintext_bytes += len(decryptor.finalize())
+    tail = decryptor.finalize()
+    plaintext_bytes += len(tail)
+    retained.extend(tail[:prefix_limit - len(retained)])
     need(hasher.hexdigest() == expected_sha256 and time.monotonic() < deadline)
     return dict(scope='sealed-backup-ciphertext-authentication-v1', ciphertext_sha256=expected_sha256,
                 ciphertext_bytes=size, plaintext_bytes=plaintext_bytes, recipient_sha256=recipient,
-                header_sha256=hashlib.sha256(header).hexdigest(), plaintext_released=False,
-                limitation='No archive/extraction, compatibility, current authority or application restore proof')
+                header_sha256=hashlib.sha256(header).hexdigest(), plaintext_released=prefix_limit > 0,
+                limitation='No archive/extraction, compatibility, current authority or application restore proof'), bytes(retained)
 
 
 def identity(info):
