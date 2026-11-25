@@ -220,7 +220,13 @@ CATALOG = {
       AND NOT EXISTS (SELECT 1 FROM objects o WHERE o.classid=r.refclassid AND o.objid=r.refobjid
         AND (o.objsubid=0 OR o.objsubid=r.refobjsubid)))""",
  'extensions':"SELECT json_build_object('name',e.extname,'version',e.extversion,'relocatable',e.extrelocatable,'configuration',ARRAY(SELECT x::regclass::text FROM unnest(e.extconfig) x),'condition',e.extcondition,'schema',n.nspname,'owner',pg_get_userbyid(e.extowner))::text FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace",
- 'global_blockers':"SELECT json_build_object('kind','large_objects','count',count(*))::text FROM pg_largeobject_metadata HAVING count(*)>0 UNION ALL SELECT json_build_object('kind','foreign_servers','count',count(*))::text FROM pg_foreign_server HAVING count(*)>0 UNION ALL SELECT json_build_object('kind','publications','count',count(*))::text FROM pg_publication HAVING count(*)>0 UNION ALL SELECT json_build_object('kind','subscriptions','count',count(*))::text FROM pg_subscription HAVING count(*)>0 UNION ALL SELECT json_build_object('kind','event_triggers','count',count(*))::text FROM pg_event_trigger HAVING count(*)>0 UNION ALL SELECT json_build_object('kind','custom_casts','count',count(*))::text FROM pg_cast WHERE oid>=16384 HAVING count(*)>0",
+ 'global_blockers':"""SELECT json_build_object('kind','large_objects','count',count(*))::text FROM pg_largeobject_metadata HAVING count(*)>0
+ UNION ALL SELECT json_build_object('kind','foreign_servers','count',count(*))::text FROM pg_foreign_server HAVING count(*)>0
+ UNION ALL SELECT json_build_object('kind','publications','count',count(*))::text FROM pg_publication HAVING count(*)>0
+ -- Count the non-null database ID without requiring access to subscription credentials.
+ UNION ALL SELECT json_build_object('kind','subscriptions','count',count(subdbid))::text FROM pg_subscription HAVING count(subdbid)>0
+ UNION ALL SELECT json_build_object('kind','event_triggers','count',count(*))::text FROM pg_event_trigger HAVING count(*)>0
+ UNION ALL SELECT json_build_object('kind','custom_casts','count',count(*))::text FROM pg_cast WHERE oid>=16384 HAVING count(*)>0""",
  'database':"SELECT json_build_object('version',current_setting('server_version_num'),'encoding',current_setting('server_encoding'),'database',current_database(),'user',current_user,'collation',d.datcollate,'ctype',d.datctype,'collation_provider',d.datlocprovider,'collation_version',d.datcollversion,'locale',to_jsonb(d)->>'datlocale','tablespace',sp.spcname,'read_only',current_setting('transaction_read_only'),'isolation',current_setting('transaction_isolation'))::text FROM pg_database d JOIN pg_tablespace sp ON sp.oid=d.dattablespace WHERE d.datname=current_database()",
 }
 SUPPORTED_CATALOGS=frozenset(('pg_namespace','pg_class','pg_type','pg_proc','pg_constraint',

@@ -34,16 +34,17 @@ class UserProxy(User):
     class Meta:
         proxy = True
 ''', encoding='utf-8')
+    database = {
+        'ENGINE': 'django.db.backends.postgresql', 'NAME': 'santa_census_fixture',
+        'USER': 'postgres', 'HOST': str(socket_dir), 'PORT': 5432,
+        'OPTIONS': {'connect_timeout': 5},
+    }
     settings.configure(
         SECRET_KEY='synthetic-census-fixture-only',
         INSTALLED_APPS=['django.contrib.contenttypes', 'django.contrib.auth', *census.CONFIGURED],
         AUTH_USER_MODEL='accounts.User',
         DEFAULT_AUTO_FIELD='django.db.models.AutoField',
-        DATABASES={'default': {
-            'ENGINE': 'django.db.backends.postgresql', 'NAME': 'santa_census_fixture',
-            'USER': 'postgres', 'HOST': str(socket_dir), 'PORT': 5432,
-            'OPTIONS': {'connect_timeout': 5},
-        }},
+        DATABASES={'default': database, 'census_runtime': {**database, 'USER': 'census_runtime'}},
         USE_TZ=True,
     )
     django.setup()
@@ -64,6 +65,7 @@ def run(root):
     from django.db import connections
 
     db = connections['default']
+    runtime = connections['census_runtime']
     try:
         with db.cursor() as cursor:
             cursor.execute("SELECT current_database(), inet_server_addr(), current_setting('server_version_num')")
@@ -79,7 +81,13 @@ def run(root):
             cursor.execute('CREATE TABLE "probe%s%rows" (name text, tombstone integer)')
             cursor.execute('ALTER TABLE "probe%s%rows" DROP COLUMN tombstone')
             cursor.execute('INSERT INTO "probe%s%rows" VALUES (\'same row\'), (\'same row\')')
-            cursor.execute('CREATE ROLE census_runtime NOLOGIN')
+            cursor.execute('CREATE ROLE census_runtime LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS')
+            cursor.execute('GRANT CONNECT, TEMPORARY ON DATABASE santa_census_fixture TO census_runtime')
+            cursor.execute('REVOKE CREATE ON SCHEMA public FROM PUBLIC')
+            cursor.execute('GRANT USAGE ON SCHEMA public TO census_runtime')
+            cursor.execute('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO census_runtime')
+            cursor.execute('REVOKE INSERT, UPDATE, DELETE ON public.django_migrations FROM census_runtime')
+            cursor.execute('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO census_runtime')
             cursor.execute('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO census_runtime')
             cursor.execute('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO census_runtime')
 
@@ -122,6 +130,40 @@ def run(root):
             return census.compare(observed, baseline, dispositions, fingerprint_key=KEY)
 
         assert compare(observe())['exact_match']
+        with runtime.cursor() as cursor:
+            cursor.execute("""SELECT current_user, session_user, inet_server_addr(),
+              has_schema_privilege(current_user, 'public', 'CREATE'),
+              has_table_privilege(current_user, 'public.django_migrations', 'INSERT,UPDATE,DELETE'),
+              has_column_privilege(current_user, 'pg_catalog.pg_subscription', 'subconninfo', 'SELECT')""")
+            assert cursor.fetchone() == ('census_runtime', 'census_runtime', None, False, False, False)
+
+        def observe_runtime():
+            return census.collect(runtime, apps, fingerprint_key=KEY)
+
+        runtime_baseline = observe_runtime()
+        assert runtime_baseline.receipt['complete_supported_data'], runtime_baseline.manifest['unsupported']
+        assert runtime_baseline.manifest['data'] == baseline.manifest['data']
+        assert runtime_baseline.manifest['migrations'] == baseline.manifest['migrations']
+        runtime_dispositions = {
+            item: 'preserve_inert' for item in census.coverage_items(runtime_baseline, fingerprint_key=KEY)
+        }
+
+        def compare_runtime(observed):
+            return census.compare(observed, runtime_baseline, runtime_dispositions, fingerprint_key=KEY)
+
+        assert compare_runtime(observe_runtime())['exact_match']
+        with db.cursor() as cursor:
+            cursor.execute("""CREATE SUBSCRIPTION census_inert_subscription
+              CONNECTION 'host=/no-census-publisher dbname=fixture'
+              PUBLICATION census_inert_publication WITH (connect=false, slot_name=NONE)""")
+        subscription = observe_runtime()
+        assert {'kind': 'subscriptions', 'count': 1} in subscription.manifest['catalog']['global_blockers']
+        assert not subscription.receipt['complete_supported_data']
+        assert subscription.manifest['data'] == {} and subscription.manifest['migrations'] is None
+        reject(lambda: compare_runtime(subscription))
+        with db.cursor() as cursor:
+            cursor.execute('DROP SUBSCRIPTION census_inert_subscription')
+        assert compare_runtime(observe_runtime())['exact_match']
         with db.cursor() as cursor:
             cursor.execute('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE UPDATE ON TABLES FROM census_runtime')
         changed_grants = observe()
@@ -196,8 +238,9 @@ def run(root):
         blocked = observe()
         assert blocked.manifest['data'] == {} and not blocked.receipt['complete_supported_data']
         reject(lambda: compare(blocked))
-        print('Django migration, schema, default privilege, row and transaction census fixture passed')
+        print('Django migration, schema, restricted role, row and transaction census fixture passed')
     finally:
+        runtime.close()
         db.close()
 
 
