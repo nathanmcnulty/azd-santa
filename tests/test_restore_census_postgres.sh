@@ -10,6 +10,9 @@ docker pull "$elastic_image"
 redis_image="$(python -c 'import json; print(json.load(open("experiments/server/dependency-images.lock.json"))["redis"])')"
 [[ "$redis_image" =~ ^redis@sha256:[0-9a-f]{64}$ ]]
 docker pull "$redis_image"
+rabbit_image="$(python -c 'import json; print(json.load(open("experiments/server/dependency-images.lock.json"))["rabbitmq"])')"
+[[ "$rabbit_image" =~ ^rabbitmq@sha256:[0-9a-f]{64}$ ]]
+docker pull "$rabbit_image"
 fixture_root="$(mktemp -d "$HOME/.santa-census.XXXXXXXX")"
 container=''
 restored_container=''
@@ -21,6 +24,7 @@ cleanup() {
   docker rm -f -v "ci${fixture_root##*/}-elastic-source" "ci${fixture_root##*/}-elastic-restored" >/dev/null 2>&1 || true
   docker rm -f -v "ci${fixture_root##*/}-redis-source" "ci${fixture_root##*/}-redis-fresh" \
     "ci${fixture_root##*/}-redis-check" >/dev/null 2>&1 || true
+  docker rm -f -v "ci${fixture_root##*/}-rabbit-source" "ci${fixture_root##*/}-rabbit-fresh" >/dev/null 2>&1 || true
   if [[ -n "$restored_container" ]]; then docker rm -f "$restored_container" >/dev/null; fi
   if [[ -n "$container" ]]; then docker rm -f "$container" >/dev/null; fi
   if [[ -n "$restored_volume" ]]; then docker volume rm "$restored_volume" >/dev/null; fi

@@ -152,9 +152,9 @@ and device reissue and native postflight.
 The Linux fixture also stops the synthetic cluster and checks the clean
 shutdown through `pg_controldata`. It mounts the source volume read-only and
 seals the full PostgreSQL directory, the pinned Elasticsearch node's native
-snapshot repository and the pinned Redis node's multipart AOF with Santa's cold
-backup writer. Control metadata and the remaining service volumes use synthetic
-fixtures. The Linux check authenticates
+snapshot, the pinned Redis node's multipart AOF and the drained RabbitMQ node
+directory with Santa's cold backup writer. Control metadata and the media
+volume use synthetic fixtures. The Linux check authenticates
 and extracts the archive into private quarantine, copies only the quarantined
 PostgreSQL directory to a fresh volume and starts PostgreSQL directly in a
 separate network-disabled container. The restricted role compares the restored
@@ -174,6 +174,13 @@ against its source digest. The pinned AOF checker opens files for writing, so
 it receives a separate copy. The fixture confirms the checker changes no bytes.
 A separate Redis instance starts from an empty directory. It initializes
 a new store identity and admission generation, rejects the historical identity
-and retains no old MFA claim or failure-budget key. Broker recovery and full
-authority reissue remain open.
+and retains no old MFA claim or failure-budget key.
 [Redis persistence](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/)
+
+The RabbitMQ fixture verifies a durable historical queue had zero ready or
+unacknowledged messages before shutting down the broker. The encrypted archive
+preserves the node data and Erlang cookie byte for byte in quarantine. A separate
+empty broker starts with a fresh cookie and login. It rejects the historical
+password and exposes neither the historical user nor the virtual host or queue.
+Full application authority reissue remains open.
+[RabbitMQ backup and restore](https://www.rabbitmq.com/docs/backup)
