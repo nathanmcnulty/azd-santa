@@ -529,13 +529,12 @@
       "feature": "intune-profile-status",
       "defaultEnabled": false,
       "scope": "Explicit selected tenant and one-device Santa pilot",
-      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "rationale": "The profile reader requires this scope. UseExistingSession checks the delegated Graph session without starting sign-in.",
       "evidenceState": "code",
       "evidence": [
         {
           "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
-          "sha256": "e9fd134196fb4a6d7e9afe17f2a571c52041d68cbc533c7d102c61bce26faded",
-          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
+          "sha256": "a1bc61509c3b95e61e166608a22fc6f3c19269c2fb0bbea6f61445ec214ba5f0"
         }
       ]
     },
@@ -548,13 +547,12 @@
       "feature": "intune-profile-status",
       "defaultEnabled": false,
       "scope": "Explicit selected tenant and one-device Santa pilot",
-      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "rationale": "The profile reader requires this scope. UseExistingSession checks the delegated Graph session without starting sign-in.",
       "evidenceState": "code",
       "evidence": [
         {
           "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
-          "sha256": "e9fd134196fb4a6d7e9afe17f2a571c52041d68cbc533c7d102c61bce26faded",
-          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
+          "sha256": "a1bc61509c3b95e61e166608a22fc6f3c19269c2fb0bbea6f61445ec214ba5f0"
         }
       ]
     },
@@ -567,13 +565,12 @@
       "feature": "intune-profile-status",
       "defaultEnabled": false,
       "scope": "Explicit selected tenant and one-device Santa pilot",
-      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "rationale": "The profile reader requires this scope. UseExistingSession checks the delegated Graph session without starting sign-in.",
       "evidenceState": "code",
       "evidence": [
         {
           "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
-          "sha256": "e9fd134196fb4a6d7e9afe17f2a571c52041d68cbc533c7d102c61bce26faded",
-          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
+          "sha256": "a1bc61509c3b95e61e166608a22fc6f3c19269c2fb0bbea6f61445ec214ba5f0"
         }
       ]
     },
@@ -586,13 +583,12 @@
       "feature": "intune-profile-status",
       "defaultEnabled": false,
       "scope": "Explicit selected tenant and one-device Santa pilot",
-      "rationale": "Existing manually invoked source requests this scope. This inventories the current request, not effective consent, minimal sufficiency or approval to grant it.",
+      "rationale": "The profile reader requires this scope. UseExistingSession checks the delegated Graph session without starting sign-in.",
       "evidenceState": "code",
       "evidence": [
         {
           "path": "scripts/Get-SantaIntuneProfileStatus.ps1",
-          "sha256": "e9fd134196fb4a6d7e9afe17f2a571c52041d68cbc533c7d102c61bce26faded",
-          "documentationUrl": "https://github.com/nathanmcnulty/azd-santa/blob/9bd95c94fcf80c0bbc128896bfb7d8188f17cfaa/scripts/Get-SantaIntuneProfileStatus.ps1"
+          "sha256": "a1bc61509c3b95e61e166608a22fc6f3c19269c2fb0bbea6f61445ec214ba5f0"
         }
       ]
     },

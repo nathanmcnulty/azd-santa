@@ -28,7 +28,8 @@ Describe 'Intune Santa health freshness' {
         $reported = $now.AddMinutes(-10)
         Mock Connect-MgGraph {}
         Mock Get-MgContext {
-            @{ tenantId = $tenant; account = $account; scopes = @(
+            [pscustomobject]@{ tenantId = $tenant; account = $account; authType = 'Delegated'
+                environment = 'Global'; tokenCredentialType = 'InteractiveBrowser'; scopes = @(
                 'DeviceManagementScripts.Read.All','DeviceManagementManagedDevices.Read.All','Group.Read.All','Device.Read.All'
             ) }
         }
@@ -53,6 +54,7 @@ Describe 'Intune Santa health freshness' {
 
     It 'reports <label> as <expected>' -ForEach @(
         @{label='fresh success with CRLF'; hours=-1; marker='normal'; state='success'; expected='passed'}
+        @{label='fresh success through the existing hook sign-in'; hours=-1; marker='normal'; state='success'; expected='passed'; legacy=$true}
         @{label='stale success with recent service update'; hours=-48; marker='normal'; state='success'; expected='stale'}
         @{label='success within an explicit bound'; hours=-48; marker='normal'; state='success'; expected='passed'; maximum=72}
         @{label='missing capture'; hours=-1; marker='missing'; state='success'; expected='invalid-evidence'}
@@ -76,9 +78,10 @@ Describe 'Intune Santa health freshness' {
         $runs = if ($state -eq 'absent') { @() } else {
             @(@{id='run';managedDevice=@{id='managed-device'};resultMessage=$message;runState=$state;errorCode=0;lastStateUpdateDateTime=$update})
         }
-        $parameters = @{TenantId=$tenant;ExpectedAccount=$account;PublicationReceiptPath=$receiptPath;OutputPath=$outputPath}
+        $parameters = @{TenantId=$tenant;ExpectedAccount=$account;PublicationReceiptPath=$receiptPath;OutputPath=$outputPath;UseExistingSession=(-not $legacy)}
         if ($maximum) { $parameters.MaximumEvidenceAgeHours = $maximum }
         & "$root/scripts/Get-SantaIntuneHealthStatus.ps1" @parameters
+        Should -Invoke Connect-MgGraph -Times ([int][bool]$legacy) -Exactly
         $result = Get-Content -LiteralPath $outputPath -Raw | ConvertFrom-Json -DateKind String
         $result.status | Should -BeExactly $expected
         $result.schemaVersion | Should -BeExactly '1.0'
@@ -90,5 +93,35 @@ Describe 'Intune Santa health freshness' {
         } else {
             $result.captureAgeSeconds | Should -BeNullOrEmpty
         }
+    }
+
+    It 'refuses a missing SDK context without prompting or making a Graph request' {
+        Mock Get-MgContext { $null }
+        { & "$root/scripts/Get-SantaIntuneHealthStatus.ps1" -TenantId $tenant -ExpectedAccount $account -PublicationReceiptPath $receiptPath -OutputPath $outputPath -UseExistingSession } |
+            Should -Throw '*SantaGraph.NoSession*'
+        Should -Invoke Connect-MgGraph -Times 0 -Exactly
+        Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly
+    }
+
+    It 'refuses a cached context with <reason> before sending a request' -ForEach @(
+        @{ reason='wrong tenant'; field='TenantId'; value='44444444-4444-4444-8444-444444444444'; errorId='WrongTenant' }
+        @{ reason='wrong account'; field='Account'; value='another@example.invalid'; errorId='WrongAccount' }
+        @{ reason='wrong cloud'; field='Environment'; value='USGov'; errorId='IncompatibleSession' }
+        @{ reason='device-code credential'; field='TokenCredentialType'; value='DeviceCode'; errorId='IncompatibleSession' }
+        @{ reason='app-only authorization'; field='AuthType'; value='AppOnly'; errorId='IncompatibleSession' }
+        @{ reason='missing read scopes'; field='Scopes'; value=@('Group.Read.All'); errorId='MissingScope' }
+    ) {
+        $candidate = @{
+            TenantId = $tenant; Account = $account; Environment = 'Global'; AuthType = 'Delegated'
+            TokenCredentialType = 'InteractiveBrowser'; Scopes = @(
+                'DeviceManagementScripts.Read.All','DeviceManagementManagedDevices.Read.All','Group.Read.All','Device.Read.All'
+            )
+        }
+        $candidate[$field] = $value
+        Mock Get-MgContext { [pscustomobject]$candidate }
+        { & "$root/scripts/Get-SantaIntuneHealthStatus.ps1" -TenantId $tenant -ExpectedAccount $account -PublicationReceiptPath $receiptPath -OutputPath $outputPath -UseExistingSession } |
+            Should -Throw "*SantaGraph.$errorId*"
+        Should -Invoke Connect-MgGraph -Times 0 -Exactly
+        Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly
     }
 }
