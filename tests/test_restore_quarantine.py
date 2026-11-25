@@ -45,7 +45,7 @@ class Quarantine(unittest.TestCase):
         cls.key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
         cls.public = cls.key.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
 
-    def fixture(self, folder):
+    def fixture(self, folder, *, maximum_bytes=4*quarantine.CHUNK, maximum_files=1000):
         base = Path(folder); control = quarantine.ROOT + '/private-runtime-synthetic/runtime-service'
         runtime = str(Path(control).parent).replace('\\', '/')
         source = quarantine.ROOT + '/installers/' + 'a'*64
@@ -75,8 +75,8 @@ class Quarantine(unittest.TestCase):
             operation_id='b'*32, manifest_sha256=digest(contents[control + '/manifest.json']),
             generation_sha256=digest(contents[control + '/container-generation.json']), target=target, boot_id=boot,
             recipient_der_base64=base64.b64encode(self.public).decode(), recipient_sha256=digest(self.public),
-            destination=quarantine.ROOT+'/backups/synthetic', maximum_bytes=4*quarantine.CHUNK,
-            maximum_files=1000, seconds=1800, queue_inventory=[], backup_program_sha256=quarantine.PROGRAMS['cold_backup.py'],
+            destination=quarantine.ROOT+'/backups/synthetic', maximum_bytes=maximum_bytes,
+            maximum_files=maximum_files, seconds=1800, queue_inventory=[], backup_program_sha256=quarantine.PROGRAMS['cold_backup.py'],
             storage_sha256='d'*64, worker_instance={}))
         request_hash = digest(contents[control + '/backup-request.json'])
         plan = native.plan(request_hash, 'b'*32, 'C'*22, '9.2.1', ['santa-events'], 1)
