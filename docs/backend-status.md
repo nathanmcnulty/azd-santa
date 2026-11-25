@@ -25,7 +25,7 @@ The evidence below includes the November 25 native pilot follow-up.
 | Restore | Authority/encryption inventory; ciphertext authentication and bounded offline secret-rewrap primitives with actual synthetic crypto tests | Strict extraction, complete schema/row census, isolated application restoration, current-authority reconciliation and complete fault testing |
 | Operator access | Private application-level MFA/recovery tests; selected HTTPS pilot completed human password/TOTP enrollment and administrator login through a source-IP-restricted window, then restored deny-all ingress | Automated customer setup and controlled recovery on the current candidate; deferred Entra Easy Auth roadmap #108 |
 | Hostname TLS | Selected Azure hostname passed staging/production issuance; ordinary Windows and Linux trust verified the held endpoint; same certificate survived service restart; original deny policy restored | Renewal, DNS retirement/rate constraints, automated customer deployment and actual browser/Mac acceptance |
-| Native Mac | The selected Mac reported Monitor mode, active Endpoint Security and the expected inner profile UUID. In the November 25 restricted HTTPS window, the backend recorded one native enrollment and successful preflight/postflight. The Mac reported a fresh full sync and receipt of the exact synthetic rule. The listener was stopped, deny-all was restored and the VM was deallocated. | Fresh Intune status and full payload evidence, backend rule commitment, events, controlled execution, rollback, rotation and recovery on the selected Mac |
+| Native Mac | One Monitor-mode Mac enrolled, synced and received a synthetic rule. A separate signed test executable ran before the fixture rule, was denied after sync, and ran after removal. The backend verified the committed rule, one matching blocked-event counter and an empty fixture ledger after rollback. The listener was stopped, deny-all was restored and the VM was deallocated. | Fresh Intune status and full payload evidence, event indexing and retention, credential rotation and recovery on the selected Mac |
 | Container Apps | Tracked comparison requirements | Equivalent full backend deployment, persistence/failure tests and measured cost comparison |
 
 Detailed evidence: [private installation](private-vm-installation.md),
@@ -47,8 +47,9 @@ and explicit closure requirements. The successful native capture is recorded in
 
 ## Development order
 
-The next acceptance milestone is event, execution and rollback evidence from the
-one-Mac Monitor-mode pilot. Keep general public ingress disabled
+The one-Mac Monitor-mode pilot passed its controlled policy and event-counter
+loop. Continue with native credential rotation and off-host recovery
+qualification. Keep general public ingress disabled
 until the admission requirements in #58 are qualified. Bounded source-IP pilot
 windows require fresh target/runtime checks, retained application safeguards,
 a listener deadline and explicit network restoration.

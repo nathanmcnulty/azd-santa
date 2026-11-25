@@ -110,7 +110,8 @@ The backend readback returned one matching machine rule with the expected
 policy. The device lookup verifies local receipt. The readback omitted
 the cursor, session and version fields that the synthetic qualification
 checks to establish full ledger commitment. Event ingestion, controlled
-execution and rule rollback also need separate evidence.
+execution and rule rollback were tested separately with the signed
+fixture described below.
 
 The listener was stopped and port 443 was verified unbound. Azure
 readback confirmed the original inbound deny-all rule and VM deallocation.
@@ -192,3 +193,30 @@ matching backend event. After removing that test rule and syncing, verify the
 rule is absent and the same bytes print the marker again. The hosted build
 verifies the fixture only. Santa enforcement, upload and rollback require
 evidence from the selected pilot.
+
+#### Observed result on November 25
+
+The signed fixture came from the reviewed `main` commit and a successful
+[hosted build](https://github.com/nathanmcnulty/azd-santa/actions/runs/45699768607).
+The Mac ran the same SHA-256-verified bytes before the rule, during the block
+test, and after removal. Each Defender result was bound to the selected
+machine, script and output digest.
+
+- Before deployment, Santa reported Monitor mode and no matching rule. The
+  fixture exited successfully and printed its marker.
+- After a normal sync, Santa reported the fixture's binary rule as blocked.
+  Running the same bytes returned exit 137 without the marker. The backend
+  recorded one blocked event for the exact fixture hash and configuration.
+  Its rule ledger reported policy 2, version 1, no open session or cursor,
+  and no staged removal.
+- After the operator removed the temporary rule and the Mac synced again,
+  Santa reported no matching rule and the fixture printed its marker.
+  The backend had no rule or machine-ledger row for the fixture and retained
+  the blocked-event counter. The earlier synthetic rule and Monitor
+  configuration remained in place.
+
+The trial used a single temporary source-IP allowance, with all-event
+upload still set to shard zero. The listener stopped, port 443 was unbound,
+Azure returned to deny-all inbound, and the VM was deallocated.
+The observed backend event is a PostgreSQL counter for this exact target.
+Search-index delivery and longer-term event retention were outside this trial.
