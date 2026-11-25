@@ -6,34 +6,56 @@ image="$(python -c 'import json; print(json.load(open("experiments/server/depend
 [[ "$image" =~ ^postgres@sha256:[0-9a-f]{64}$ ]]
 fixture_root="$(mktemp -d)"
 container=''
+restored_container=''
+source_volume=''
+restored_volume=''
+copy_name="santa-census-${fixture_root##*/}-copy"
 cleanup() {
+  docker rm -f "$copy_name" >/dev/null 2>&1 || true
+  if [[ -n "$restored_container" ]]; then docker rm -f "$restored_container" >/dev/null; fi
   if [[ -n "$container" ]]; then docker rm -f "$container" >/dev/null; fi
+  if [[ -n "$restored_volume" ]]; then docker volume rm "$restored_volume" >/dev/null; fi
+  if [[ -n "$source_volume" ]]; then docker volume rm "$source_volume" >/dev/null; fi
   rm -rf -- "$fixture_root"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 mkdir -m 1777 "$fixture_root/socket"
 python -m venv "$fixture_root/venv"
 fixture_python="$fixture_root/venv/bin/python"
 "$fixture_python" -m pip install --only-binary=:all: \
   Django==5.2.18 psycopg2-binary==2.9.11 asgiref==3.8.1 sqlparse==0.6.0
-container="$(docker run --detach --network none --memory 512m --cpus 1 --pids-limit 128 \
-  --tmpfs /var/lib/postgresql:rw,size=256m --env POSTGRES_HOST_AUTH_METHOD=trust \
-  --env POSTGRES_DB=santa_census_fixture \
-  --mount "type=bind,source=$fixture_root/socket,target=/fixture-socket" \
-  "$image" -c listen_addresses= -c unix_socket_directories=/var/run/postgresql,/fixture-socket)"
+start_database() {
+  local volume="$1"
+  shift
+  docker run --detach --network none --memory 512m --cpus 1 --pids-limit 128 \
+    --env PGDATA=/var/lib/postgresql/fixture \
+    --mount "type=volume,source=$volume,target=/var/lib/postgresql,volume-nocopy" \
+    --mount "type=bind,source=$fixture_root/socket,target=/fixture-socket" \
+    "$@" "$image" -c listen_addresses= -c unix_socket_directories=/fixture-socket
+}
 
 # Wait for the actual postgres process, since initdb also starts a temporary
 # socket-only postmaster while the entrypoint still owns PID 1.
-ready=false
-for ((attempt=0; attempt<30; attempt++)); do
-  if [[ "$(docker exec "$container" cat /proc/1/comm)" == postgres ]] &&
-     docker exec "$container" pg_isready --username postgres --quiet; then
-    ready=true
-    break
-  fi
-  sleep 1
-done
-[[ "$ready" == true ]]
+wait_database() {
+  local id="$1"
+  for ((attempt=0; attempt<30; attempt++)); do
+    if [[ "$(docker exec "$id" cat /proc/1/comm)" == postgres ]] &&
+       docker exec "$id" pg_isready --host /fixture-socket --username postgres --quiet; then
+      return
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+source_volume="$(docker volume create)"
+restored_volume="$(docker volume create)"
+[[ "$source_volume" =~ ^[a-f0-9]{64}$ && "$restored_volume" =~ ^[a-f0-9]{64}$ &&
+   "$source_volume" != "$restored_volume" ]]
+container="$(start_database "$source_volume" --env POSTGRES_HOST_AUTH_METHOD=trust --env POSTGRES_DB=santa_census_fixture)"
+wait_database "$container"
 
 {
   echo 'CREATE TABLE census_probe (value integer NOT NULL, notes text);'
@@ -70,8 +92,38 @@ DO $$ DECLARE observed text[]; BEGIN
     RAISE EXCEPTION 'Expected pinned PostgreSQL 18';
   END IF;
 END $$;
+DROP TABLE census_probe;
+DROP OPERATOR CLASS pg_catalog.census_local_ops USING btree;
+DROP OPERATOR FAMILY IF EXISTS pg_catalog.census_local_ops USING btree;
+DROP COLLATION pg_catalog.census_local_order;
+DROP FUNCTION pg_catalog.census_local_fn(integer);
 SQL
-} | docker exec -i "$container" psql --no-psqlrc --username postgres --set ON_ERROR_STOP=1
+} | docker exec -i "$container" psql --no-psqlrc --host /fixture-socket --username postgres --set ON_ERROR_STOP=1
 
 env -i HOME="$fixture_root" PATH="$PATH" LC_ALL=C.UTF-8 \
   "$fixture_python" tests/run_restore_census_django.py "$fixture_root"
+
+docker stop --timeout 15 "$container" >/dev/null
+[[ "$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$container")" == 'exited 0' ]]
+[[ ! -e "$fixture_root/socket/.s.PGSQL.5432" ]]
+docker run --rm --name "$copy_name" --network none --read-only --memory 256m --cpus 1 --pids-limit 32 \
+  --env LC_ALL=C \
+  --mount "type=volume,source=$source_volume,target=/capture,readonly,volume-nocopy" \
+  --mount "type=volume,source=$restored_volume,target=/restored,volume-nocopy" \
+  --entrypoint /bin/bash "$image" -euo pipefail -c '
+    test ! -e /capture/fixture/postmaster.pid
+    test -z "$(ls -A /restored)"
+    pg_controldata /capture/fixture | grep -Ex "Database cluster state:[[:space:]]+shut down" >/dev/null
+    size="$(du -sm /capture)"
+    test "${size%%[[:space:]]*}" -le 192
+    tar --format=pax --numeric-owner -C /capture -cpf - fixture |
+      tar --numeric-owner --same-owner --same-permissions -C /restored -xpf -
+    cmp /capture/fixture/global/pg_control /restored/fixture/global/pg_control
+  '
+
+# Start postgres directly. A missing or incomplete restored directory fails
+# rather than allowing the image entrypoint to initialize a replacement.
+restored_container="$(start_database "$restored_volume" --user postgres --entrypoint postgres)"
+wait_database "$restored_container"
+env -i HOME="$fixture_root" PATH="$PATH" LC_ALL=C.UTF-8 \
+  "$fixture_python" tests/run_restore_census_django.py "$fixture_root" --verify-restored

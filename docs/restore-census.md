@@ -148,3 +148,14 @@ The database
 and input data are disposable. The complete Zentral app registry and restored
 application data still require separate qualification, along with administrator
 and device reissue and native postflight.
+
+The Linux fixture also stops the synthetic cluster and checks the clean
+shutdown through `pg_controldata`. It mounts the source volume read-only, copies
+the full data directory through a PAX tar stream to a fresh volume and starts
+PostgreSQL directly in a separate network-disabled container. The restricted
+role compares the restored rows, sequence state, schema and Django migrations
+with the pre-shutdown census. It then changes a synthetic row and confirms the
+comparison rejects the changed state. This covers a physical PostgreSQL
+restore of the fixture. Qualification of Santa's encrypted archive, the full
+Zentral stack and current authority remains separate.
+[PostgreSQL file-system-level backup](https://www.postgresql.org/docs/18/backup-file.html)

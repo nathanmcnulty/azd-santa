@@ -1,5 +1,6 @@
 """Synthetic Django/PostgreSQL restore census integration for Linux CI."""
 
+import argparse
 from pathlib import Path
 import stat
 import sys
@@ -14,17 +15,18 @@ import restore_census as census
 KEY = b'synthetic restore census key....'
 
 
-def configure(root):
+def configure(root, *, restored=False):
     socket_dir = root / 'socket'
     assert stat.S_ISSOCK((socket_dir / '.s.PGSQL.5432').stat().st_mode)
     apps_path = root / 'apps'
-    apps_path.mkdir()
     sys.path.insert(0, str(apps_path))
-    for label in census.CONFIGURED:
-        package = apps_path / label
-        package.mkdir()
-        (package / '__init__.py').touch()
-    (apps_path / 'accounts' / 'models.py').write_text('''
+    if not restored:
+        apps_path.mkdir()
+        for label in census.CONFIGURED:
+            package = apps_path / label
+            package.mkdir()
+            (package / '__init__.py').touch()
+        (apps_path / 'accounts' / 'models.py').write_text('''
 from django.contrib.auth.models import AbstractUser
 
 class User(AbstractUser):
@@ -238,11 +240,48 @@ def run(root):
         blocked = observe()
         assert blocked.manifest['data'] == {} and not blocked.receipt['complete_supported_data']
         reject(lambda: compare(blocked))
+        with db.cursor() as cursor:
+            cursor.execute('ALTER TABLE "probe%s%rows" DISABLE ROW LEVEL SECURITY')
+        final_source = observe_runtime()
+        assert final_source.receipt['complete_supported_data'], final_source.manifest['unsupported']
+        assert final_source.manifest['data'][table]['rows'] == 3
+        with (root / 'source-census.json').open('xb') as output:
+            output.write(census.encoded({'manifest': final_source.manifest, 'receipt': final_source.receipt}))
         print('Django migration, schema, restricted role, row and transaction census fixture passed')
     finally:
         runtime.close()
         db.close()
 
 
+def verify_restored(root):
+    configure(root, restored=True)
+    from django.apps import apps
+    from django.db import connections
+
+    expected = census.Census(**census.parse((root / 'source-census.json').read_bytes()))
+    dispositions = {item: 'preserve_inert' for item in census.coverage_items(expected, fingerprint_key=KEY)}
+    runtime = connections['census_runtime']
+    try:
+        with runtime.cursor() as cursor:
+            cursor.execute('SELECT current_user, session_user, current_database(), inet_server_addr(), pg_is_in_recovery()')
+            assert cursor.fetchone() == ('census_runtime', 'census_runtime', 'santa_census_fixture', None, False)
+        observed = census.collect(runtime, apps, fingerprint_key=KEY)
+        result = census.compare(observed, expected, dispositions, fingerprint_key=KEY)
+        assert result['exact_match'] and not result['restore_accepted'] and not result['current_authority']
+        with runtime.cursor() as cursor:
+            cursor.execute('INSERT INTO "probe%s%rows" VALUES (\'changed restored row\')')
+        changed = census.collect(runtime, apps, fingerprint_key=KEY)
+        table = census.relation_key('public', 'probe%s%rows')
+        assert changed.manifest['data'][table]['rows'] == 4
+        reject(lambda: census.compare(changed, expected, dispositions, fingerprint_key=KEY))
+        print('Cold PostgreSQL volume restored to a fresh isolated container and matched the source census')
+    finally:
+        runtime.close()
+
+
 if __name__ == '__main__':
-    run(Path(sys.argv[1]))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('root', type=Path)
+    parser.add_argument('--verify-restored', action='store_true')
+    args = parser.parse_args()
+    (verify_restored if args.verify_restored else run)(args.root)
