@@ -24,14 +24,20 @@ python - "$fixture/export.tar" "$digest" "$size" "$id" <<'PY'
 import os
 import subprocess
 import sys
+import traceback
 sys.path.insert(0, 'experiments/server')
 from restore_cipher import identity
-from retained_image_archive import verify_archive
+from retained_image_archive import ArchiveRejected, verify_archive
 
 path, digest, size, image = sys.argv[1:]
 with open(path, 'rb') as archive:
     before = identity(os.fstat(archive.fileno()))
-    verify_archive(archive, archive_sha256=digest, archive_bytes=int(size), image_id=image)
+    try:
+        verify_archive(archive, archive_sha256=digest, archive_bytes=int(size), image_id=image)
+    except ArchiveRejected as error:
+        # Only the disposable fixture is allowed to print internal verifier errors.
+        traceback.print_exception(error.__context__)
+        raise
     assert identity(os.fstat(archive.fileno())) == before
     archive.seek(0)
     subprocess.run(['docker', 'image', 'load', '--quiet'], stdin=archive, timeout=25, check=True)
