@@ -151,14 +151,19 @@ and device reissue and native postflight.
 
 The Linux fixture also stops the synthetic cluster and checks the clean
 shutdown through `pg_controldata`. It mounts the source volume read-only and
-seals the full PostgreSQL directory with Santa's cold backup writer. Synthetic
-metadata and sentinels stand in for the other services. The fixture authenticates
+seals the full PostgreSQL directory and the pinned Elasticsearch node's native
+snapshot repository with Santa's cold backup writer. Control metadata and the
+remaining service volumes use synthetic fixtures. The Linux check authenticates
 and extracts the archive into private quarantine, copies only the quarantined
 PostgreSQL directory to a fresh volume and starts PostgreSQL directly in a
 separate network-disabled container. The restricted role compares the restored
 rows, sequence state, schema and Django migrations
 with the pre-shutdown census. It then changes a synthetic row and confirms the
 comparison rejects the changed state. This covers the encrypted archive path
-and physical PostgreSQL restore for the fixture. Authentication of the retained
-pilot archive, the complete Zentral stack and current authority remain open.
+and physical PostgreSQL restore for the fixture. A fresh Elasticsearch node
+registers the quarantined repository read-only and restores the selected
+event index and alias. It checks both synthetic events and confirms the source
+cluster's template was excluded. Authentication of the retained pilot archive,
+the complete Zentral stack and current authority remain open.
 [PostgreSQL file-system-level backup](https://www.postgresql.org/docs/18/backup-file.html)
+[Elasticsearch snapshot restore API](https://www.elastic.co/docs/api/doc/elasticsearch/v9/operation/operation-snapshot-restore)
