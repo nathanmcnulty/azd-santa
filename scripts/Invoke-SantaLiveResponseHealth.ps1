@@ -166,6 +166,13 @@ if (Test-Path -LiteralPath $ReceiptPath) {
     if ($scripts.Count -ne 1 -or [string]$scripts[0].description -notmatch '(?i)managed by azd-santa') {
         throw "The exact azd-santa-owned Live Response script '$ScriptName' is not published once in the library."
     }
+    if ($ExpectedRuleSha256) {
+        $localScript = Join-Path $PSScriptRoot 'live-response/Get-SantaRuleReceipt.sh'
+        if ($scripts[0].hasParameters -ne $true -or
+            (Get-FileHash -LiteralPath $localScript -Algorithm SHA256).Hash -ine [string]$scripts[0].sha256) {
+            throw 'Publish the exact Santa rule diagnostic as a parameterized script before running it.'
+        }
+    }
 
     $receipt = [ordered]@{
         schemaVersion = '1.0'; template = 'azd-santa'; updatedUtc = ''; state = 'submitted'

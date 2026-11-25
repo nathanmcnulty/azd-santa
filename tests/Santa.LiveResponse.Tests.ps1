@@ -1,6 +1,7 @@
 #Requires -Version 7.6
 BeforeAll {
     $script:runner = Join-Path (Split-Path -Parent $PSScriptRoot) 'scripts/Invoke-SantaLiveResponseHealth.ps1'
+    $script:ruleScriptDigest = (Get-FileHash (Join-Path (Split-Path -Parent $runner) 'live-response/Get-SantaRuleReceipt.sh')).Hash
     Add-Type -TypeDefinition @'
 using System;
 using System.IO;
@@ -76,7 +77,7 @@ Describe 'Private Live Response receipts and bounded polling' {
         Add-Response @{ id = 'a' * 40; computerDnsName = 'fixture-mac'; osPlatform = 'macOS'; onboardingStatus = 'Onboarded' }
         Add-Response @{ value = @(
             @{ fileName = 'Get-SantaHealth.sh'; description = 'managed by azd-santa' }
-            @{ fileName = 'Get-SantaRuleReceipt.sh'; description = 'managed by azd-santa' }
+            @{ fileName = 'Get-SantaRuleReceipt.sh'; description = 'managed by azd-santa'; sha256 = $ruleScriptDigest; hasParameters = $true }
         ) }
     }
     AfterEach { $client.Dispose(); $downloadClient.Dispose() }

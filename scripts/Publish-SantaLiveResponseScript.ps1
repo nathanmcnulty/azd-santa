@@ -20,6 +20,7 @@ if ($ExpectedAccount -notmatch '^[^@\s]+@[^@\s]+$') { throw 'ExpectedAccount mus
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) { throw 'Azure CLI is required for its cached browser/WAM token.' }
 
 $fileName = [IO.Path]::GetFileName($ScriptPath)
+$takesRuleHash = $fileName -ieq 'Get-SantaRuleReceipt.sh'
 $sha256 = (Get-FileHash -LiteralPath $ScriptPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $description = "Managed by azd-santa; Santa health verification; sha256=$sha256"
 if (-not $Apply) {
@@ -56,7 +57,8 @@ try {
         throw "A Live Response file named '$fileName' exists but is not owned by azd-santa."
     }
 
-    if ($libraryMatches.Count -eq 1 -and [string]$libraryMatches[0].sha256 -eq $sha256 -and [string]$libraryMatches[0].description -eq $description) {
+    if ($libraryMatches.Count -eq 1 -and [string]$libraryMatches[0].sha256 -eq $sha256 -and
+        [string]$libraryMatches[0].description -eq $description -and (-not $takesRuleHash -or $libraryMatches[0].hasParameters -eq $true)) {
         $action = 'verified'
         $published = $libraryMatches[0]
     } else {
@@ -66,7 +68,10 @@ try {
         $fileContent.Headers.ContentType = [Net.Http.Headers.MediaTypeHeaderValue]::new('text/plain')
         $multipart.Add($fileContent, 'file', $fileName)
         $multipart.Add([Net.Http.StringContent]::new($description), 'Description')
-        $multipart.Add([Net.Http.StringContent]::new('false'), 'HasParameters')
+        $multipart.Add([Net.Http.StringContent]::new($takesRuleHash.ToString().ToLowerInvariant()), 'HasParameters')
+        if ($takesRuleHash) {
+            $multipart.Add([Net.Http.StringContent]::new('One lowercase binary rule SHA-256.'), 'ParametersDescription')
+        }
         $multipart.Add([Net.Http.StringContent]::new([string]($libraryMatches.Count -eq 1)), 'OverrideIfExists')
         $response = $client.PostAsync('https://api.security.microsoft.com/api/libraryfiles', $multipart).GetAwaiter().GetResult()
         $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
@@ -77,7 +82,8 @@ try {
         $readbackBody = $readbackResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult()
         if (-not $readbackResponse.IsSuccessStatusCode) { throw "Defender library read-back failed with HTTP $([int]$readbackResponse.StatusCode): $readbackBody" }
         $readbackMatches = @((ConvertFrom-Json $readbackBody).value | Where-Object fileName -ieq $fileName)
-        if ($readbackMatches.Count -ne 1 -or [string]$readbackMatches[0].sha256 -ne $sha256 -or [string]$readbackMatches[0].description -ne $description) {
+        if ($readbackMatches.Count -ne 1 -or [string]$readbackMatches[0].sha256 -ne $sha256 -or
+            [string]$readbackMatches[0].description -ne $description -or ($takesRuleHash -and $readbackMatches[0].hasParameters -ne $true)) {
             throw 'Defender Live Response library read-back did not match the published artifact.'
         }
         $published = $readbackMatches[0]
