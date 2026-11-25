@@ -16,4 +16,9 @@ Describe 'Explicit encrypted Blob retention protocol primitives' {
         $result = & $python -m unittest discover -s $PSScriptRoot -p test_native_retention_verify_command.py 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
     }
+    It 'routes one create-only capability to the source and observes a lost reply' {
+        $python = if ($env:SANTA_CRYPTO_PYTHON) { $env:SANTA_CRYPTO_PYTHON } else { 'python' }
+        $result = & $python -m unittest discover -s $PSScriptRoot -p test_native_retention_upload_command.py 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
+    }
 }

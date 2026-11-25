@@ -10,9 +10,10 @@ installer/runtime/helper bundles, images, volumes and credentials are unchanged.
 The typed operator APIs default to offline plans. Only explicit `apply=True`
 creates an offer or submits its one job; `read_guest=True` explicitly reads guest
 state. `seal_offer()` is local in-memory encryption, not an Azure call. No
-administrator assembles remote paths or JSON. A future cached ARM/Run Command
-adapter must call these APIs and carry only public offers, encrypted packets and
-nonsecret receipts. It is not implemented by this module. The private CLI is
+administrator assembles remote paths or JSON. The
+[native upload command](offhost-ciphertext-retention.md#recovery-artifacts-and-remaining-integration)
+carries only public offers, encrypted packets and nonsecret receipts through
+the cached ARM and Run Command adapters. The private CLI is
 only the generated worker/ExecStopPost entry, with an operation UUID and intent
 digest; it accepts no SAS, key, URL, arbitrary host path or remote shell command.
 
@@ -104,9 +105,9 @@ must use a separately selected verifier and is not relayed back to the source.
 
 ## Remaining integration and evidence
 
-The current operator must stage an immutable reviewed program/dependency bundle
-without ambient stale bytecode and retain its provenance before executing guest
-code. Local source hashes provide continuity, not self-authentication. No current
+The upload command stages digest-bound relay code and verifies its bytes before
+each invocation. The current operator must retain the reviewed tooling bundle
+and its provenance. No current
 ARM token or backup private key belongs in that bundle. Run all blocking offer,
 crypto, file and transport work under an external deadline; systemd bounds the
 submitted upload job, but typed local primitives cannot kill arbitrary blocked

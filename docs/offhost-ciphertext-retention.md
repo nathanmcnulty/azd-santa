@@ -83,8 +83,8 @@ and [SAS IP behavior](https://learn.microsoft.com/en-us/rest/api/storageservices
 - Capability objects suppress their secret in repr. The callback's raw response
   remains private; callers must not serialize capabilities or print raw callback
   errors. Fixed exceptions and public receipts omit SAS, headers, account keys,
-  plaintext and arbitrary provider errors. A cached ARM adapter and confidential
-  selected-VM delivery still need packaging; the VM must never receive ARM tokens.
+  plaintext and arbitrary provider errors. The VM receives the encrypted
+  capability through the selected-VM command.
 - `upload_file` defaults to a plan. Apply requires an exact source-VM capability
   and IMDS match, a stable owner-private Linux `backup.sealed` descriptor with
   no symlinks/hardlinks, complete SHA/length and a fresh private attempt directory.
@@ -126,6 +126,34 @@ writers. No stage should assume an uploaded MD5/metadata SHA equals independent
 byte verification; download and compare with the separately retained expected SHA.
 
 ## Recovery artifacts and remaining integration
+
+`experiments/server/native_retention_upload_command.py` plans or submits one
+create-only upload from the selected source VM. It accepts the backup-store
+selection receipt, a capture record and its independently trusted digest, and
+the reviewed tooling bundle with its commit and digest. The offline plan pins
+the selected source and exact guest program. Apply writes a local intent, starts
+one guest offer, and uses the cached ARM operator's existing rights to request
+one exact-blob create capability. The bounded Run Command receives only the
+sealed capability packet. The private systemd upload can outlive the command.
+
+```powershell
+$uploadInputs = @(
+    '--selection', $selectionReceipt, '--capture-record', $nativeCaptureRecord,
+    '--capture-record-sha256', $nativeCaptureRecordSha, '--tooling', $toolingBundle,
+    '--commit', $reviewedCommit, '--tooling-sha256', $toolingSha
+)
+$uploadPlan = python ./experiments/server/native_retention_upload_command.py plan @uploadInputs |
+    ConvertFrom-Json
+python ./experiments/server/native_retention_upload_command.py apply @uploadInputs `
+    --journal-root $journalRoot --plan-sha256 $uploadPlan.plan_sha256
+```
+
+After submission, use `observe` with the same arguments to check the saved
+attempt, including after a lost reply. Wait for `uploaded-unverified` before
+interpreting source-side terminal success. For an unknown upload result, preserve
+the journal and use independent verification of the exact object with the
+original expected SHA. The observation command never requests a SAS or resubmits
+an upload.
 
 `experiments/server/native_retention_verifier.py` connects the cached ARM
 issuer to the native ciphertext download on one independently selected VM.
