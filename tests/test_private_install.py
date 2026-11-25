@@ -140,10 +140,21 @@ class Relay(unittest.TestCase):
         from contextlib import ExitStack
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder); digest = 'a' * 64; self.completed(root, digest)
-            def external(args): return 'LoadState=loaded\nActiveState=failed\nResult=exit-code\nExecMainStatus=1\nInvocationID=' + 'c' * 32 + '\n'
-            with ExitStack() as stack:
-                for guard in self.harness(root, external): stack.enter_context(guard)
-                with self.assertRaises(ValueError): relay.run(dict(mode='observe', bundle_sha256=digest))
+            def external(args):
+                self.assertEqual(args[:2], ['systemctl', 'show'])
+                return 'LoadState=loaded\nActiveState=failed\nResult=exit-code\nExecMainStatus=40\nInvocationID=' + 'c' * 32 + '\n'
+            context = root / 'installers' / digest / 'context.json'
+            for variant in ('intact', 'tampered', 'missing'):
+                with self.subTest(variant=variant), ExitStack() as stack:
+                    if variant == 'tampered':
+                        context.write_text('{}')
+                    if variant == 'missing':
+                        context.unlink()
+                    for guard in self.harness(root, external): stack.enter_context(guard)
+                    result = relay.run(dict(mode='observe', bundle_sha256=digest))
+                    self.assertEqual(result['state'], 'failed')
+                    self.assertIsNone(result['completion'])
+                    self.assertEqual(result.get('failure_code'), 'source-verification' if variant == 'intact' else None)
 
     def test_terminal_recorder_refuses_inferred_success_without_systemd_exit(self):
         with patch.object(relay.os, 'geteuid', return_value=0, create=True), patch.dict(os.environ, {}, clear=True), patch.object(relay, 'exclusive') as write:
@@ -251,6 +262,14 @@ assert all(pathlib.Path(sys.modules[name].__file__).parent==bundle for name in (
                 self.assertEqual(context['bundle_sha256'], folder.name)
                 (folder / 'zentral-source.lock.json').write_bytes(b'changed')
                 with self.assertRaises(ValueError): installer.verified(path, digest)
+                with patch.object(installer.os, 'geteuid', return_value=0, create=True), \
+                     patch.object(installer.os, 'umask'), patch.object(installer.platform, 'machine', return_value='x86_64'), \
+                     patch.object(installer.subprocess, 'run') as external, patch.object(installer, 'write') as write:
+                    with self.assertRaises(installer.InstallFailure) as failure:
+                        installer.install(path, digest)
+                    self.assertEqual(failure.exception.exit_status, 40)
+                    external.assert_not_called()
+                    write.assert_not_called()
 
     def test_worker_rejects_paths_and_unrecognized_lock_names_before_reading_files(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -313,7 +332,9 @@ assert all(pathlib.Path(sys.modules[name].__file__).parent==bundle for name in (
         with patch.object(installer.os, 'geteuid', return_value=0, create=True), patch.object(installer.os, 'umask'), \
              patch.object(installer.platform, 'machine', return_value='x86_64'), patch.object(installer, 'verified', return_value=(context, Path('/synthetic'))), \
              patch.object(installer.urllib.request, 'build_opener', return_value=opener), patch.object(installer.subprocess, 'run') as external:
-            with self.assertRaises(ValueError): installer.install('/synthetic/context', 'a' * 64)
+            with self.assertRaises(installer.InstallFailure) as failure:
+                installer.install('/synthetic/context', 'a' * 64)
+            self.assertEqual(failure.exception.exit_status, 41)
             external.assert_not_called()
 
     def test_source_preserves_fresh_only_order_and_qualified_supplier(self):

@@ -17,6 +17,10 @@ FILES = {'private_install.py', 'private_install_transport.py', 'bootstrap-host.s
     'runtime_service.py', 'santa_admission.py', 'cold_backup.py', 'native_snapshot.py',
     'worker_lifecycle.py', 'prepare_worker_lifecycle.py', 'test_live_zentral.py',
     'zentral-source.lock.json', 'dependency-images.lock.json'}
+FAILURE_CODES = {
+    '40': 'source-verification', '41': 'vm-identity', '42': 'fresh-state',
+    '43': 'docker-prerequisites', '44': 'source-build', '45': 'runtime-initialization',
+}
 
 
 def need(value):
@@ -88,6 +92,19 @@ def status(bundle_sha):
     result = dict(scope='private-azd-install-observation', bundle_sha256=bundle_sha, unit=unit,
                   state=values.get('ActiveState', 'unknown'), substate=values.get('SubState', 'unknown'), result=values.get('Result'),
                   invocation=values.get('InvocationID'), completion=None)
+    if values['LoadState'] == 'loaded' and values.get('ActiveState') == 'failed':
+        # A loaded failed unit wins, even if a stale success artifact exists.
+        code = FAILURE_CODES.get(values.get('ExecMainStatus'))
+        if (code and values.get('Result') == 'exit-code'
+                and re.fullmatch('[a-f0-9]{32}', values.get('InvocationID', ''))):
+            context_path = directory / 'context.json'
+            try:
+                secure(context_path)
+                if context_path.read_bytes() == ACTIVE.read_bytes():
+                    result['failure_code'] = code
+            except (OSError, ValueError):
+                pass  # Unknown diagnostic provenance does not change the unit state.
+        return result
     proof_path = directory / 'terminal-success.json'
     if proof_path.exists():
         # A currently failed unit always wins over retained completion/proof.

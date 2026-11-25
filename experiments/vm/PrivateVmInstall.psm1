@@ -161,7 +161,23 @@ function Invoke-PrivateVmAzdHook {
         }
     }
     $deadline = [DateTimeOffset]::UtcNow.AddMinutes(110)
-    while (-not $state.completion) {
+    while (-not $state.completion -or $state['state'] -ceq 'failed') {
+        if ($state.scope -ceq 'private-azd-install-observation' -and $state.state -ceq 'failed' -and
+            $state['bundle_sha256'] -ceq $bundle.Sha256 -and
+            $state['unit'] -ceq ('azd-santa-install-' + $bundle.Sha256.Substring(0,16) + '.service')) {
+            $guidance = @{
+                'source-verification' = 'Check the pinned installer bundle and context for this deployment.'
+                'vm-identity' = 'Check the selected VM instance, ownership tags, and configured hostname.'
+                'fresh-state' = 'Check for an existing Santa runtime or service on the selected VM.'
+                'docker-prerequisites' = 'Check the pinned Docker and Compose prerequisite evidence.'
+                'source-build' = 'Check the retained source build and dependency image evidence.'
+                'runtime-initialization' = 'Check the retained runtime initialization evidence.'
+            }
+            $failureCode = $state['failure_code']
+            if ($failureCode -is [string] -and $guidance.ContainsKey($failureCode)) {
+                throw "SantaInstall.${failureCode}: $($guidance[$failureCode]) Preserve the same job and data for inspection."
+            }
+        }
         if ($state.scope -cne 'private-azd-install-observation' -or $state.state -in @('failed', 'inactive', 'not-installed') -or [DateTimeOffset]::UtcNow -gt $deadline) { throw 'Private install did not complete; same unit/data retained. Rerun azd observes that job, never initialization.' }
         Write-Host "Private backend job: $($state.state)/$($state.substate); observing same unit."
         Start-Sleep -Seconds 15

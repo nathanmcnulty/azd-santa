@@ -119,31 +119,47 @@ def activate_runtime(bundle, compose, work):
     runtime.install_unit(manifest, digest, enable_now=True)
 
 
+class InstallFailure(ValueError):
+    def __init__(self, exit_status):
+        super().__init__('Private installer phase failed')
+        self.exit_status = exit_status
+
+
 def install(context_path, digest):
-    require(os.geteuid() == 0 and platform.machine() == 'x86_64')
-    os.umask(0o077)
-    context, bundle = verified(context_path, digest)
-    validate_target(context['target'])
-    # Exact immutable guest identity before any package or runtime mutation.
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
-    request = urllib.request.Request('http://169.254.169.254/metadata/instance/compute?api-version=2021-02-01', headers={'Metadata': 'true'})
-    with opener.open(request, timeout=3) as response: raw = response.read(65537)
-    require(len(raw) <= 65536); metadata = json.loads(raw)
-    require(metadata['subscriptionId'].lower() == context['target']['SubscriptionId'] and
-            metadata['resourceId'].lower() == context['target']['VmId'].lower() and metadata['vmId'].lower() == context['target']['VmInstanceId'])
-    tags = {item['name']: item['value'] for item in metadata['tagsList']}
-    require(tags.get('azd-solution') == 'azd-santa' and tags.get('purpose') == 'synthetic-vm-lab' and tags.get('azd-env-name') == context['target']['EnvironmentName'])
-    origin = selected_origin(context, metadata)
-    work = ROOT / ('private-runtime-' + context['target']['EnvironmentName'])
-    require(not work.exists() and not Path('/etc/systemd/system/azd-santa-runtime.service').exists())
-    evidence = bundle / 'install-evidence'; evidence.mkdir(mode=0o700)
-    sequence = 0
-    environment = {k: v for k, v in os.environ.items() if not k.startswith(('DOCKER_', 'COMPOSE_'))}
-    environment['DOCKER_BUILDKIT'] = '0'  # Actual qualified builder lane.
-    environment['SANTA_COMPOSE_PACKAGE_VERSION'] = COMPOSE_VERSION
-    environment['SANTA_DOCKER_PACKAGE_VERSION'] = DOCKER_VERSION
-    docker_config = evidence / 'docker-config'; docker_config.mkdir(mode=0o700)
-    environment['DOCKER_CONFIG'] = str(docker_config)  # No inherited extra plugin dirs.
+    phase = 40
+    try:
+        require(os.geteuid() == 0 and platform.machine() == 'x86_64')
+        os.umask(0o077)
+        context, bundle = verified(context_path, digest)
+        phase = 41
+        validate_target(context['target'])
+        # Exact immutable guest identity before any package or runtime mutation.
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+        request = urllib.request.Request('http://169.254.169.254/metadata/instance/compute?api-version=2021-02-01', headers={'Metadata': 'true'})
+        with opener.open(request, timeout=3) as response: raw = response.read(65537)
+        require(len(raw) <= 65536); metadata = json.loads(raw)
+        require(metadata['subscriptionId'].lower() == context['target']['SubscriptionId'] and
+                metadata['resourceId'].lower() == context['target']['VmId'].lower() and metadata['vmId'].lower() == context['target']['VmInstanceId'])
+        tags = {item['name']: item['value'] for item in metadata['tagsList']}
+        require(tags.get('azd-solution') == 'azd-santa' and tags.get('purpose') == 'synthetic-vm-lab' and tags.get('azd-env-name') == context['target']['EnvironmentName'])
+        origin = selected_origin(context, metadata)
+        phase = 42
+        work = ROOT / ('private-runtime-' + context['target']['EnvironmentName'])
+        require(not work.exists() and not Path('/etc/systemd/system/azd-santa-runtime.service').exists())
+    except Exception:
+        raise InstallFailure(phase) from None
+    phase = 43
+    try:
+        evidence = bundle / 'install-evidence'; evidence.mkdir(mode=0o700)
+        sequence = 0
+        environment = {k: v for k, v in os.environ.items() if not k.startswith(('DOCKER_', 'COMPOSE_'))}
+        environment['DOCKER_BUILDKIT'] = '0'  # Actual qualified builder lane.
+        environment['SANTA_COMPOSE_PACKAGE_VERSION'] = COMPOSE_VERSION
+        environment['SANTA_DOCKER_PACKAGE_VERSION'] = DOCKER_VERSION
+        docker_config = evidence / 'docker-config'; docker_config.mkdir(mode=0o700)
+        environment['DOCKER_CONFIG'] = str(docker_config)  # No inherited extra plugin dirs.
+    except Exception:
+        raise InstallFailure(phase) from None
     def run(label, args, timeout=120, cwd=None):
         nonlocal sequence
         sequence += 1
@@ -168,6 +184,7 @@ def install(context_path, digest):
         sysctl = Path('/etc/sysctl.d/90-azd-santa-qualification.conf')
         if sysctl.exists(): require(sysctl.read_text() == 'vm.max_map_count=1048576\n')
         else: sysctl.write_text('vm.max_map_count=1048576\n')
+        phase = 44
         source_module = load(bundle, 'prepare_source')
         source = Path(source_module.prepare(bundle / 'upstream')['source'])
         compiler = load(bundle, 'prepare_core_build')
@@ -183,6 +200,7 @@ def install(context_path, digest):
         for name, ref in locks.items():
             require(re.fullmatch('[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}', ref))
             run('pull-' + name, ['docker', '--host', 'unix:///var/run/docker.sock', 'pull', ref], 360)
+        phase = 45
         stage = load_stage(bundle)
         stage.stage(source, bundle / 'dependency-images.lock.json', work, image, https_origin=context.get('https_origin'))
         compose = work / 'compose.json'; data = json.loads(compose.read_text())
@@ -199,14 +217,18 @@ def install(context_path, digest):
                  'ComposeSha256': hashlib.sha256(compose.read_bytes()).hexdigest(), 'Origin': origin}
         write(bundle / 'complete.json', dict(scope='private-azd-install-complete', bundle_sha256=context['bundle_sha256'],
               outputs=facts, limitation='Unit ready; client finalizer must verify initialized runtime before operator binding'))
-    except BaseException:
+    except Exception:
         write(bundle / 'failed.json', dict(scope='private-azd-install-failed', step=sequence,
               action='Inspect retained private evidence and same unit; initialization is never replayed'))
-        raise
+        raise InstallFailure(phase) from None
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(); parser.add_argument('--context', required=True); parser.add_argument('--sha256', required=True)
     arguments = parser.parse_args()
     try: install(arguments.context, arguments.sha256)
+    except InstallFailure as error:
+        # systemd retains this process exit status even when preflight could not
+        # write evidence safely. The observer decodes only known status values.
+        raise SystemExit(error.exit_status) from None
     except BaseException: raise SystemExit('Private install failed; retained job/data require inspection. Never retry initialization.') from None
