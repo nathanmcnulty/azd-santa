@@ -5,13 +5,15 @@ param(
     [Parameter(Mandatory)][string] $ExpectedAccount,
     [Parameter(Mandatory)][string] $ExpectedDeviceName,
     [string] $ReceiptPath = (Join-Path (Split-Path -Parent $PSScriptRoot) '.azure/azd-santa/intune-profiles-receipt.json'),
-    [string] $OutputPath = (Join-Path (Split-Path -Parent $PSScriptRoot) '.azure/azd-santa/intune-profile-status.json')
+    [string] $OutputPath = (Join-Path (Split-Path -Parent $PSScriptRoot) '.azure/azd-santa/intune-profile-status.json'),
+    [switch] $UseExistingSession
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Import-Module (Join-Path $PSScriptRoot 'Santa.Template.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'Santa.GraphReadContext.psm1')
 
 function Invoke-GraphRead {
     param([Parameter(Mandatory)][string] $Uri)
@@ -84,15 +86,21 @@ if ([string]::IsNullOrWhiteSpace([string] $receipt.pilotGroup.memberId)) {
 }
 
 $requiredScopes = @('DeviceManagementConfiguration.Read.All','DeviceManagementManagedDevices.Read.All','Device.Read.All','Group.Read.All')
-$context = Get-MgContext -ErrorAction SilentlyContinue
-if (-not $context -or $context.TenantId -ne $TenantId -or @($requiredScopes | Where-Object { $_ -notin $context.Scopes }).Count -gt 0) {
-    Connect-MgGraph -TenantId $TenantId -Scopes $requiredScopes -ContextScope CurrentUser -NoWelcome
-    $context = Get-MgContext
-}
-if ($context.TenantId -ne $TenantId) { throw "Authenticated tenant '$($context.TenantId)' does not match '$TenantId'." }
-if ($context.Account -ine $ExpectedAccount) { throw "Authenticated account '$($context.Account)' does not match '$ExpectedAccount'." }
-foreach ($requiredScope in $requiredScopes) {
-    if ($requiredScope -notin $context.Scopes) { throw "Missing required delegated scope '$requiredScope'." }
+if ($UseExistingSession) {
+    try { $context = Get-MgContext -ErrorAction Stop }
+    catch { throw 'SantaGraph.ContextUnavailable: Check Microsoft.Graph.Authentication in the existing signed-in PowerShell session.' }
+    Assert-SantaGraphReadContext -Context $context -TenantId $TenantId -ExpectedAccount $ExpectedAccount -Scopes $requiredScopes
+} else {
+    $context = Get-MgContext -ErrorAction SilentlyContinue
+    if (-not $context -or $context.TenantId -ne $TenantId -or @($requiredScopes | Where-Object { $_ -notin $context.Scopes }).Count -gt 0) {
+        Connect-MgGraph -TenantId $TenantId -Scopes $requiredScopes -ContextScope CurrentUser -NoWelcome
+        $context = Get-MgContext
+    }
+    if ($context.TenantId -ne $TenantId) { throw "Authenticated tenant '$($context.TenantId)' does not match '$TenantId'." }
+    if ($context.Account -ine $ExpectedAccount) { throw "Authenticated account '$($context.Account)' does not match '$ExpectedAccount'." }
+    foreach ($requiredScope in $requiredScopes) {
+        if ($requiredScope -notin $context.Scopes) { throw "Missing required delegated scope '$requiredScope'." }
+    }
 }
 $graphEnvironment = @(Get-MgEnvironment | Where-Object Name -CEQ $context.Environment)
 if ($graphEnvironment.Count -ne 1) { throw "The selected Graph environment '$($context.Environment)' is unavailable." }
