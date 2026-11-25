@@ -12,7 +12,7 @@ Administrators should not assemble containers, receipt JSON or remote scripts.
 
 ## Evidence and remaining work
 
-As of 2026-11-15 UTC, these are separate gates:
+The evidence below includes the November 25 native pilot follow-up.
 
 | Gate | Current evidence | Still required |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ As of 2026-11-15 UTC, these are separate gates:
 | Restore | Authority/encryption inventory; ciphertext authentication and bounded offline secret-rewrap primitives with actual synthetic crypto tests | Strict extraction, complete schema/row census, isolated application restoration, current-authority reconciliation and complete fault testing |
 | Operator access | Private application-level MFA/recovery tests; selected HTTPS pilot completed human password/TOTP enrollment and administrator login through a source-IP-restricted window, then restored deny-all ingress | Automated customer setup and controlled recovery on the current candidate; deferred Entra Easy Auth roadmap #108 |
 | Hostname TLS | Selected Azure hostname passed staging/production issuance; ordinary Windows and Linux trust verified the held endpoint; same certificate survived service restart; original deny policy restored | Renewal, DNS retirement/rate constraints, automated customer deployment and actual browser/Mac acceptance |
-| Native Mac | Package installation reported; maintained bound backend enrollment/private export and exact existing Intune configuration payload/assignment readback passed; device sync request accepted; old endpoint health/status does not prove this update arrived | Fresh endpoint profile/health; actual sync, rules, events, rotation and recovery on the selected Mac in Monitor mode |
+| Native Mac | Bound enrollment, Intune payload/assignment readback and accepted sync request. The November 25 endpoint readback confirmed Monitor mode, active Endpoint Security, the expected inner profile UUID and the selected sync hostname. The template outer UUID was absent and preflight timed out while the VM was deallocated. | Fresh Intune status and full payload evidence, successful sync, rules, events, rotation and recovery on the selected Mac in Monitor mode |
 | Container Apps | Tracked comparison requirements | Equivalent full backend deployment, persistence/failure tests and measured cost comparison |
 
 Detailed evidence: [private installation](private-vm-installation.md),
