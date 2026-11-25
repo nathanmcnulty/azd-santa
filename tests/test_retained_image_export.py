@@ -14,6 +14,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'experiments/server'))
 import retained_image_export as export
+import retained_image_export_job as jobs
+import retained_image_parts as parts
+from test_retained_image_blob import target
 from restore_cipher import authenticate
 
 
@@ -97,3 +100,83 @@ class ExportTests(unittest.TestCase):
             with export.docker_archive(self.image_id, time.monotonic() + 0.2) as chunks:
                 list(chunks)
         self.assertIsNotNone(processes[0].poll())
+
+
+@unittest.skipUnless(sys.platform == 'linux', 'Linux selected guest export')
+class ExportJobTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        ExportTests.setUpClass()
+
+    def setUp(self):
+        folder = TemporaryDirectory(dir=Path.home())
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name) / 'exports'
+        self.source = target('source')
+        self.id = 'sha256:' + '4' * 64
+        self.operation = 'd' * 32
+        inventory = export.encoded({'scope': 'azd-santa-retention-image-inventory-v1', 'platform': 'linux/amd64',
+                                    'images': {'core': {'id': self.id}}})
+        key = ExportTests.public
+        self.job = jobs.ExportJob(self.source, self.operation, inventory, 'core', key,
+            inventory_sha256=jobs.sha(inventory), recipient_sha256=jobs.sha(key), root=self.root)
+        mocked = patch.object(jobs.blob, 'host_identity')
+        self.host = mocked.start()
+        self.addCleanup(mocked.stop)
+
+    def test_export_commits_exact_manifest_and_serves_only_bounded_metadata(self):
+        @contextmanager
+        def source(image_id, deadline):
+            self.assertEqual(image_id, self.id)
+            yield iter([bytes(512), bytes(16 * 1024), bytes(512)])
+
+        self.assertEqual(self.job.start()['state'], 'planned')
+        self.assertFalse(self.root.exists())
+        self.host.assert_not_called()
+        self.assertEqual(self.job.observe()['state'], 'not-attempted')
+        with patch.object(export, 'docker_archive', source), patch.object(parts, 'PART_BYTES', 1024):
+            self.host.side_effect = jobs.blob.RetentionRejected
+            with self.assertRaises(jobs.blob.RetentionRejected):
+                self.job.start(apply=True)
+            self.assertFalse(self.root.exists())
+            self.host.side_effect = None
+            receipt = self.job.start(apply=True)
+            self.assertEqual(receipt, self.job.observe())
+            self.assertEqual(receipt['state'], 'completed')
+            self.assertGreater(receipt['pages'], 1)
+            digest = receipt['manifest_sha256']
+            pages = [self.job.observe(page=index, manifest_sha256=digest) for index in range(receipt['pages'])]
+            self.assertLessEqual(max(len(jobs.blob.encoded(page)) for page in pages), jobs.MAX_RESPONSE)
+            with self.assertRaises(jobs.blob.RetentionRejected):
+                self.job.observe(page=0, manifest_sha256='0' * 64)
+            with self.assertRaises(jobs.blob.RetentionRejected):
+                jobs.collect(receipt, list(reversed(pages)))
+            with self.assertRaises(jobs.blob.RetentionRejected):
+                jobs.collect(receipt, pages[:-1])
+            with self.assertRaises(parts.PartsRejected):
+                first = dict(pages[0], bytes=jobs.b64(b'x' * jobs.PAGE_BYTES))
+                jobs.collect(receipt, [first, *pages[1:]])
+            completion, manifest = jobs.collect(receipt, pages)
+            artifact = Path(receipt['export_directory'])
+            self.assertEqual(manifest, (artifact / 'parts.json').read_bytes())
+            with (artifact / 'image.sealed').open('rb') as image:
+                independently_planned = parts.plan(image, completion, completion_sha256=receipt['completion_sha256'],
+                                                   operation=self.operation)
+            self.assertEqual(manifest, independently_planned)
+            with self.assertRaises(FileExistsError):
+                self.job.start(apply=True)
+
+    def test_failed_export_retains_reservation_without_readable_metadata(self):
+        @contextmanager
+        def source(image_id, deadline):
+            yield iter([bytes(1024)])
+            raise subprocess.CalledProcessError(1, 'synthetic Docker failure')
+
+        with patch.object(export, 'docker_archive', source):
+            with self.assertRaises(export.ExportRejected):
+                self.job.start(apply=True)
+            with self.assertRaises(FileExistsError):
+                self.job.start(apply=True)
+        self.assertEqual(self.job.observe()['state'], 'reserved')
+        self.assertFalse((self.job.artifact / 'complete.json').exists())
+        self.assertFalse((self.job.artifact / 'parts.json').exists())

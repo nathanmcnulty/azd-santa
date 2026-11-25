@@ -15,6 +15,7 @@ import time
 from cold_backup import EncryptedSink, encoded, recipient_key
 from restore_cipher import CHUNK
 from retained_image_archive import ARCHIVE_MAXIMUM
+import retained_image_parts as parts
 from retention_image_inventory import IMAGE_ID
 
 IMAGE_MAGIC = b'AZDSANTAIMAGE1\n'
@@ -68,19 +69,28 @@ def sync(output):
     os.fsync(output.fileno())
 
 
+def export_intent(inventory, image_name, inventory_sha256, recipient_sha256, maximum):
+    return {'scope': 'azd-santa-retained-image-export-intent-v1', 'image': image_name,
+            'image_id': inventory['images'][image_name]['id'], 'platform': 'linux/amd64',
+            'inventory_sha256': inventory_sha256, 'recipient_sha256': recipient_sha256,
+            'maximum_archive_bytes': maximum}
+
+
 def export_image(destination, inventory, image_name, recipient_der, *, inventory_sha256,
-                 recipient_sha256, maximum=ARCHIVE_MAXIMUM, seconds=600):
+                 recipient_sha256, maximum=ARCHIVE_MAXIMUM, seconds=600, operation=None):
     """Export by immutable ID using a fresh directory under an owned private parent.
 
     The caller binds inventory and recipient digests to trusted prior evidence.
     It also supplies a trusted local Docker daemon and an outer process deadline
-    for blocking I/O. Existing or incomplete directories are never reused.
+    for blocking I/O. Existing or incomplete directories are never reused. An
+    operation ID also commits a transfer manifest before the completion marker.
     """
     try:
         need(sys.platform == 'linux' and type(maximum) is int and 1024 <= maximum <= ARCHIVE_MAXIMUM
              and type(seconds) is int and 0 < seconds <= 1800 and image_name in IMAGE_NAMES)
         need(type(recipient_der) is bytes and 0 < len(recipient_der) <= 1024
              and hashlib.sha256(recipient_der).hexdigest() == recipient_sha256)
+        need(operation is None or type(operation) is str and re.fullmatch(r'[0-9a-f]{32}', operation))
         recipient_key(recipient_der)
         need(type(inventory) is dict and inventory['scope'] == 'azd-santa-retention-image-inventory-v1'
              and inventory['platform'] == 'linux/amd64'
@@ -102,9 +112,7 @@ def export_image(destination, inventory, image_name, recipient_der, *, inventory
             stack.callback(os.close, directory)
             os.fsync(parent)
 
-            intent = {'scope': 'azd-santa-retained-image-export-intent-v1', 'image': image_name,
-                      'image_id': image_id, 'platform': 'linux/amd64', 'inventory_sha256': inventory_sha256,
-                      'recipient_sha256': recipient_sha256, 'maximum_archive_bytes': maximum}
+            intent = export_intent(inventory, image_name, inventory_sha256, recipient_sha256, maximum)
             metadata = encoded(intent)
             with new_file(directory, 'intent.json') as output:
                 output.write(metadata)
@@ -114,7 +122,8 @@ def export_image(destination, inventory, image_name, recipient_der, *, inventory
             digest = hashlib.sha256()
             size = 0
             with new_file(directory, 'image.sealed') as output:
-                sink = EncryptedSink(output, recipient_der, maximum + 4096, deadline)
+                planned = parts.PlannedOutput(output) if operation is not None else None
+                sink = EncryptedSink(output if planned is None else planned, recipient_der, maximum + 4096, deadline)
                 sink.write(IMAGE_MAGIC + struct.pack('>I', len(metadata)) + metadata)
                 with docker_archive(image_id, deadline) as chunks:
                     for chunk in chunks:
@@ -130,8 +139,13 @@ def export_image(destination, inventory, image_name, recipient_der, *, inventory
                       'intent_sha256': hashlib.sha256(metadata).hexdigest(),
                       'archive_bytes': size, 'archive_sha256': digest.hexdigest(),
                       'ciphertext_bytes': sink.total, 'ciphertext_sha256': sink.hasher.hexdigest()}
+            completion = encoded(result)
+            if planned is not None:
+                with new_file(directory, 'parts.json') as output:
+                    output.write(planned.manifest(completion, operation=operation))
+                    sync(output)
             with new_file(directory, 'completion.pending') as output:
-                output.write(encoded(result))
+                output.write(completion)
                 sync(output)
             need(time.monotonic() < deadline)
             os.link('completion.pending', 'complete.json', src_dir_fd=directory, dst_dir_fd=directory)

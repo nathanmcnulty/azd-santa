@@ -5,9 +5,9 @@ import os
 import re
 import time
 
+from cold_backup import encoded
 from restore_cipher import CHUNK
 from retained_image_archive import ARCHIVE_MAXIMUM, parse
-from retained_image_export import encoded
 from retention_image_inventory import HEX, IMAGE_ID
 
 PART_BYTES = 512 * 1024**2
@@ -78,6 +78,58 @@ def hash_part(stream, size, whole, deadline, output=None):
     return {'sha256': sha256.hexdigest(), 'md5': md5.hexdigest()}
 
 
+class PlannedOutput:
+    """Record part hashes as ciphertext is written, without staging part files."""
+
+    def __init__(self, stream):
+        self.stream = stream
+        self.total = self.part_size = 0
+        self.rows = []
+        self.sha = hashlib.sha256()
+        self.md5 = hashlib.md5(usedforsecurity=False)
+
+    def _seal_part(self):
+        need(0 < self.part_size <= PART_BYTES and len(self.rows) < MAX_PARTS)
+        self.rows.append({'sha256': self.sha.hexdigest(), 'md5': self.md5.hexdigest()})
+        self.part_size = 0
+        self.sha = hashlib.sha256()
+        self.md5 = hashlib.md5(usedforsecurity=False)
+
+    def write(self, data):
+        need(self.stream.write(data) == len(data))
+        self.total += len(data)
+        view = memoryview(data)
+        while view:
+            size = min(len(view), PART_BYTES - self.part_size)
+            self.sha.update(view[:size])
+            self.md5.update(view[:size])
+            self.part_size += size
+            view = view[size:]
+            if self.part_size == PART_BYTES:
+                self._seal_part()
+        return len(data)
+
+    def manifest(self, completion, *, operation):
+        digest = hashlib.sha256(completion).hexdigest()
+        record = checked_completion(completion, digest)
+        need(record['ciphertext_bytes'] == self.total)
+        if self.part_size:
+            self._seal_part()
+        rows = [{**part, **hashes} for part, hashes in zip(layout(self.total, operation), self.rows, strict=True)]
+        raw = manifest_bytes(record, digest, operation, rows)
+        checked_manifest(raw, completion, manifest_sha256=hashlib.sha256(raw).hexdigest(),
+                         completion_sha256=digest, operation=operation)
+        return raw
+
+
+def manifest_bytes(record, completion_sha256, operation, rows):
+    raw = encoded({'scope': SCOPE, 'operation': operation, 'completion_sha256': completion_sha256,
+                   'ciphertext_bytes': record['ciphertext_bytes'], 'ciphertext_sha256': record['ciphertext_sha256'],
+                   'parts': rows})
+    need(len(raw) <= MAX_MANIFEST)
+    return raw
+
+
 def plan(stream, completion_raw, *, completion_sha256, operation, seconds=600):
     """Read exact ciphertext once, emitting no part files or transfer requests."""
     try:
@@ -89,10 +141,7 @@ def plan(stream, completion_raw, *, completion_sha256, operation, seconds=600):
         parts = [{**part, **hash_part(stream, part['bytes'], whole, deadline)} for part in layout(size, operation)]
         need(stream.read(1) == b'' and whole.hexdigest() == record['ciphertext_sha256']
              and time.monotonic() < deadline)
-        manifest = encoded({'scope': SCOPE, 'operation': operation, 'completion_sha256': completion_sha256,
-                            'ciphertext_bytes': size, 'ciphertext_sha256': whole.hexdigest(), 'parts': parts})
-        need(len(manifest) <= MAX_MANIFEST)
-        return manifest
+        return manifest_bytes(record, completion_sha256, operation, parts)
     except (ValueError, KeyError, TypeError, OSError, RecursionError):
         raise PartsRejected('Santa image transfer planning rejected; preserve the original ciphertext') from None
 
