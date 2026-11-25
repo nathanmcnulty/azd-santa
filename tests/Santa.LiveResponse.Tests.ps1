@@ -98,7 +98,33 @@ Describe 'Private Live Response receipts and bounded polling' {
         Add-Response @{ id = 'a' * 40; computerDnsName = 'fixture-mac'; osPlatform = 'macOS'; onboardingStatus = 'Onboarded' }
         Add-Response @{ value = @(@{ fileName = 'Get-SantaHealth.sh'; description = 'managed by azd-santa' }) }
         Add-Success
-        & $runner @parameters -ExistingActionId $actionId
+        & $runner @parameters -Resume
+        @($handler.Requests | Where-Object { $_ -like 'POST *' }).Count | Should -Be 1
+    }
+    It 'preserves a terminal receipt and successful artifact on a later resume' {
+        Add-Response @{ id = $actionId }
+        Add-Success
+        & $runner @parameters
+        $savedReceipt = Get-Content $receiptPath -Raw
+        $savedResult = Get-Content $resultPath -Raw
+        $requestCount = $handler.Requests.Count
+        { & $runner @parameters -Resume } | Should -Throw '*records a terminal outcome*'
+        $handler.Requests.Count | Should -Be $requestCount
+        (Get-Content $receiptPath -Raw) | Should -BeExactly $savedReceipt
+        (Get-Content $resultPath -Raw) | Should -BeExactly $savedResult
+    }
+    It 'keeps the last known service status when a resumed row becomes temporarily invisible' {
+        Add-Response @{ id = $actionId }
+        Add-Action 'InProgress'; Add-Response @{} 404
+        (& $runner @parameters -WarningAction SilentlyContinue).state | Should -Be 'polling-timeout'
+        (Get-Content $receiptPath -Raw | ConvertFrom-Json).action.status | Should -Be 'InProgress'
+        Add-Response @{ id = 'a' * 40; computerDnsName = 'fixture-mac'; osPlatform = 'macOS'; onboardingStatus = 'Onboarded' }
+        Add-Response @{ value = @(@{ fileName = 'Get-SantaHealth.sh'; description = 'managed by azd-santa' }) }
+        Add-Response @{} 404; Add-Action 'redact-unrecognized-status'
+        (& $runner @parameters -Resume -WarningAction SilentlyContinue).state | Should -Be 'polling-timeout'
+        $rawReceipt = Get-Content $receiptPath -Raw
+        $rawReceipt | Should -Not -Match 'redact-unrecognized-status'
+        ($rawReceipt | ConvertFrom-Json).action.status | Should -Be 'InProgress'
         @($handler.Requests | Where-Object { $_ -like 'POST *' }).Count | Should -Be 1
     }
     It 'retains a timeout receipt when every poll is not yet visible' {
@@ -113,6 +139,8 @@ Describe 'Private Live Response receipts and bounded polling' {
         $receipt.state | Should -Be 'submission-uncertain'
         $receipt.action.id | Should -BeNullOrEmpty
         @($handler.Requests | Where-Object { $_ -like '*machineactions/*' }).Count | Should -Be 0
+        { & $runner @parameters -Resume } | Should -Throw '*no valid saved ID*'
+        @($handler.Requests | Where-Object { $_ -like 'POST *' }).Count | Should -Be 1
     }
     It 'keeps completion unverified when the success artifact cannot be written' {
         $null = New-Item -ItemType Directory -Path $resultPath

@@ -7,6 +7,7 @@ param(
     [Parameter(Mandatory)][string] $ExpectedAccount,
     [string] $ScriptName = 'Get-SantaHealth.sh',
     [ValidatePattern('^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$')][string] $ExistingActionId,
+    [switch] $Resume,
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')][string] $EnvironmentName = 'default',
     [string] $ResultPath,
     [string] $ReceiptPath,
@@ -27,13 +28,15 @@ if ($ExpectedTenantId -notmatch '^[0-9a-fA-F-]{36}$') { throw 'ExpectedTenantId 
 if ($ExpectedAccount -notmatch '^[^@\s]+@[^@\s]+$') { throw 'ExpectedAccount must be the intended MDE administrator UPN.' }
 if ($ExpectedMachineName -notmatch '^[A-Za-z0-9._-]{1,255}$') { throw 'ExpectedMachineName is not safe.' }
 if ($ScriptName -notmatch '^[A-Za-z0-9._-]{1,128}$') { throw 'ScriptName is not safe.' }
+if ($Resume -and $ExistingActionId) { throw 'Use Resume for a saved ID or ExistingActionId for an independently recovered ID.' }
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) { throw 'Azure CLI is required for its cached browser/WAM token.' }
 
 if (-not $Apply) {
-    [pscustomobject]@{ mode = 'what-if'; machineId = $MachineId; expectedMachineName = $ExpectedMachineName; scriptName = $ScriptName; existingActionId = $ExistingActionId; tenantId = $ExpectedTenantId; account = $ExpectedAccount } | ConvertTo-Json
+    [pscustomobject]@{ mode = 'what-if'; machineId = $MachineId; expectedMachineName = $ExpectedMachineName; scriptName = $ScriptName; existingActionId = $ExistingActionId; resume = [bool]$Resume; tenantId = $ExpectedTenantId; account = $ExpectedAccount } | ConvertTo-Json
     return
 }
-if (-not $PSCmdlet.ShouldProcess("$ExpectedMachineName ($MachineId)", "Run Defender Live Response script $ScriptName")) { return }
+$operation = if ($Resume -or $ExistingActionId) { "Read existing Defender Live Response action for $ScriptName" } else { "Run Defender Live Response script $ScriptName" }
+if (-not $PSCmdlet.ShouldProcess("$ExpectedMachineName ($MachineId)", $operation)) { return }
 
 $accountJson = (& az account show --query '{tenantId:tenantId,user:user.name}' --output json --only-show-errors) -join [Environment]::NewLine
 if ($LASTEXITCODE -ne 0) { throw 'Azure CLI could not inspect the active account.' }
@@ -109,14 +112,28 @@ catch { throw 'Another invocation holds this receipt, or the receipt directory i
 
 try {
 # Refuse accidental replay or resumption against a different target.
+$actionPattern = '^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$'
+$terminalStates = @('verified-completion','action-failed','action-timeout','command-failed','binding-mismatch')
+$knownStatuses = @('Pending','InProgress','Succeeded','Failed','Cancelled','Rejected','TimeOut')
+$saved = $null
 if (Test-Path -LiteralPath $ReceiptPath) {
-    $saved = Get-Content -LiteralPath $ReceiptPath -Raw | ConvertFrom-Json
-    if (-not $ExistingActionId) { throw 'An action receipt already exists. Resume with ExistingActionId; do not resubmit an uncertain action.' }
-    if ($saved.schemaVersion -ne '1.0' -or $saved.tenantId -ine $ExpectedTenantId -or $saved.account -ine $ExpectedAccount -or
+    $saved = Get-Content -LiteralPath $ReceiptPath -Raw | ConvertFrom-Json -AsHashtable
+    if (-not ($Resume -or $ExistingActionId)) { throw 'An action receipt already exists. Use Resume for a saved ID; do not resubmit an uncertain action.' }
+    if ($saved.schemaVersion -ne '1.0' -or $saved.template -ne 'azd-santa' -or $saved.tenantId -ine $ExpectedTenantId -or $saved.account -ine $ExpectedAccount -or
         $saved.machine.id -ine $MachineId -or $saved.machine.name -ine $ExpectedMachineName -or
-        (-not [string]::IsNullOrWhiteSpace([string]$saved.action.id) -and $saved.action.id -ine $ExistingActionId) -or $saved.action.scriptName -ine $ScriptName) {
+        $saved.action.scriptName -ine $ScriptName) {
         throw 'Existing action receipt does not match the selected action, script, account, tenant and machine.'
     }
+    $savedId = [string]$saved.action.id
+    if ($Resume) {
+        if ($savedId -notmatch $actionPattern) { throw 'The action receipt has no valid saved ID. Recover the original action ID before resuming.' }
+        $ExistingActionId = $savedId
+    } elseif ($savedId -and $savedId -ine $ExistingActionId) {
+        throw 'Existing action receipt does not match the selected action ID.'
+    }
+    if ($saved.state -in $terminalStates) { throw 'The existing action receipt already records a terminal outcome. Preserve it and the corresponding result.' }
+} elseif ($Resume) {
+    throw 'No saved action receipt is available to resume.'
 }
 
     $machine = Invoke-DefenderJson -Method GET -Uri "https://api.security.microsoft.com/api/machines/$MachineId"
@@ -137,7 +154,7 @@ if (Test-Path -LiteralPath $ReceiptPath) {
         machine = [ordered]@{ id = $MachineId; name = $ExpectedMachineName }
         action = [ordered]@{ id = $ExistingActionId; status = ''; scriptName = $ScriptName }
     }
-    Save-ActionReceipt -State 'submission-uncertain'
+    if (-not $ExistingActionId) { Save-ActionReceipt -State 'submission-uncertain' }
     $action = if ($ExistingActionId) {
         [pscustomobject]@{ id = $ExistingActionId }
     } else {
@@ -146,27 +163,34 @@ if (Test-Path -LiteralPath $ReceiptPath) {
             Comment = "azd-santa health verification for $ExpectedMachineName"
         })
     }
-    if ([string]$action.id -notmatch '^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$') {
+    if ([string]$action.id -notmatch $actionPattern) {
         throw 'Defender did not return a valid Live Response action ID. Preserve the private receipt.'
     }
 
     $receipt.action.id = [string]$action.id
-    Save-ActionReceipt -State 'submitted'
+    $lastStatus = ''
+    if ($ExistingActionId) {
+        if ($saved.action.status -in $knownStatuses) { $lastStatus = [string]$saved.action.status }
+        Save-ActionReceipt -State 'observing' -Status $lastStatus
+    } else {
+        Save-ActionReceipt -State 'submitted'
+    }
     $completed = $null
     for ($poll = 0; $poll -lt $MaximumPolls; $poll++) {
         $completed = Invoke-DefenderJson -Method GET -Uri "https://api.security.microsoft.com/api/machineactions/$($action.id)" -AllowNotFound
         if ($null -eq $completed) {
-            Save-ActionReceipt -State 'not-yet-visible'
-            if ($PollIntervalSeconds -gt 0) { Start-Sleep -Seconds $PollIntervalSeconds }
+            Save-ActionReceipt -State 'not-yet-visible' -Status $lastStatus
+            if ($poll + 1 -lt $MaximumPolls -and $PollIntervalSeconds -gt 0) { Start-Sleep -Seconds $PollIntervalSeconds }
             continue
         }
         if ([string]$completed.type -ine 'LiveResponse' -or [string]$completed.id -ine [string]$action.id -or [string]$completed.machineId -ine $MachineId -or [string]$completed.computerDnsName -ine $ExpectedMachineName) {
             Save-ActionReceipt -State 'binding-mismatch'
             throw 'Live Response action was not bound to the expected action and machine.'
         }
-        Save-ActionReceipt -State 'pending' -Status ([string]$completed.status)
+        if ([string]$completed.status -in $knownStatuses) { $lastStatus = [string]$completed.status }
+        Save-ActionReceipt -State 'pending' -Status $lastStatus
         if ([string]$completed.status -in @('Succeeded','Failed','Cancelled','Rejected','TimeOut')) { break }
-        if ($PollIntervalSeconds -gt 0) { Start-Sleep -Seconds $PollIntervalSeconds }
+        if ($poll + 1 -lt $MaximumPolls -and $PollIntervalSeconds -gt 0) { Start-Sleep -Seconds $PollIntervalSeconds }
     }
     if ([string]$completed.status -eq 'TimeOut') {
         Save-ActionReceipt -State 'action-timeout' -Status 'TimeOut'
@@ -177,8 +201,8 @@ if (Test-Path -LiteralPath $ReceiptPath) {
         throw "Live Response action explicitly reported '$($completed.status)'. See the private receipt."
     }
     if ([string]$completed.status -ne 'Succeeded') {
-        Save-ActionReceipt -State 'polling-timeout' -Status ([string]$completed.status)
-        Write-Warning 'Live Response remains unverified after the polling window. Resume using ExistingActionId from the private receipt; do not submit again.'
+        Save-ActionReceipt -State 'polling-timeout' -Status $lastStatus
+        Write-Warning 'Live Response remains unverified after the polling window. Use Resume with the same private receipt.'
         return [pscustomobject]@{ state = 'polling-timeout'; receiptPath = $ReceiptPath }
     }
     $command = @($completed.commands | Where-Object index -eq 0)
@@ -228,8 +252,8 @@ if (Test-Path -LiteralPath $ReceiptPath) {
     $completedLabel = if ($ScriptName -eq 'Get-SantaHealth.sh') { 'Live Response health check passed' } else { 'Live Response diagnostic completed' }
     Write-Host "$completedLabel for $ExpectedMachineName. Result: $ResultPath" -ForegroundColor Green
 } catch {
-    if ($null -ne $receipt -and $receipt.state -in @('submitted','pending','not-yet-visible')) {
-        Save-ActionReceipt -State 'polling-error'
+    if ($null -ne $receipt -and $receipt.state -in @('submitted','observing','pending','not-yet-visible')) {
+        Save-ActionReceipt -State 'polling-error' -Status $lastStatus
     }
     throw
 } finally {
