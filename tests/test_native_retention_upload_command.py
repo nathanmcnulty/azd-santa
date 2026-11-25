@@ -1,6 +1,8 @@
 """Exercise one source upload submission and read-only recovery after a lost reply."""
 
+import base64
 import json
+import lzma
 from pathlib import Path
 import re
 import subprocess
@@ -12,6 +14,9 @@ from unittest.mock import Mock, patch
 import test_private_arm_adapter as fixtures
 import test_restore_tooling_bundle as tooling
 import native_retention_upload_command as command
+import native_retention_upload_guest as guest_program
+from native_capture_record_command import CaptureRecordCommand
+from retained_image_run_command import DONE, RECEIPT
 
 
 class UploadCommandTests(unittest.TestCase):
@@ -39,6 +44,75 @@ class UploadCommandTests(unittest.TestCase):
         self.assertEqual(plan['permission'], 'c')
         self.assertEqual(plan['source']['instance_id'], self.fixture.selected.source.instance_id)
         cli.assert_not_called()
+
+    def test_capture_record_read_writes_only_the_pin_bound_transfer_record(self):
+        bundle = tooling.BundleTests
+        selected = self.fixture.selected
+        target = selected.source
+        capture = self.fixture.capture
+        maintenance = command.blob.encoded(dict(capture.maintenance, destination=
+            '/var/lib/azd-santa-qualification/ciphertext-fixture'))
+        request_sha256 = command.sha(maintenance)
+        complete = dict(capture.record['complete'], maintenance_sha256=request_sha256)
+        pins = {'request_sha256': request_sha256, 'ciphertext_sha256': complete['ciphertext_sha256'],
+                'ciphertext_bytes': complete['ciphertext_bytes'], 'image_id': capture.record['image_id'],
+                'source_bundle_sha256': capture.record['source_bundle_sha256']}
+        received = []
+
+        def cli(args, timeout):
+            if args[:2] == ['account', 'show']:
+                return {'id': selected.subscription, 'tenantId': selected.tenant,
+                        'state': 'Enabled', 'environmentName': 'AzureCloud'}
+            if args[:2] == ['vm', 'show']:
+                return {'id': target.vm_id, 'vmId': target.instance_id, 'location': target.region}
+            self.assertEqual(args[:3], ['vm', 'run-command', 'invoke'])
+            self.assertEqual(args[3:7], ['--resource-group', target.vm_id.split('/')[4],
+                                         '--name', 'vm-santa-lab'])
+            script = Path(args[-1][1:]).read_text(encoding='ascii')
+            raw = lzma.decompress(base64.b64decode(re.search("SANTA_IMAGE_ARCHIVE='([^']+)'", script)[1]))
+            request = base64.b64decode(re.search("SANTA_NATIVE_UPLOAD_REQUEST='([^']+)'", script)[1])
+            received.append(json.loads(request))
+            nonce = re.search(DONE + r'([a-f0-9]{32})', script)[1]
+            reply = guest_program.dispatch(raw, request)
+            message = RECEIPT + command.blob.encoded(reply).decode('ascii') + '\n' + DONE + nonce
+            return {'value': [{'code': 'ComponentStatus/StdOut/succeeded', 'message': message}]}
+
+        def read_guest(path, maximum, *, private):
+            self.assertTrue(private)
+            if path.name == 'backup-request.json':
+                return maintenance
+            self.assertEqual(path.parent.name, 'ciphertext-fixture')
+            self.assertEqual(path.name, 'complete.json')
+            return command.blob.encoded(complete)
+
+        def create(expected):
+            return CaptureRecordCommand(selected, expected, bundle.raw, commit=bundle.commit,
+                                        tooling_sha256=bundle.digest, cli=cli)
+
+        operation = create(pins)
+        self.assertFalse(operation.preview()['contacts_azure'])
+        self.assertEqual(received, [])
+        with TemporaryDirectory() as folder, \
+                patch.object(command.blob, 'host_identity') as host, \
+                patch.object(command.relay, 'read_file', side_effect=read_guest), \
+                patch.object(command.relay, 'capture') as verify_capture, \
+                patch.object(command.blob, 'parent', side_effect=AssertionError('guest staging attempted')):
+            root = Path(folder).resolve()
+            output = root / 'capture.json'
+            bad = create(dict(pins, request_sha256='0' * 64))
+            with self.assertRaises(command.blob.RetentionRejected):
+                bad.read(output, bad.plan_sha256)
+            self.assertFalse(output.exists())
+            verify_capture.assert_not_called()
+            result = operation.read(output, operation.plan_sha256)
+            record = json.loads(output.read_bytes())
+            self.assertEqual(record, dict(capture.record, complete=complete))
+            self.assertEqual(result['capture_record_sha256'], command.sha(output.read_bytes()))
+            verify_capture.assert_called_once_with('source', target, record)
+            self.assertEqual(host.call_count, 2)
+            with self.assertRaises(command.blob.RetentionRejected):
+                operation.read(output, operation.plan_sha256)
+            self.assertEqual(received, [{'action': 'read-record'}] * 2)
 
     @unittest.skipUnless(sys.platform == 'linux', 'Linux guest filesystem and shell')
     def test_lost_submit_reply_does_not_repeat_mint_or_launch(self):

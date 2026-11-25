@@ -27,6 +27,26 @@ BOOTSTRAP = ARCHIVE_BOOTSTRAP.replace('ARCHIVE_ACTION', """            from nati
             result = dispatch(raw, request)""")
 
 
+def guest_archive(bundle, config):
+    blob.need(len(config) <= 8192 and sha(bundle[SERVER + PROGRAMS[0]]) == relay.RETENTION_SHA)
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, 'w') as archive:
+        for name in (*PROGRAMS, 'native_retention_upload_guest.py'):
+            archive.writestr(zipfile.ZipInfo(name), bundle[SERVER + name])
+        archive.writestr(zipfile.ZipInfo('selection.json'), config)
+    raw = output.getvalue()
+    blob.need(len(raw) <= MAX_ARCHIVE)
+    digest = sha(raw)
+    return digest, (f"export SANTA_IMAGE_ARCHIVE='{b64(lzma.compress(raw, preset=6))}'\n"
+                    f"export SANTA_IMAGE_ARCHIVE_SHA='{digest}'\n")
+
+
+def source_script(exports, request, nonce):
+    raw = blob.encoded(request)
+    exports += f"export SANTA_NATIVE_UPLOAD_REQUEST='{b64(raw)}'\n"
+    return SelectedVmCommand._script(exports, BOOTSTRAP, nonce), sha(raw)
+
+
 class UploadCommand(SelectedVmCommand):
     def __init__(self, selection, record, tooling, *, commit, tooling_sha256, cli=None):
         super().__init__(selection, selection.source, cli)
@@ -38,21 +58,10 @@ class UploadCommand(SelectedVmCommand):
         self.record_sha256 = sha(blob.encoded(record))
         bundle = verify(tooling, commit=commit, bundle_sha256=tooling_sha256)
         self.program_sha256 = sha(bundle[SERVER + PROGRAMS[1]])
-        blob.need(sha(bundle[SERVER + PROGRAMS[0]]) == relay.RETENTION_SHA)
         config = blob.encoded({'source': asdict(self.target), 'blob': asdict(selected), 'record': record})
-        blob.need(len(config) <= 8192)
-        output = io.BytesIO()
-        with zipfile.ZipFile(output, 'w') as archive:
-            for name in (*PROGRAMS, 'native_retention_upload_guest.py'):
-                archive.writestr(zipfile.ZipInfo(name), bundle[SERVER + name])
-            archive.writestr(zipfile.ZipInfo('selection.json'), config)
-        raw = output.getvalue()
-        blob.need(len(raw) <= MAX_ARCHIVE)
-        digest = sha(raw)
-        self.exports = (f"export SANTA_IMAGE_ARCHIVE='{b64(lzma.compress(raw, preset=6))}'\n"
-                        f"export SANTA_IMAGE_ARCHIVE_SHA='{digest}'\n")
+        digest, self.exports = guest_archive(bundle, config)
         largest = {'action': 'submit', 'packet': 'x' * MAX_PACKET, 'offer_sha256': 'f' * 64}
-        maximum_script = len(self._request_script(largest, '0' * 32)[0])
+        maximum_script = len(source_script(self.exports, largest, '0' * 32)[0])
         self.plan = {'scope': SCOPE, 'state': 'planned', 'permission': 'c', 'source': asdict(self.target),
                      'tenant': selection.tenant, 'subscription': selection.subscription,
                      'storage_account_id': selected.account_id, 'record_sha256': self.record_sha256,
@@ -63,14 +72,9 @@ class UploadCommand(SelectedVmCommand):
     def preview(self):
         return {**self.plan, 'plan_sha256': self.plan_sha256, 'performs_mutation': False}
 
-    def _request_script(self, request, nonce):
-        raw = blob.encoded(request)
-        exports = self.exports + f"export SANTA_NATIVE_UPLOAD_REQUEST='{b64(raw)}'\n"
-        return self._script(exports, BOOTSTRAP, nonce), sha(raw)
-
     def _send(self, request):
         nonce = uuid.uuid4().hex
-        script, digest = self._request_script(request, nonce)
+        script, digest = source_script(self.exports, request, nonce)
         envelope = self._submit(self._read_target(), script, nonce, digest, 210, scope=SCOPE)
         blob.need(set(envelope) == {'scope', 'batch_sha256', 'record_sha256', 'reply'}
                   and envelope['record_sha256'] == self.record_sha256)

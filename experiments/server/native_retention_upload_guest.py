@@ -3,6 +3,8 @@
 import io
 import json
 import os
+from pathlib import Path
+import re
 import subprocess
 import zipfile
 from contextlib import ExitStack
@@ -11,8 +13,51 @@ import blob_capability_relay as relay
 import blob_retention as blob
 
 SCOPE = 'azd-santa-native-upload-command-v1'
+RECORD_SCOPE = 'azd-santa-native-capture-record-v1'
 PROGRAMS = ('blob_retention.py', 'blob_capability_relay.py')
 MAX_PACKET = 2048
+
+
+def checked_pins(pins):
+    hashes = {'request_sha256', 'ciphertext_sha256', 'source_bundle_sha256'}
+    blob.need(set(pins) == hashes | {'ciphertext_bytes', 'image_id'}
+              and all(re.fullmatch(blob.HEX, pins[key]) for key in hashes)
+              and re.fullmatch('sha256:' + blob.HEX, pins['image_id'])
+              and type(pins['ciphertext_bytes']) is int
+              and len(blob.MAGIC) + 32 < pins['ciphertext_bytes'] <= blob.MAXIMUM)
+
+
+def check_record(record, target, selected, pins):
+    blob.checked_record(record)
+    complete = record['complete']
+    blob.need(record['blob_uri'] == selected.uri and record['operation_id'] == selected.operation
+              and record['source_vm_id'] == target.vm_id and record['source_instance_id'] == target.instance_id
+              and record['image_id'] == pins['image_id'] and record['source_bundle_sha256'] == pins['source_bundle_sha256']
+              and complete['maintenance_sha256'] == pins['request_sha256']
+              and complete['ciphertext_sha256'] == pins['ciphertext_sha256']
+              and complete['ciphertext_bytes'] == pins['ciphertext_bytes'])
+
+
+def collect(config, target):
+    selected = blob.Blob(**config['blob'])
+    pins = config['pins']
+    checked_pins(pins)
+    match = re.fullmatch(r'rg-azd-santa-vm-([a-z0-9-]{2,32})', target.vm_id.split('/')[4])
+    blob.need(match is not None)
+    environment = match[1]
+    runtime = relay.ROOT / ('private-runtime-' + environment) / 'runtime-service'
+    request = relay.read_file(runtime / 'backup-request.json', 65536, private=True)
+    blob.need(relay.sha(request) == pins['request_sha256'])
+    request_info = relay.parsed(request)
+    blob.need(request_info['operation_id'] == selected.operation)
+    destination = Path(request_info['destination'])
+    blob.need(destination.parent == relay.ROOT and re.fullmatch(r'ciphertext-[a-z0-9-]{2,64}', destination.name))
+    complete = relay.parsed(relay.read_file(destination / 'complete.json', 16384, private=True))
+    record = blob.capture_record(selected, complete, target, maintenance_request=request,
+                                 image_id=pins['image_id'], source_bundle_sha256=pins['source_bundle_sha256'])
+    check_record(record, target, selected, pins)
+    relay.capture(environment, target, record)
+    return record
 
 
 def checked_document(raw, maximum):
@@ -74,9 +119,14 @@ def dispatch(raw, request_raw):
         files = {name: archive.read(name) for name in PROGRAMS}
         config_raw = archive.read('selection.json')
     config = checked_document(config_raw, 8192)
-    blob.need(set(config) == {'source', 'blob', 'record'})
     target = blob.SelectedTarget(**config['source'])
     blob.host_identity(target)
+    if request == {'action': 'read-record'}:
+        blob.need(set(config) == {'source', 'blob', 'pins'})
+        record = collect(config, target)
+        return {'scope': RECORD_SCOPE, 'batch_sha256': relay.sha(request_raw),
+                'record': record, 'record_sha256': relay.sha(blob.encoded(record))}
+    blob.need(set(config) == {'source', 'blob', 'record'})
     digest = relay.sha(blob.encoded({name: relay.sha(data) for name, data in files.items()}))
     folder = relay.ROOT / ('native-upload-' + digest)
     with ExitStack() as stack:
