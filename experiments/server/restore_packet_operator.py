@@ -23,8 +23,8 @@ SCOPE = 'santa-restore-packet-operation-v1'
 CARRIER_ROOT = Path('/run/azd-santa-recovery-carrier')
 
 
-def received_packet(job, plan, plan_sha256, receipt, *, root=CARRIER_ROOT):
-    """Open only the verified ciphertext for the approved receiver capsule."""
+def delivery_binding(job, plan, plan_sha256, receipt):
+    """Verify the approved transport plan and its corresponding receipt."""
     blob.need(type(job) is Job and type(plan) is dict and is_digest(plan_sha256)
               and plan.get('plan_sha256') == plan_sha256 and plan.get('submits_run_command') is False)
     body = {name: value for name, value in plan.items() if name not in ('plan_sha256', 'submits_run_command')}
@@ -40,6 +40,12 @@ def received_packet(job, plan, plan_sha256, receipt, *, root=CARRIER_ROOT):
               and receipt == dict(scope=SCOPE, state='verified', plan_sha256=plan_sha256,
                                   receiver_capsule=capsule, packet_sha256=digest, packet_bytes=length,
                                   upload_confirmed=receipt['upload_confirmed'], database_applied=False))
+    return capsule, digest, length
+
+
+def received_packet(job, plan, plan_sha256, receipt, *, root=CARRIER_ROOT):
+    """Open only the verified ciphertext for the approved receiver capsule."""
+    capsule, digest, length = delivery_binding(job, plan, plan_sha256, receipt)
     with ExitStack() as stack:
         directory, name = blob.parent(Path(root) / capsule / 'packet.sealed', stack)
         packet = read_at(directory, name, length)

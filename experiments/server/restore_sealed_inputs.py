@@ -118,6 +118,16 @@ class Recipient:
         self.offer = review.encode({**self._expected, 'key': b64(public), 'created': now, 'expires': now + 600})
         self._lock = threading.Lock()
 
+    def run_approved(self, plan, plan_sha256, receipt, approval, public_key, public_key_sha256,
+                     writer, observer, registry, *, directory, carrier_root=None):
+        """Verify the operator's signature before opening the isolated recovery packet."""
+        from restore_operator_approval import Verify
+
+        authorize = Verify(public_key, public_key_sha256, approval, self._job, self.offer,
+                           plan, plan_sha256, receipt)
+        return self.run_received(plan, plan_sha256, receipt, writer, observer, registry,
+                                 directory=directory, authorize=authorize, carrier_root=carrier_root)
+
     def run_received(self, plan, plan_sha256, receipt, writer, observer, registry, *,
                      directory, authorize, carrier_root=None):
         """Verify the approved transfer and local ciphertext before consuming this offer."""
