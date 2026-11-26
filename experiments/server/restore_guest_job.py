@@ -56,8 +56,9 @@ class Job:
         return dict(target=self.target, archive_sha256=self.archive_sha256,
                     generation=self._generation, fingerprint_key=fingerprint_key)
 
-    def publish(self, expected, dispositions, *, fingerprint_key, stage):
-        return review.publish(expected, dispositions, **self._context(fingerprint_key), stage=stage)
+    def publish(self, expected, dispositions, *, fingerprint_key, stage, source_database=None):
+        return review.publish(expected, dispositions, **self._context(fingerprint_key), stage=stage,
+                              source_database=source_database)
 
     def binding(self, fingerprint_key):
         return journal.binding_for(self.target, self.archive_sha256, self._generation, fingerprint_key)

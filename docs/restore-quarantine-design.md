@@ -271,6 +271,15 @@ The document carries no database rows or credentials. A matching digest only
 establishes the integrity of the selected review. The launcher must obtain the
 expected digest and current authorization from outside the backup.
 
+For the initial review of a cold copy with a reserved recovery database
+name, pass the independently collected source census and its dispositions to
+the publisher with the original `source_database`. The publisher verifies
+the source census fingerprint and the same database role, then updates only
+the database-name fact and that fact's disposition key. A subsequent census
+must match all projected facts. Keep the original census private. Capture
+provenance and stopped-writer evidence are still required to establish that
+the independently collected census represents the archived source.
+
 Recovery tooling bundle v6 includes the cached Azure operator readback for the
 trusted launcher. It binds one explicit confirmation to the step, review,
 plan digest and restored database binding. Before accepting it, the adapter
