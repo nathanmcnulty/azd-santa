@@ -14,10 +14,12 @@ import time
 
 from cold_backup import EncryptedSink, encoded, recipient_key
 from restore_cipher import CHUNK
-from retained_image_archive import ARCHIVE_MAXIMUM
+from retained_image_archive import ARCHIVE_MAXIMUM, IMAGE_INDEX_TYPES, IMAGE_MANIFEST_TYPES, parse
 import retained_image_parts as parts
 from retention_image_inventory import IMAGE_ID
 
+DOCKER = ('/usr/bin/docker', '--host', 'unix:///var/run/docker.sock')
+DOCKER_ENV = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}
 IMAGE_MAGIC = b'AZDSANTAIMAGE1\n'
 IMAGE_NAMES = frozenset(('core', 'postgres', 'redis', 'rabbitmq', 'elasticsearch'))
 
@@ -31,12 +33,33 @@ def need(condition):
         raise ExportRejected('Santa encrypted image export rejected; preserve any existing intent')
 
 
+def docker_save_args(image_id, deadline):
+    inspection = '{{.Id}} {{.Os}} {{.Architecture}} {{json .Descriptor}}'
+    remaining = deadline - time.monotonic()
+    need(remaining > 0)
+    result = subprocess.run([*DOCKER, 'image', 'inspect', '--format', inspection, image_id],
+                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                            env=DOCKER_ENV, check=True, timeout=min(10, remaining))
+    need(0 < len(result.stdout) <= 8192)
+    observed_id, os_name, architecture, raw_descriptor = result.stdout.split(maxsplit=3)
+    need(observed_id.decode('ascii') == image_id and os_name == b'linux' and architecture == b'amd64')
+    descriptor = parse(raw_descriptor)
+    command = [*DOCKER, 'image', 'save']
+    if descriptor is not None:
+        need(type(descriptor) is dict and descriptor['digest'] == image_id)
+        media_type = descriptor['mediaType']
+        need(media_type in IMAGE_INDEX_TYPES + IMAGE_MANIFEST_TYPES)
+        if media_type in IMAGE_INDEX_TYPES:
+            # A platform-filtered export can replace the original index with its child manifest.
+            return [*command, image_id]
+    return [*command, '--platform', 'linux/amd64', image_id]
+
+
 @contextmanager
 def docker_archive(image_id, deadline):
-    command = ['/usr/bin/docker', '--host', 'unix:///var/run/docker.sock',
-               'image', 'save', '--platform', 'linux/amd64', image_id]
+    command = docker_save_args(image_id, deadline)
     process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                               stderr=subprocess.DEVNULL, env={'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})
+                               stderr=subprocess.DEVNULL, env=DOCKER_ENV)
     try:
         with selectors.DefaultSelector() as ready:
             ready.register(process.stdout, selectors.EVENT_READ)
