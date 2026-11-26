@@ -8,14 +8,36 @@ import re
 import stat
 import subprocess
 import sys
+from tempfile import TemporaryFile
 import time
 
 import blob_retention as blob
 from retained_image_archive import ARCHIVE_MAXIMUM
-from retained_image_readback import need, open_verified_image, remaining_seconds
+from retained_image_readback import ReadbackRejected, need, open_verified_image, remaining_seconds
 from restore_recipient_key import load, private_input
 
 SCOPE = 'azd-santa-retained-image-load-v1'
+ERROR_MARKERS = (
+    (b'no space left on device', 'disk-space'),
+    (b'wrong diff id', 'layer-digest'),
+    (b'unexpected eof', 'unexpected-eof'),
+    (b'error processing tar', 'tar-processing'),
+    (b'no matching manifest', 'image-platform'),
+    (b'requested platform', 'image-platform'),
+    (b'unknown flag', 'unsupported-option'),
+    (b'permission denied', 'permission'),
+    (b'operation not permitted', 'permission'),
+    (b'cannot connect', 'daemon-connection'),
+    (b'failed to register layer', 'layer-registration'),
+)
+
+
+class DockerCommandRejected(ReadbackRejected):
+    def __init__(self, returncode, stderr):
+        details = stderr.lower()
+        self.reason = next((name for marker, name in ERROR_MARKERS if marker in details), 'docker-rejected')
+        self.returncode = returncode
+        super().__init__('Docker rejected the retained image operation')
 
 
 class RecoveryDocker:
@@ -35,11 +57,15 @@ class RecoveryDocker:
     def run(self, arguments, deadline, *, archive=None):
         self.assert_current()
         command = ['/usr/bin/docker', '--host', 'unix://' + self.path.as_posix(), *arguments]
-        result = subprocess.run(command, stdin=archive if archive is not None else subprocess.DEVNULL,
-                                stdout=subprocess.DEVNULL if archive is not None else subprocess.PIPE,
-                                stderr=subprocess.DEVNULL, timeout=remaining_seconds(deadline),
-                                env={'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})
-        need(result.returncode == 0 and time.monotonic() < deadline)
+        with TemporaryFile() as errors:
+            result = subprocess.run(command, stdin=archive if archive is not None else subprocess.DEVNULL,
+                                    stdout=subprocess.DEVNULL if archive is not None else subprocess.PIPE,
+                                    stderr=errors, timeout=remaining_seconds(deadline),
+                                    env={'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'})
+            if result.returncode != 0:
+                errors.seek(0)
+                raise DockerCommandRejected(result.returncode, errors.read(8192))
+        need(time.monotonic() < deadline)
         return result.stdout
 
     def require_idle(self, deadline):
@@ -67,11 +93,26 @@ def verify_or_load(source, completion, key, staging, *, completion_sha256, inven
                   'socket_device': docker.identity[0], 'socket_inode': docker.identity[1]}
         with ExitStack() as stack:
             journal = blob.Journal(attempt, intent, stack)
-            docker.require_idle(deadline)
-            docker.run(['image', 'load', '--quiet', '--platform', verified['platform']],
-                       deadline, archive=archive)
-            docker.confirm_image(image_id, verified['platform'], deadline)
-            docker.require_idle(deadline)
+            phase = 'idle-before'
+            try:
+                docker.require_idle(deadline)
+                phase = 'image-load'
+                docker.run(['image', 'load', '--quiet', '--platform', verified['platform']],
+                           deadline, archive=archive)
+                phase = 'image-inspect'
+                docker.confirm_image(image_id, verified['platform'], deadline)
+                phase = 'idle-after'
+                docker.require_idle(deadline)
+            except (subprocess.TimeoutExpired, TimeoutError):
+                journal.write('failure.json', dict(scope=SCOPE, phase=phase, reason='deadline'))
+                raise
+            except DockerCommandRejected as error:
+                journal.write('failure.json', dict(scope=SCOPE, phase=phase, reason=error.reason,
+                                                  exit_code=error.returncode))
+                raise
+            except (ReadbackRejected, OSError):
+                journal.write('failure.json', dict(scope=SCOPE, phase=phase, reason='verification-failed'))
+                raise
             result.update(state='loaded', image_loaded=True, container_started=False)
             journal.write('outcome.json', result)
         return result
