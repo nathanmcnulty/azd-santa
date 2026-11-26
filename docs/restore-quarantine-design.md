@@ -282,9 +282,16 @@ Restore tooling bundle v25 requires a three-minute Ed25519 approval for
 the exact administrator plan, including the HTTPS setup origin digest.
 The operator checks the selected Azure account and VM immediately before
 signing. The receiver verifies the signature against the operator key
-digest pinned independently by its launcher. The fresh-runtime verifier,
-guest transport, browser delivery and service activation still need
-integration and live qualification.
+digest pinned independently by its launcher.
+
+Restore tooling bundle v26 adds the Azure Run Command handoff. The launcher
+pins the plan and key in a private receiver directory. Run Command deposits
+the signature once. The isolated worker consumes it and publishes the
+original encrypted setup artifact after the reissue journal confirms commit.
+The operator can read the outcome using the original approval digest after
+a lost response. Readback never recreates the account or the setup link.
+The isolated worker launcher, fresh-runtime verification, live Azure delivery,
+browser setup and service activation remain open.
 
 Recovery tooling bundle v5 includes the private census review handoff. The
 reviewer exports the complete dispositions and keyed census fingerprint,

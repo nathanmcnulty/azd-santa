@@ -713,6 +713,7 @@ def check_fresh_administrator(job, writer, observer, apps, directory, options, a
     from django.contrib.auth.tokens import default_token_generator
     import restore_admin_account as account
     import restore_admin_approval as approval
+    import restore_admin_transport as transport
     import sealed_setup
 
     setup_origin = 'https://santa.example.invalid'
@@ -750,7 +751,32 @@ def check_fresh_administrator(job, writer, observer, apps, directory, options, a
         reject(lambda: account.apply(job, writer, observer, apps, **inputs,
                                      **{**apply_options, 'setup_origin': 'https://another.example.invalid'}),
                journal.JournalRejected)
-        result = account.apply(job, writer, observer, apps, **inputs, **apply_options)
+        workspace = directory / ('9' * 32)
+        workspace.mkdir(mode=0o700)
+        transport.prepare(workspace, job, plan['plan_sha256'], operator_pin)
+        vm = job.selection.vm_id
+        subnet = vm.split('/providers/')[0] + '/providers/Microsoft.Network/virtualNetworks/vnet/subnets/host'
+        host = blob.SelectedTarget(vm, job.selection.vm_instance_id, subnet, job.selection.region)
+        frame = dict(scope=transport.SCOPE, workspace=workspace.name, tooling_commit='a' * 40,
+                     tooling_sha256='b' * 64, host=asdict(host),
+                     **transport.context(job, plan['plan_sha256'], operator_pin))
+        readback = blob.encoded(dict(**frame, action='readback', approval_sha256=hashlib.sha256(signed).hexdigest()))
+        submitted = blob.encoded(dict(**frame, action='submit', approval=base64.b64encode(signed).decode(),
+                                      public_key=base64.b64encode(operator_public_key).decode()))
+
+        def dispatch(raw):
+            return transport.dispatch(raw, workspace, _boot=lambda _: job.verified_boot_id)
+
+        assert dispatch(readback)['state'] == 'not-submitted'
+        reject(lambda: transport.dispatch(submitted, workspace, _boot=lambda _: 'different-boot'),
+               blob.RetentionRejected)
+        assert dispatch(submitted)['state'] == 'submitted'
+        reject(lambda: dispatch(submitted), FileExistsError)
+        assert dispatch(readback)['state'] == 'pending'
+        result = transport.consume(workspace, job, writer, observer, apps, **inputs,
+                                   artifact_directory=artifact_directory, setup_origin=setup_origin,
+                                   recipient_public_key=apply_options['recipient_public_key'],
+                                   plan_sha256=plan['plan_sha256'])
         assert result['state'] == 'committed' and not result['activation_allowed']
         reject(lambda: account.apply(job, writer, observer, apps, **inputs, **apply_options),
                journal.JournalRejected)
@@ -758,6 +784,8 @@ def check_fresh_administrator(job, writer, observer, apps, directory, options, a
                             plan_sha256=plan['plan_sha256'])
         raw = account.read_artifact(job, **read_options)
         assert account.read_artifact(job, **read_options) == raw
+        published = dispatch(readback)
+        assert published['state'] == 'committed' and blob.encoded(published['artifact']) == raw
         assert hashlib.sha256(raw).hexdigest() == result['artifact_sha256'] and b'/accounts/reset/' not in raw
         envelope = json.loads(raw)
         wrapping = padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
@@ -779,7 +807,7 @@ def check_fresh_administrator(job, writer, observer, apps, directory, options, a
         assert not archived.is_active and not archived.has_usable_password()
         (artifact_directory / account.artifact_name(plan['plan_sha256'])).write_bytes(raw + b' ')
         reject(lambda: account.read_artifact(job, **read_options), journal.JournalRejected)
-    print('Verified signed fresh administrator creation and sealed setup readback on restored PostgreSQL')
+    print('Verified the administrator approval mailbox and sealed setup readback on restored PostgreSQL')
 
 
 if __name__ == '__main__':

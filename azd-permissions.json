@@ -331,12 +331,13 @@
       "phase": "runtime",
       "feature": "restore-worker-transport",
       "defaultEnabled": false,
-      "scope": "One selected recovery VM, boot, reviewed workspace and worker request",
-      "rationale": "An explicitly confirmed transport plan uses existing Run Command rights for the selected VM and journals the exact request before dispatch. The guest verifies the boot and tooling and invokes the isolated worker. The transport adds no grants or service activation.",
+      "scope": "One selected recovery VM, boot, reviewed workspace and worker request or signed administrator plan",
+      "rationale": "The recovery transport uses existing Run Command rights for the selected VM. It journals the exact request before dispatch and the guest verifies the boot and tooling. The administrator path deposits one signed approval and separately reads the sealed artifact bound to its digest. The transport adds no grants or service activation.",
       "evidenceState": "code",
       "evidence": [
         { "path": "experiments/server/restore_worker_transport.py", "sha256": "c545a29ec62becf26d83c70d5680e9e7b09a4d7c9a2590eac2fcffdd8fe37ac9" },
-        { "path": "experiments/server/restore_worker.py", "sha256": "4b1d77edfc652a27bf07155ec3982c7baf3d1c62c91e01fcf71d154693856eac" }
+        { "path": "experiments/server/restore_worker.py", "sha256": "4b1d77edfc652a27bf07155ec3982c7baf3d1c62c91e01fcf71d154693856eac" },
+        { "path": "experiments/server/restore_admin_transport.py", "sha256": "751197265e2c7f29cc26869811db214e2404ff74a7bff5252954ff0ea6b4fc54" }
       ]
     },
     {

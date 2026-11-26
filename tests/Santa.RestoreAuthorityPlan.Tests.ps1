@@ -20,4 +20,8 @@ Describe 'Santa restore authority planning' {
         $result = & python -m unittest discover -s $PSScriptRoot -p test_restore_admin_approval.py 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
     }
+    It 'delivers the administrator approval once and reconciles only its sealed artifact' {
+        $result = & python -m unittest discover -s $PSScriptRoot -p test_restore_admin_transport.py 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
+    }
 }
