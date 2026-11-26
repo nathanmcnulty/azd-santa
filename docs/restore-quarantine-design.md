@@ -311,6 +311,18 @@ access. The drill stubbed static asset resolution and intercepted audit
 delivery. A TLS browser session and service activation remain separate.
 [Live restored MFA evidence](https://github.com/nathanmcnulty/azd-santa/issues/53#issuecomment-7197526783)
 
+A subsequent isolated restore on the 4 GiB Azure receiver kept the signed
+database and administrator steps and added the real Zentral event workers.
+Fresh RabbitMQ started with no queues. The workers delivered one synthetic
+audit event to the restored Elasticsearch index, preserving all 26
+historical documents and the retained snapshot repository. The queues
+drained, PostgreSQL shut down cleanly, and the temporary restore and
+containers were removed before the receiver was deallocated. The test
+used a 256 MiB Elasticsearch heap and capped Elasticsearch and RabbitMQ at
+896 MiB and 320 MiB, respectively. No listener was started. HTTP, Celery,
+native-device recovery, and repeatable azd activation remain separate gates.
+[Live restored event delivery](https://github.com/nathanmcnulty/azd-santa/issues/53#issuecomment-7199797115)
+
 Recovery tooling bundle v5 includes the private census review handoff. The
 reviewer exports the complete dispositions and keyed census fingerprint,
 bound to the exact target, archive, generation and step. Share the document
