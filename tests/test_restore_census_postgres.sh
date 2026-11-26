@@ -146,6 +146,9 @@ docker run --rm --name "$copy_name" --network none --read-only --memory 256m --c
 # rather than allowing the image entrypoint to initialize a replacement.
 restored_container="$(start_database "$restored_volume" --user postgres --entrypoint postgres)"
 wait_database "$restored_container"
+docker exec "$restored_container" psql --no-psqlrc --host /fixture-socket --username postgres \
+  --dbname postgres --set ON_ERROR_STOP=1 \
+  --command 'ALTER DATABASE santa_census_fixture RENAME TO azd_recovery_cccccccccccccccccccccccc'
 env -i HOME="$fixture_root" PATH="$PATH" LC_ALL=C.UTF-8 \
   "$fixture_python" tests/run_restore_census_django.py "$fixture_root" --verify-restored
 

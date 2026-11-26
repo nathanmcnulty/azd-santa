@@ -1,6 +1,7 @@
 """Synthetic Django/PostgreSQL restore census integration for Linux CI."""
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import stat
@@ -11,10 +12,15 @@ import django
 from django.conf import settings
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'experiments/server'))
+import restore_authority_transaction as authority
 import restore_census as census
+import restore_census_review as review
+import restore_quarantine_journal as journal
 from restore_authority_plan import UNUSABLE_PASSWORD
 
 KEY = b'synthetic restore census key....'
+SOURCE_DATABASE = 'santa_census_fixture'
+RESTORE_DATABASE = 'azd_recovery_' + 'c' * 24
 
 
 def configure(root, *, restored=False):
@@ -39,7 +45,7 @@ class UserProxy(User):
         proxy = True
 ''', encoding='utf-8')
     database = {
-        'ENGINE': 'django.db.backends.postgresql', 'NAME': 'santa_census_fixture',
+        'ENGINE': 'django.db.backends.postgresql', 'NAME': RESTORE_DATABASE if restored else SOURCE_DATABASE,
         'USER': 'postgres', 'HOST': str(socket_dir), 'PORT': 5432,
         'OPTIONS': {'connect_timeout': 5},
     }
@@ -90,6 +96,7 @@ def run(root):
             cursor.execute('INSERT INTO "probe%s%rows" VALUES (\'same row\'), (\'same row\')')
             cursor.execute('CREATE ROLE census_runtime LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS')
             cursor.execute('GRANT CONNECT, TEMPORARY ON DATABASE santa_census_fixture TO census_runtime')
+            cursor.execute('GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system() TO census_runtime')
             cursor.execute('REVOKE CREATE ON SCHEMA public FROM PUBLIC')
             cursor.execute('GRANT USAGE ON SCHEMA public TO census_runtime')
             cursor.execute('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO census_runtime')
@@ -271,17 +278,28 @@ def verify_restored(root):
     try:
         with runtime.cursor() as cursor:
             cursor.execute('SELECT current_user, session_user, current_database(), inet_server_addr(), pg_is_in_recovery()')
-            assert cursor.fetchone() == ('census_runtime', 'census_runtime', 'santa_census_fixture', None, False)
+            assert cursor.fetchone() == ('census_runtime', 'census_runtime', RESTORE_DATABASE, None, False)
+        target = authority.read_target(runtime)
         observed = census.collect(runtime, apps, fingerprint_key=KEY)
-        result = census.compare(observed, expected, dispositions, fingerprint_key=KEY)
+        reject(lambda: census.compare(observed, expected, dispositions, fingerprint_key=KEY))
+        projected, mapped = review.project_source_database(expected, dispositions, source_database=SOURCE_DATABASE,
+                                                           target=target, fingerprint_key=KEY)
+        result = census.compare(observed, projected, mapped, fingerprint_key=KEY)
+        archive, generation = 'a' * 64, 'b' * 64
+        published = review.publish(expected, dispositions, source_database=SOURCE_DATABASE, target=target,
+            fingerprint_key=KEY, archive_sha256=archive, generation=generation, stage='rewrap')
+        binding = journal.binding_for(target, archive, generation, KEY)
+        readback = review.load(published, hashlib.sha256(published).hexdigest(), binding=binding, stage='rewrap')
+        assert readback['census'] == observed.receipt['fingerprint'] and readback['dispositions'] == mapped
         assert result['exact_match'] and not result['restore_accepted'] and not result['current_authority']
         with runtime.cursor() as cursor:
             cursor.execute('INSERT INTO "probe%s%rows" VALUES (\'changed restored row\')')
         changed = census.collect(runtime, apps, fingerprint_key=KEY)
         table = census.relation_key('public', 'probe%s%rows')
         assert changed.manifest['data'][table]['rows'] == 4
-        reject(lambda: census.compare(changed, expected, dispositions, fingerprint_key=KEY))
-        print('Cold PostgreSQL volume restored to a fresh isolated container and matched the source census')
+        reject(lambda: census.compare(changed, projected, mapped, fingerprint_key=KEY))
+        assert expected.manifest['catalog']['database'][0]['database'] == SOURCE_DATABASE
+        print('Renamed isolated PostgreSQL restore matched the independently collected source census')
     finally:
         runtime.close()
 

@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import re
 
 import restore_authority_transaction as authority
 import restore_census as census
@@ -25,7 +26,35 @@ def encode(record):
     return json.dumps(record, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()
 
 
-def publish(expected, dispositions, *, target, archive_sha256, generation, fingerprint_key, stage):
+def project_source_database(expected, dispositions, *, source_database, target, fingerprint_key):
+    """Project the independently reviewed source census onto one reserved database name."""
+    try:
+        require(type(expected) is census.Census and type(target) is authority.Target
+                and type(fingerprint_key) is bytes and len(fingerprint_key) == 32
+                and type(dispositions) is dict and type(source_database) is str and bool(source_database)
+                and re.fullmatch(r'azd_recovery_[a-f0-9]{24}', target.database)
+                and source_database != target.database)
+        manifest = expected.manifest
+        require(hmac.compare_digest(expected.receipt['fingerprint'],
+                                    census.keyed(fingerprint_key, 'census', manifest)))
+        original, = manifest['catalog']['database']
+        require(original['database'] == source_database and original['user'] == target.role)
+        projected = dict(original, database=target.database)
+        old_key = 'catalog:database:' + census.keyed(fingerprint_key, 'schema-fact', original)
+        new_key = 'catalog:database:' + census.keyed(fingerprint_key, 'schema-fact', projected)
+        require(old_key in dispositions and new_key not in dispositions)
+        mapped = dict(dispositions)
+        mapped[new_key] = mapped.pop(old_key)
+        catalog = dict(manifest['catalog'], database=[projected])
+        result = dict(manifest, catalog=catalog)
+        receipt = dict(expected.receipt, fingerprint=census.keyed(fingerprint_key, 'census', result))
+        return census.Census(result, receipt), mapped
+    except Exception:
+        raise ReviewRejected('Restore source database projection rejected') from None
+
+
+def publish(expected, dispositions, *, target, archive_sha256, generation, fingerprint_key, stage,
+            source_database=None):
     """Export the reviewer's selected dispositions and keyed census fingerprint.
 
     The reviewer establishes provenance, compares the original evidence, and
@@ -34,6 +63,9 @@ def publish(expected, dispositions, *, target, archive_sha256, generation, finge
     try:
         require(stage in journal.STAGES)
         binding = journal.binding_for(target, archive_sha256, generation, fingerprint_key)
+        if source_database is not None:
+            expected, dispositions = project_source_database(
+                expected, dispositions, source_database=source_database, target=target, fingerprint_key=fingerprint_key)
         census.compare(expected, expected, dispositions, fingerprint_key=fingerprint_key)
         raw = encode(dict(scope=SCOPE, binding=binding, stage=stage,
                           census=expected.receipt['fingerprint'], dispositions=dispositions))

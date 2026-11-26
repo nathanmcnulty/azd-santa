@@ -12,6 +12,10 @@ spec=importlib.util.spec_from_file_location('restore_census',Path(__file__).reso
 c=importlib.util.module_from_spec(spec)
 import sys
 sys.modules[spec.name]=c;spec.loader.exec_module(c)
+sys.path.insert(0, str(Path(spec.origin).parent))
+import restore_census_review as review
+from restore_authority_transaction import Target
+
 KEY=b'k'*32
 
 class Column:
@@ -129,6 +133,45 @@ class CensusTests(unittest.TestCase):
         self.assertEqual(settings['lock_timeout'],'1000');self.assertEqual(settings['statement_timeout'],'10000')
         self.assertNotIn('confidential sentinel',repr(observed));self.assertNotIn('confidential sentinel',json.dumps(observed.receipt))
         self.assertNotIn('confidential sentinel',json.dumps(self.db.commands))
+    def test_projects_only_the_explicit_source_database_rename(self):
+        expected = self.collect()
+        dispositions = self.mapping(expected)
+        target = Target('azd_recovery_' + 'a' * 24, 'reader', '/probe-socket', 1, 1,
+                        '2026-11-15T00:00:00', '1' * 36)
+        original_key, = (item for item in dispositions if item.startswith('catalog:database:'))
+        dispositions[original_key] = 'reissue_separately'
+        projected, mapped = review.project_source_database(expected, dispositions,
+            source_database='isolated', target=target, fingerprint_key=KEY)
+        new_key, = set(mapped) - set(dispositions)
+        self.assertEqual(mapped[new_key], dispositions[original_key])
+        self.assertEqual(set(dispositions) - set(mapped), {original_key})
+        self.assertEqual(expected.manifest['catalog']['database'][0]['database'], 'isolated')
+        self.assertEqual(projected.manifest['data'], expected.manifest['data'])
+        self.assertEqual(projected.manifest['registry'], expected.manifest['registry'])
+        self.db.catalog['database'][0]['database'] = target.database
+        observed = self.collect()
+        self.assertTrue(c.compare(observed, projected, mapped, fingerprint_key=KEY)['exact_match'])
+        self.db.catalog['database'][0]['encoding'] = 'UTF8'
+        self.db.catalog['database'][0]['tablespace'] = 'unapproved'
+        with self.assertRaises(c.CensusRejected):
+            c.compare(self.collect(), projected, mapped, fingerprint_key=KEY)
+
+    def test_rejects_wrong_source_role_target_and_census_key(self):
+        expected = self.collect()
+        dispositions = self.mapping(expected)
+        target = Target('azd_recovery_' + 'a' * 24, 'reader', '/probe-socket', 1, 1,
+                        '2026-11-15T00:00:00', '1' * 36)
+        cases = (
+            ('wrong', target, KEY),
+            ('isolated', Target(target.database, 'other', '/probe-socket', 1, 1, '', ''), KEY),
+            ('isolated', Target('unreserved', 'reader', '/probe-socket', 1, 1, '', ''), KEY),
+            ('isolated', target, b'x' * 32),
+        )
+        for source, destination, key in cases:
+            with self.subTest(source=source, destination=destination), self.assertRaises(review.ReviewRejected):
+                review.project_source_database(expected, dispositions, source_database=source,
+                                               target=destination, fingerprint_key=key)
+
     def test_no_implicit_connect_nested_transaction_wrong_backend_or_bad_key(self):
         for field,value in (('connection',None),('vendor','sqlite'),('in_atomic_block',True)):
             db=Connection();setattr(db,field,value)
