@@ -171,9 +171,9 @@ comparison rejects the changed state. This covers the encrypted archive path
 and physical PostgreSQL restore for the fixture. A fresh Elasticsearch node
 registers the quarantined repository read-only and restores the selected
 event index and alias. It checks both synthetic events and confirms the source
-cluster's template was excluded. A separate lab run authenticated the retained
-pilot archive and discarded the decrypted bytes. Quarantine and restoration of
-that archive, full stack verification and current authority remain open.
+cluster's template was excluded. A separate lab run authenticated and extracted
+the retained pilot archive into volatile quarantine. Restoration of the
+archive, full stack verification and current authority remain open.
 [PostgreSQL file-system-level backup](https://www.postgresql.org/docs/18/backup-file.html)
 [Elasticsearch snapshot restore API](https://www.elastic.co/docs/api/doc/elasticsearch/v9/operation/operation-snapshot-restore)
 

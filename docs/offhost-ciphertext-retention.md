@@ -273,8 +273,9 @@ decrypted bytes in memory. The authentication receipt SHA-256 is
 `3ea210b67bf3415bc668f2ec3c5e368916da99a31849dc6e2739b60e7a676c1c`.
 The storage firewall kept its existing deny-by-default rules. Azure confirmed
 deallocation of the existing verifier at the end of the run. Durable key
-custody, independent image retention, quarantine and application restore,
-and current authority remain open for this capture.
+custody, independent image retention, durable quarantine, application restore,
+and current authority remain open for this capture. The strict parser and
+writer also passed [volatile extraction of the retained pilot archive](authenticated-archive-quarantine.md#extraction-of-the-retained-pilot-archive).
 
 ### Exact image retention
 
