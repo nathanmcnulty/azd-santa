@@ -148,6 +148,13 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(set(files) - set(bundle.JOB_PATHS), {path})
         compile(files[path], path, 'exec')
 
+    def test_blob_version_includes_the_packet_transport(self):
+        raw = bundle.build(ROOT, self.commit, version=10)
+        files = bundle.verify(raw, commit=self.commit, bundle_sha256=bundle.sha(raw))
+        path = bundle.SERVER + 'restore_input_blob.py'
+        self.assertEqual(set(files) - set(bundle.INPUT_PATHS), {path})
+        compile(files[path], path, 'exec')
+
     def test_reads_commit_without_packaging_worktree_configuration_or_unapproved_blob(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

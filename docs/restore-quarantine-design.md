@@ -301,9 +301,18 @@ database job, review and plan. A matched packet gets one decryption attempt.
 The recipient and packet confer no operator authority. Apply still requires a
 positive current authorization check under the journal lock.
 
-The public guided command still needs to carry the guest offer, trusted digest
-and encrypted packet between the operator and VM. Service-generation binding
-and replacement identity enrollment remain open.
+Recovery tooling bundle v10 can carry that ciphertext in one object in the
+selected private backup store. The object key includes the packet digest.
+The sender reserves a private journal before a create-only conditional PUT.
+The selected VM reads the object with a separate read-only capability and
+verifies the independently supplied digest and length before decryption.
+An ambiguous upload can be reconciled by readback. The sender does not
+resubmit the PUT. [Azure Blob conditional requests](https://learn.microsoft.com/en-us/rest/api/storageservices/specifying-conditional-headers-for-blob-service-operations)
+
+The operator workflow still needs to obtain both capabilities and pass the
+guest offer and receipt through the authenticated control channel. Live
+network reachability, object cleanup, service-generation binding and
+replacement identity enrollment remain open.
 
 The database adapters bind the target to the Linux boot ID and postmaster
 start time. A Unix-socket connection is required, and PostgreSQL must have no
