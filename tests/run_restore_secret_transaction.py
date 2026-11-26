@@ -660,6 +660,20 @@ def run(root):
         inspected = job().inspect(directory, fingerprint_key=KEY)
         assert inspected['stages'] == {'rewrap': 'committed', 'quarantine': 'committed'}
         assert not inspected['activation_allowed'] and not inspected['current_authority_established']
+        reissue_options = dict(directory=directory, fingerprint_key=KEY, username='fresh-fixture-admin',
+                               email='fresh-fixture-admin@example.invalid',
+                               runtime_sha256='a' * 64, recipient_sha256='b' * 64)
+        reissue = job().reissue_admin(observer, apps, **reissue_options)
+        assert reissue['state'] == 'previewed' and reissue['quarantine_plan_sha256'] == completed['plan_sha256']
+        assert not reissue['activation_allowed']
+        with writer.cursor() as cursor:
+            cursor.execute("UPDATE stores_store SET description='changed after quarantine'")
+        try:
+            reject(lambda: job().reissue_admin(observer, apps, **reissue_options), journal.JournalRejected)
+        finally:
+            with writer.cursor() as cursor:
+                cursor.execute("UPDATE stores_store SET description='description'")
+        assert job().reissue_admin(observer, apps, **reissue_options) == reissue
         deny(lambda: guided('quarantine', subsequent, plan_digest=quarantine['plan_digest'], authorize=calls.append))
         assert not calls
         with journal.locked(directory):
@@ -676,6 +690,7 @@ def run(root):
         print('Verified sealed SAS delivery to distinct sender and receiver boots before both database steps')
         print('Verified receiver files fed both PostgreSQL steps and changed files or plans failed before writes')
         print('Verified signed operator approval before both isolated PostgreSQL writes')
+        print('Verified administrator reissue preview against the exact committed PostgreSQL census')
         print('Reopened and consumed boot-local recipients for both PostgreSQL writes')
         print('The guest command applied both signed stages through its local Django connections')
         print('Verified network-isolated worker arguments and both signed requests against PostgreSQL')

@@ -197,3 +197,10 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(set(files) - set(bundle.IMAGE_KEY_PATHS), {path})
         self.assertNotIn(path, bundle.INVENTORIES[bundle.IMAGE_KEY_SCOPE])
         compile(files[path], path, 'exec')
+
+    def test_admin_reissue_extends_the_worker_transport_inventory(self):
+        raw = bundle.build(ROOT, self.commit, version=23)
+        files = bundle.verify(raw, commit=self.commit, bundle_sha256=bundle.sha(raw))
+        path = bundle.SERVER + 'restore_admin_reissue.py'
+        self.assertEqual(set(files) - set(bundle.WORKER_TRANSPORT_PATHS), {path})
+        compile(files[path], path, 'exec')
