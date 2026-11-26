@@ -4,4 +4,8 @@ Describe 'Santa restore authority planning' {
         $result = & python -m unittest discover -s $PSScriptRoot -p test_restore_authority_plan.py 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
     }
+    It 'builds a signed request only for the reviewed recovery step' {
+        $result = & python -m unittest discover -s $PSScriptRoot -p test_restore_operator_approval.py 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
+    }
 }
