@@ -65,8 +65,58 @@ function Invoke-DefenderJson {
     }
 }
 
-# A separate receipt preserves the existing v1 success evidence contract.
-# Never store API response bodies, output, tokens or signed URLs here.
+function Get-SantaHealthFailureDiagnostic {
+    param($Result)
+    $output = $Result.script_output
+    $errors = $Result.script_errors
+    if ($output -isnot [string] -or $output.Length -gt 65536 -or
+        ($null -ne $errors -and ($errors -isnot [string] -or $errors.Length -gt 4096))) { return }
+    $observations = $output -split '\r?\n'
+    $lines = @($observations) + @($errors -split '\r?\n')
+    $markers = @($lines -cmatch '^result=')
+    $reasons = @($lines -cmatch '^reason=')
+    $captures = @($observations -cmatch '^capturedAtUtc=')
+    if ($markers.Count -ne 1 -or $markers[0] -cne 'result=failed' -or
+        $reasons.Count -ne 1 -or $captures.Count -ne 1) { return }
+    $reason = $reasons[0].Substring('reason='.Length)
+    $knownReasons = @(
+        'Unable to read MDM enrollment status.'
+        'santactl version failed.'
+        'Installed Santa version did not match the expected release.'
+        'santactl status failed.'
+        'Santa was not in Monitor mode.'
+        'Santa doctor did not confirm System Integrity Protection.'
+        'Santa doctor reported a configuration error.'
+        'Unable to read Endpoint Security extension state.'
+        'Santa Endpoint Security extension was absent.'
+        'Multiple Santa Endpoint Security extension rows were found.'
+        'Santa Endpoint Security extension did not have the expected Team ID and active state.'
+        'Santa sync preflight timed out.'
+        'santactl doctor reported an unexpected failure.'
+    )
+    if ($reason -cnotin $knownReasons) { return }
+    $capturedAt = $captures[0].Substring('capturedAtUtc='.Length)
+    $parsedCapture = [DateTimeOffset]::MinValue
+    if (-not [DateTimeOffset]::TryParseExact($capturedAt, "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeUniversal,
+            [ref]$parsedCapture)) { return }
+    $modeLines = @($observations -match '^\s*Mode[ \t]*\|')
+    $monitorModeObserved = $modeLines.Count -eq 1 -and $modeLines[0] -match '^\s*Mode[ \t]*\|[ \t]*Monitor[ \t]*$'
+    $syncPreflightTimedOut = $observations -ccontains 'syncPreflight=timed-out'
+    if ($reason -ceq 'Santa sync preflight timed out.' -and -not $syncPreflightTimedOut) { return }
+    return [ordered]@{
+        capturedAtUtc = $capturedAt
+        reason = $reason
+        monitorModeObserved = $monitorModeObserved
+        systemIntegrityProtectionConfirmed = $observations -ccontains '[+] System Integrity Protection is enabled'
+        noConfigurationErrorsObserved = $observations -ccontains '[+] No configuration errors detected'
+        endpointSecurityActiveObserved = $observations -ccontains 'endpointSecurity=active'
+        syncPreflightTimedOut = $syncPreflightTimedOut
+    }
+}
+
+# Keep the success artifact separate. The action receipt can retain allowlisted
+# health observations and never contains raw transcripts, tokens or signed URLs.
 $receipt = $null
 function Save-ActionReceipt {
     param([string] $State, [string] $Status = '')
@@ -270,6 +320,10 @@ if (Test-Path -LiteralPath $ReceiptPath) {
     $hasExitCode = $null -ne $result.exit_code -and [int]::TryParse([string]$result.exit_code, [ref]$exitCode)
     if (-not $hasExitCode -or $exitCode -ne 0 -or [string]$result.script_output -notmatch '(?m)^result=passed$') {
         $state = if ($hasExitCode -and $exitCode -ne 0) { 'command-failed' } elseif ([string]$result.script_output -match '(?m)^result=failed$') { 'command-failed' } else { 'result-unverified' }
+        if ($ScriptName -ceq 'Get-SantaHealth.sh' -and $hasExitCode -and $exitCode -eq 1) {
+            $diagnostic = Get-SantaHealthFailureDiagnostic -Result $result
+            if ($diagnostic) { $receipt.healthFailure = $diagnostic }
+        }
         Save-ActionReceipt -State $state -Status 'Succeeded'
         throw 'Santa Live Response output did not verify a passed result.'
     }

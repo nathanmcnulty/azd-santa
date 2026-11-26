@@ -17,6 +17,7 @@ public class SantaReceiptHandler : HttpMessageHandler {
     public string SubmittedBody;
     public string ScriptName = "Get-SantaHealth.sh";
     public string ReceiptPath;
+    public string BlockReceiptWrite;
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) {
         Requests.Add(request.Method + " " + request.RequestUri.AbsolutePath);
         if (request.Method == HttpMethod.Post) SubmittedBody = request.Content.ReadAsStringAsync().GetAwaiter().GetResult();
@@ -33,6 +34,10 @@ public class SantaReceiptHandler : HttpMessageHandler {
             }
         }
         if (Responses.Count == 0) throw new Exception("Unexpected request");
+        if (BlockReceiptWrite != null) {
+            File.Move(BlockReceiptWrite, BlockReceiptWrite + ".before-diagnostic");
+            Directory.CreateDirectory(BlockReceiptWrite);
+        }
         return Task.FromResult(Responses.Dequeue());
     }
 }
@@ -267,6 +272,77 @@ Describe 'Private Live Response receipts and bounded polling' {
         Add-Response @{ script_name = 'Get-SantaHealth.sh'; exit_code = 0; script_output = "result=unknown`n" } -Handler $downloadHandler
         { & $runner @parameters } | Should -Throw '*did not verify*'
         (Get-Content $receiptPath -Raw | ConvertFrom-Json).state | Should -Be 'result-unverified'
+    }
+    It 'retains local Santa health observations when sync preflight times out' {
+        Add-Response @{ id = $actionId }; Add-Action 'Succeeded'
+        Add-Response @{ value = 'https://example.test/signed-fixture?sig=secret' }
+        Add-Response @{
+            script_name = 'Get-SantaHealth.sh'; exit_code = 1
+            script_output = "capturedAtUtc=2026-11-26T17:00:06Z`r`nMode   | Monitor`r`n[+] System Integrity Protection is enabled`r`n[+] No configuration errors detected`r`nsyncPreflight=timed-out`r`nother-extension-row`r`nendpointSecurity=active`r`n"
+            script_errors = "result=failed`r`nreason=Santa sync preflight timed out.`r`n"
+        } -Handler $downloadHandler
+        { & $runner @parameters } | Should -Throw '*did not verify*'
+        $raw = Get-Content $receiptPath -Raw
+        $receipt = $raw | ConvertFrom-Json -DateKind String
+        $receipt.state | Should -Be 'command-failed'
+        $receipt.action.id | Should -Be $actionId
+        $receipt.healthFailure.capturedAtUtc | Should -Be '2026-11-26T17:00:06Z'
+        $receipt.healthFailure.reason | Should -Be 'Santa sync preflight timed out.'
+        $receipt.healthFailure.monitorModeObserved | Should -BeTrue
+        $receipt.healthFailure.systemIntegrityProtectionConfirmed | Should -BeTrue
+        $receipt.healthFailure.noConfigurationErrorsObserved | Should -BeTrue
+        $receipt.healthFailure.endpointSecurityActiveObserved | Should -BeTrue
+        $receipt.healthFailure.syncPreflightTimedOut | Should -BeTrue
+        $raw | Should -Not -Match 'fixture-token|signed-fixture|script_output|other-extension-row'
+        Test-Path $resultPath | Should -BeFalse
+        { & $runner @parameters -ReuseReceipt } | Should -Throw '*terminal outcome*'
+    }
+    It 'records an early failure without reporting checks that did not run' {
+        Add-Response @{ id = $actionId }; Add-Action 'Succeeded'
+        Add-Response @{ value = 'https://example.test/signed-fixture' }
+        Add-Response @{
+            script_name = 'Get-SantaHealth.sh'; exit_code = 1
+            script_output = "capturedAtUtc=2026-11-26T17:00:06Z`nresult=failed`nreason=santactl version failed.`n"
+        } -Handler $downloadHandler
+        { & $runner @parameters } | Should -Throw '*did not verify*'
+        $diagnostic = (Get-Content $receiptPath -Raw | ConvertFrom-Json).healthFailure
+        $diagnostic.reason | Should -Be 'santactl version failed.'
+        $diagnostic.monitorModeObserved | Should -BeFalse
+        $diagnostic.noConfigurationErrorsObserved | Should -BeFalse
+        $diagnostic.endpointSecurityActiveObserved | Should -BeFalse
+    }
+    It 'omits health observations from <case>' -TestCases @(
+        @{ case = 'a malformed timestamp'; capturedAt = '2026-99-26T17:00:06Z'; reason = 'santactl version failed.'; script = 'Get-SantaHealth.sh'; state = 'command-failed' }
+        @{ case = 'an unknown failure reason'; capturedAt = '2026-11-26T17:00:06Z'; reason = 'unreviewed reason'; script = 'Get-SantaHealth.sh'; state = 'command-failed' }
+        @{ case = 'a transcript for another script'; capturedAt = '2026-11-26T17:00:06Z'; reason = 'santactl version failed.'; script = 'Get-SantaProfileState.sh'; state = 'binding-mismatch' }
+    ) {
+        param($capturedAt, $reason, $script, $state)
+        Add-Response @{ id = $actionId }; Add-Action 'Succeeded'
+        Add-Response @{ value = 'https://example.test/signed-fixture' }
+        Add-Response @{
+            script_name = $script; exit_code = 1
+            script_output = "capturedAtUtc=$capturedAt`nresult=failed`nreason=$reason`n"
+        } -Handler $downloadHandler
+        { & $runner @parameters } | Should -Throw
+        $receipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
+        $receipt.state | Should -Be $state
+        $receipt.PSObject.Properties.Name | Should -Not -Contain 'healthFailure'
+        Test-Path $resultPath | Should -BeFalse
+    }
+    It 'does not claim a diagnostic was saved when the action receipt write fails' {
+        $downloadHandler.BlockReceiptWrite = $receiptPath
+        Add-Response @{ id = $actionId }; Add-Action 'Succeeded'
+        Add-Response @{ value = 'https://example.test/signed-fixture' }
+        Add-Response @{
+            script_name = 'Get-SantaHealth.sh'; exit_code = 1
+            script_output = "capturedAtUtc=2026-11-26T17:00:06Z`n"
+            script_errors = "result=failed`nreason=santactl version failed.`n"
+        } -Handler $downloadHandler
+        { & $runner @parameters } | Should -Throw
+        $previous = Get-Content "$receiptPath.before-diagnostic" -Raw | ConvertFrom-Json
+        $previous.state | Should -Be 'result-unverified'
+        $previous.PSObject.Properties.Name | Should -Not -Contain 'healthFailure'
+        Test-Path $resultPath | Should -BeFalse
     }
     It 'redacts a signed URL on download failure' {
         Add-Response @{ id = $actionId }; Add-Action 'Succeeded'

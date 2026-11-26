@@ -197,6 +197,12 @@ If Santa's sync preflight times out, the script records
 `endpointSecurity=active` confirms the expected team and extension state;
 the timeout still yields a failed overall health result.
 
+For Defender Live Response, the private action receipt retains a structured
+`healthFailure` summary when a bound Santa health script reports a recognized
+failure. It records the capture time, reason, and observed local checks. The
+overall action remains `command-failed` and the successful health result is
+only written when the script passes.
+
 - `stale` means a valid successful capture exceeded that window.
 - `invalid-evidence` means an otherwise successful result has missing,
   malformed, future, or mismatched timing evidence.
