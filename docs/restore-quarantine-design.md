@@ -284,6 +284,13 @@ privileged VM execution transport, and verify the isolated database binding
 on that guest. Service-generation binding and replacement identity enrollment
 remain open.
 
+The database adapters bind the target to the Linux boot ID and postmaster
+start time. A Unix-socket connection is required, and PostgreSQL must have no
+TCP listen addresses. The adapters check for other client sessions across the
+whole restored cluster before planning and again before commit. This requires
+a dedicated PostgreSQL instance. A prior target or journal from a different
+boot or from before boot binding requires inspection and a fresh review.
+
 ## Required negative, preservation and fault tests
 
 - Captured old password, full-MFA session, pending password/MFA challenge,

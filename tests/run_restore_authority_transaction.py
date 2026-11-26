@@ -121,6 +121,7 @@ def run(root):
         peer.close()
         observer.ensure_connection()
         target = transaction.read_target(observer)
+        assert target.boot_id == Path('/proc/sys/kernel/random/boot_id').read_text(encoding='ascii').strip()
 
         def observe():
             return census.collect(observer, apps, fingerprint_key=KEY)
@@ -155,12 +156,21 @@ def run(root):
         expected, dispositions = reviewed()
         preview = invoke(expected, dispositions)
         reject(lambda: invoke(expected, dispositions, target=replace(target, database_oid=target.database_oid+1)))
+        wrong_boot = '0' * 8 + '-0000-0000-0000-' + '0' * 12
+        reject(lambda: invoke(expected, dispositions, target=replace(target, boot_id=wrong_boot)))
         reject(lambda: invoke(expected, dispositions, apply=True, plan_digest='0' * 64))
         peer.ensure_connection()
         try:
             reject(lambda: invoke(expected, dispositions))
         finally:
             peer.close()
+        peer.settings_dict['NAME'] = 'postgres'
+        try:
+            peer.ensure_connection()
+            reject(lambda: invoke(expected, dispositions))
+        finally:
+            peer.close()
+            peer.settings_dict['NAME'] = DATABASE
         assert census.compare(observe(), expected, dispositions, fingerprint_key=KEY)['exact_match']
         result = invoke(expected, dispositions, apply=True, plan_digest=preview['plan_digest'])
         assert result['authority_updates_committed'] and result['performs_mutation']
@@ -180,6 +190,7 @@ def run(root):
         assert revoked.revoked_at == earlier and revoked.request_count == 7
         reject(lambda: invoke(expected, dispositions, apply=True, plan_digest=preview['plan_digest']))
         print('Restored authority transaction committed all eight dispositions and rejected stale review and partial writes')
+        print('Restore target bound to the Linux boot and rejected a client in a separate database')
     finally:
         connections.close_all()
 

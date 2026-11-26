@@ -142,7 +142,7 @@ def run(writer, observer, registry, *, target, expected, dispositions, expected_
             cursor.execute('SELECT pg_catalog.set_config(%s,%s,true)', (option, value))
         actual_target, writer_pid = recovery.binding(writer, cursor)
         require(actual_target == target and writer_pid != observer_pid)
-        recovery.only_clients(cursor, target, writer_pid, observer_pid)
+        recovery.only_clients(cursor, writer_pid, observer_pid)
         locked = ', '.join('ONLY ' + census.relation_key('public', name) for name, _ in sorted(TABLES.values()))
         cursor.execute(f'LOCK TABLE {locked} IN SHARE ROW EXCLUSIVE MODE NOWAIT')
         observed = census.collect(observer, registry, fingerprint_key=fingerprint_key, limits=limits)
@@ -166,7 +166,7 @@ def run(writer, observer, registry, *, target, expected, dispositions, expected_
         replacement = dict(zip(TABLES, (result.stores, result.actions, result.state_versions), strict=True))
         count = apply_fields(cursor, rows, replacement, expected_contexts, deadline)
         require(count == result.receipt['rewrapped'] and project(cursor, counts, deadline) == replacement)
-        recovery.only_clients(cursor, target, writer_pid, observer_pid)
+        recovery.only_clients(cursor, writer_pid, observer_pid)
         require(time.monotonic() < deadline)
         committing = True
         cursor.execute('COMMIT')

@@ -41,12 +41,13 @@ fixture_python="$fixture_root/venv/bin/python"
   Django==5.2.18 psycopg2-binary==2.9.11 asgiref==3.8.1 sqlparse==0.6.0 cryptography==50.0.0
 start_database() {
   local volume="$1"
+  local listen_addresses="${SANTA_CENSUS_LISTEN_ADDRESSES:-}"
   shift
   docker run --detach --network none --memory 512m --cpus 1 --pids-limit 128 \
     --env PGDATA=/var/lib/postgresql/fixture \
     --mount "type=volume,source=$volume,target=/var/lib/postgresql,volume-nocopy" \
     --mount "type=bind,source=$fixture_root/socket,target=/fixture-socket" \
-    "$@" "$image" -c listen_addresses= -c unix_socket_directories=/var/run/postgresql,/fixture-socket
+    "$@" "$image" -c "listen_addresses=$listen_addresses" -c unix_socket_directories=/var/run/postgresql,/fixture-socket
 }
 
 # Wait for the actual postgres process, since initdb also starts a temporary
@@ -157,3 +158,41 @@ docker exec "$restored_container" createdb --host /fixture-socket --username pos
   azd_recovery_bbbbbbbbbbbbbbbbbbbbbbbb
 env -i HOME="$fixture_root" PATH="$PATH" LC_ALL=C.UTF-8 \
   "$fixture_python" tests/run_restore_secret_transaction.py "$fixture_root"
+
+# Connecting over a Unix socket alone is insufficient. A dedicated copy
+# must reject a postmaster that also listens on TCP, even on loopback.
+docker stop --timeout 15 "$restored_container" >/dev/null
+[[ "$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$restored_container")" == 'exited 0' ]]
+docker rm "$restored_container" >/dev/null
+restored_container="$(SANTA_CENSUS_LISTEN_ADDRESSES=localhost start_database "$restored_volume" --user postgres --entrypoint postgres)"
+wait_database "$restored_container"
+env -i HOME="$fixture_root" PATH="$PATH" LC_ALL=C.UTF-8 \
+  "$fixture_python" - "$fixture_root/socket" <<'PY'
+from pathlib import Path
+import sys
+
+import django
+from django.conf import settings
+from django.db import connections
+
+sys.path.insert(0, str(Path('experiments/server').resolve()))
+from restore_authority_transaction import TransactionRejected, read_target
+
+settings.configure(DATABASES={'default': dict(ENGINE='django.db.backends.postgresql',
+    NAME='azd_recovery_aaaaaaaaaaaaaaaaaaaaaaaa', HOST=sys.argv[1], USER='postgres')})
+django.setup()
+connection = connections['default']
+try:
+    connection.ensure_connection()
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT inet_server_addr(), current_setting('listen_addresses')")
+        assert cursor.fetchone() == (None, 'localhost')
+    try:
+        read_target(connection)
+    except TransactionRejected:
+        print('Restore target rejected a TCP-enabled postmaster reached through a Unix socket')
+    else:
+        raise AssertionError('Restore target accepted a TCP-enabled postmaster')
+finally:
+    connection.close()
+PY
