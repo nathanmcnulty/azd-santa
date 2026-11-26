@@ -1,6 +1,7 @@
 """Plan and deliver one sealed Santa recovery packet to the selected recovery VM."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 import json
 from pathlib import Path
@@ -94,17 +95,21 @@ class Operation:
                     receiver_capsule=self.plan['receiver_capsule'],
                     upload_confirmed=upload_confirmed, database_applied=False)
 
+    def _prepare(self, role):
+        command = self._commands[role]
+        command.install()
+        if role == 'c':
+            command.stage_packet(self._packet)
+        return command.offer()
+
     def apply(self, root, plan_sha256):
         directory = self._directory(root, plan_sha256)
         directory.mkdir(mode=0o700)
         sync_directory(directory.parent)
         self._record(directory, 'intent', self.preview())
         sender, receiver = self._commands['c'], self._commands['r']
-        sender.install()
-        sender.stage_packet(self._packet)
-        receiver.install()
-        create_offer = sender.offer()
-        read_offer = receiver.offer()
+        with ThreadPoolExecutor(max_workers=2) as guests:
+            create_offer, read_offer = guests.map(self._prepare, ('c', 'r'))
         create = RestoreInputSasIssuer(self._selection, self.transfer, 'c').issue(directory, apply=True)
         self._record(directory, 'upload-attempt', self._reply('attempted'))
         try:

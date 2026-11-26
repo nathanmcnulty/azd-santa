@@ -347,6 +347,9 @@ journal directory to `apply`. The launcher stages both guests, delivers the
 credentials in order, uploads once and independently verifies the receiver.
 A lost upload acknowledgement can be reconciled by a matching readback.
 Use `observe` to inspect local journal evidence without a cloud request.
+The two selected guests stage their tooling and obtain offers concurrently.
+Both must complete before any SAS is issued. The sender upload and
+independent receiver readback still run in order.
 
 Recovery tooling bundle v16 connects the approved delivery to the existing
 isolated database job. The receiver requires the trusted plan digest and a
