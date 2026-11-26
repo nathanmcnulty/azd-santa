@@ -31,6 +31,10 @@ def is_digest(value):
     return type(value) is str and re.fullmatch(r'[0-9a-f]{64}', value) is not None
 
 
+def encode_record(record):
+    return json.dumps(record, sort_keys=True, separators=(',', ':')).encode()
+
+
 @contextmanager
 def locked(directory):
     import fcntl
@@ -62,7 +66,7 @@ def read_record(fd, name, binding, key, fields):
         raw = stream.read(1025)
         os.fsync(stream.fileno())
     record = json.loads(raw)
-    require(raw == census.encoded(record) and set(record) == fields | {'binding', 'seal'}
+    require(raw == encode_record(record) and set(record) == fields | {'binding', 'seal'}
             and record['binding'] == binding and all(is_digest(value) for value in record.values()))
     seal = record.pop('seal')
     require(hmac.compare_digest(seal, census.keyed(key, name, record)))
@@ -71,7 +75,7 @@ def read_record(fd, name, binding, key, fields):
 
 def write_record(fd, name, binding, key, **fields):
     record = {'binding': binding, **fields}
-    raw = census.encoded({**record, 'seal': census.keyed(key, name, record)})
+    raw = encode_record({**record, 'seal': census.keyed(key, name, record)})
     record_fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=fd)
     with os.fdopen(record_fd, 'wb') as stream:
         stream.write(raw)
