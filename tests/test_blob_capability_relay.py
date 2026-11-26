@@ -388,7 +388,8 @@ class CaptureSelector(unittest.TestCase):
             self.assertEqual(proof['completion_sha256'],relay.sha(relay.encoded(fixture[1]['complete'])))
             self.assertEqual(proof['path'],str(relay.ROOT/'ciphertext-native-test/backup.sealed'))
             self.assertEqual(proof['file_identity'][6],len(fixture[0].raw))
-            path.write_bytes(fixture[0].raw[:-1]+b'x')
+            original = fixture[0].raw
+            path.write_bytes(original[:-1] + bytes([original[-1] ^ 1]))
             with self.assertRaises(Exception):self.run_capture(fixture,path)
     def test_selector_rejects_arbitrary_paths_and_missing_or_changed_capture_evidence(self):
         with tempfile.TemporaryDirectory() as folder:
