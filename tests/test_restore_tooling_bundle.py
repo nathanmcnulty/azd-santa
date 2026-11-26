@@ -113,6 +113,13 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(set(files) - set(bundle.REWRAP_PATHS), {path})
         compile(files[path], path, 'exec')
 
+    def test_review_version_includes_the_private_census_handoff(self):
+        raw = bundle.build(ROOT, self.commit, version=5)
+        files = bundle.verify(raw, commit=self.commit, bundle_sha256=bundle.sha(raw))
+        path = bundle.SERVER + 'restore_census_review.py'
+        self.assertEqual(set(files) - set(bundle.JOURNAL_PATHS), {path})
+        compile(files[path], path, 'exec')
+
     def test_reads_commit_without_packaging_worktree_configuration_or_unapproved_blob(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

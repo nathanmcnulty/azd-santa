@@ -119,17 +119,20 @@ def inspect(directory, *, target, archive_sha256, generation, fingerprint_key):
 
 
 def run(writer, observer, registry, *, directory, target, archive_sha256, generation, fingerprint_key,
-        stage, expected, dispositions, options, limits=census.Limits(), plan_digest=None):
+        stage, expected, dispositions, options, limits=census.Limits(), plan_digest=None, before_apply=None):
     """Preview one named step, or apply its reviewed digest under a durable intent.
 
     The trusted caller selects one persistent private journal for the exact restored
     generation, authenticates its external authorization and supplies independently
     reviewed census/dispositions for each stage. Keep all other database clients,
     listeners and workers stopped. An intent without a receipt requires inspection.
+    When supplied, before_apply checks current authorization after plan validation
+    under the journal lock and before writing intent.
     """
     try:
         require(stage in STAGES and (plan_digest is None or is_digest(plan_digest))
-                and type(options) is dict and set(options) == OPTIONS[stage])
+                and type(options) is dict and set(options) == OPTIONS[stage]
+                and (before_apply is None or (plan_digest is not None and callable(before_apply))))
         binding = binding_for(target, archive_sha256, generation, fingerprint_key)
         with locked(directory) as fd:
             state = inspect_records(fd, binding, fingerprint_key)
@@ -147,6 +150,8 @@ def run(writer, observer, registry, *, directory, target, archive_sha256, genera
             if plan_digest is None:
                 return {**status(state), 'stage': stage, 'plan_digest': digest, 'review': preview}
             require(hmac.compare_digest(plan_digest, digest))
+            if before_apply is not None:
+                require(before_apply(digest) is True)
             write_record(fd, stage + '-intent.json', binding, fingerprint_key, plan=digest)
             result = adapter.run(writer, observer, registry, **options, apply=True, plan_digest=preview['plan_digest'])
             flag = 'rewrap_committed' if stage == 'rewrap' else 'authority_updates_committed'
