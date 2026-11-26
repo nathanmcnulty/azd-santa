@@ -47,7 +47,8 @@ class AdminReissueTests(unittest.TestCase):
 
     def run_guard(self, **changes):
         options = dict(directory=self.directory, fingerprint_key=self.key, username='new-admin',
-                       email='new-admin@example.invalid', runtime_sha256='f' * 64, recipient_sha256='1' * 64)
+                       email='new-admin@example.invalid', runtime_sha256='f' * 64, recipient_sha256='1' * 64,
+                       setup_origin_sha256='2' * 64)
         return self.job.reissue_admin(object(), object(), **{**options, **changes})
 
     def inspect(self, plan):
@@ -79,7 +80,7 @@ class AdminReissueTests(unittest.TestCase):
         allow = Mock(return_value=True)
         config = dict(approved_plan_sha256=plan['plan_sha256'], authorize=allow, create=create)
         for different in (dict(email='another@example.invalid'), dict(runtime_sha256='3' * 64),
-                          dict(recipient_sha256='4' * 64)):
+                          dict(recipient_sha256='4' * 64), dict(setup_origin_sha256='5' * 64)):
             with self.assertRaises(journal.JournalRejected):
                 self.run_guard(**config, **different)
         allow.assert_not_called()

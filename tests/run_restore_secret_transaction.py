@@ -665,7 +665,8 @@ def run(root):
         assert not inspected['activation_allowed'] and not inspected['current_authority_established']
         reissue_options = dict(directory=directory, fingerprint_key=KEY, username='fresh-fixture-admin',
                                email='fresh-fixture-admin@example.invalid',
-                               runtime_sha256='a' * 64, recipient_sha256='b' * 64)
+                               runtime_sha256='a' * 64, recipient_sha256='b' * 64,
+                               setup_origin_sha256=hashlib.sha256(b'https://santa.example.invalid').hexdigest())
         reissue = job().reissue_admin(observer, apps, **reissue_options)
         assert reissue['state'] == 'previewed' and reissue['quarantine_plan_sha256'] == completed['plan_sha256']
         assert not reissue['activation_allowed']
@@ -711,6 +712,7 @@ def check_fresh_administrator(job, writer, observer, apps, directory, options, a
     from django.conf import settings
     from django.contrib.auth.tokens import default_token_generator
     import restore_admin_account as account
+    import restore_admin_approval as approval
     import sealed_setup
 
     setup_origin = 'https://santa.example.invalid'
@@ -729,16 +731,28 @@ def check_fresh_administrator(job, writer, observer, apps, directory, options, a
 
     reset = ModuleType('accounts.password_reset')
     reset.handler = SimpleNamespace(generate_password_reset_url=url)
-    expected = {name: value for name, value in plan.items() if name not in ('state', 'activation_allowed')}
+    signer = Ed25519PrivateKey.generate()
+    operator_public_key = signer.public_key().public_bytes_raw()
+    operator_pin = hashlib.sha256(operator_public_key).hexdigest()
+    snapshot = dict(scope='santa-restore-arm-readback-v1', vm_instance_id=job.selection.vm_instance_id,
+                    account_verified=True, exact_vm_verified=True, cloud_write=False)
+    with patch.object(approval.arm, 'observe', return_value=snapshot) as observe:
+        signed = approval.issue(job, plan, fingerprint_key=KEY, approved_plan_sha256=plan['plan_sha256'],
+                                signing_key=signer, operator_pin=operator_pin)
+        observe.assert_called_once_with(job.selection)
+    inputs = {name: value for name, value in setup_options.items() if name != 'setup_origin_sha256'}
     apply_options = dict(artifact_directory=artifact_directory, approved_plan_sha256=plan['plan_sha256'],
                          recipient_public_key=base64.b64encode(der).decode(), setup_origin=setup_origin,
-                         authorize=lambda approval: approval == expected)
+                         approval=signed, operator_public_key=operator_public_key, operator_pin=operator_pin)
     with patch.dict(sys.modules, {'accounts.password_reset': reset}), patch.object(settings, 'PASSWORD_RESET_TIMEOUT', 600):
-        reject(lambda: account.apply(job, writer, observer, apps, **{**setup_options, 'recipient_sha256': '0' * 64},
+        reject(lambda: account.apply(job, writer, observer, apps, **{**inputs, 'recipient_sha256': '0' * 64},
                                      **apply_options), journal.JournalRejected)
-        result = account.apply(job, writer, observer, apps, **setup_options, **apply_options)
+        reject(lambda: account.apply(job, writer, observer, apps, **inputs,
+                                     **{**apply_options, 'setup_origin': 'https://another.example.invalid'}),
+               journal.JournalRejected)
+        result = account.apply(job, writer, observer, apps, **inputs, **apply_options)
         assert result['state'] == 'committed' and not result['activation_allowed']
-        reject(lambda: account.apply(job, writer, observer, apps, **setup_options, **apply_options),
+        reject(lambda: account.apply(job, writer, observer, apps, **inputs, **apply_options),
                journal.JournalRejected)
         read_options = dict(directory=directory, artifact_directory=artifact_directory, fingerprint_key=KEY,
                             plan_sha256=plan['plan_sha256'])
@@ -765,7 +779,7 @@ def check_fresh_administrator(job, writer, observer, apps, directory, options, a
         assert not archived.is_active and not archived.has_usable_password()
         (artifact_directory / account.artifact_name(plan['plan_sha256'])).write_bytes(raw + b' ')
         reject(lambda: account.read_artifact(job, **read_options), journal.JournalRejected)
-    print('Verified fresh administrator creation and committed sealed setup readback on restored PostgreSQL')
+    print('Verified signed fresh administrator creation and sealed setup readback on restored PostgreSQL')
 
 
 if __name__ == '__main__':

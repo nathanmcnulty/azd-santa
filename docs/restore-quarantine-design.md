@@ -278,8 +278,13 @@ requires all archived users to be inactive, and creates a fresh local account
 with no inherited roles or factors. It seals the existing ten-minute
 administrator setup link to the approved recipient. The transport can read
 the original ciphertext after the account commit and journal completion.
-The fresh-runtime verifier, external approval transport, browser delivery,
-and service activation still need integration and live qualification.
+Restore tooling bundle v25 requires a three-minute Ed25519 approval for
+the exact administrator plan, including the HTTPS setup origin digest.
+The operator checks the selected Azure account and VM immediately before
+signing. The receiver verifies the signature against the operator key
+digest pinned independently by its launcher. The fresh-runtime verifier,
+guest transport, browser delivery and service activation still need
+integration and live qualification.
 
 Recovery tooling bundle v5 includes the private census review handoff. The
 reviewer exports the complete dispositions and keyed census fingerprint,
