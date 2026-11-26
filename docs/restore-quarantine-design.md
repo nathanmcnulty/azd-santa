@@ -293,9 +293,17 @@ boot, archive and database. The job checks the live PostgreSQL target before
 preview or apply. The launcher must keep the journal and operation generation
 consistent across the two steps.
 
-The public guided command still needs to request confirmation and deliver
-the reviewed job and its private inputs to the guest. Service-generation
-binding and replacement identity enrollment remain open.
+Recovery tooling bundle v9 seals the private review, fingerprint key and step
+options to a short-lived guest recipient. The receiver authenticates the packet
+against the exact offer and independently pinned ciphertext digest, then passes
+the inputs in memory to the reviewed job. The offer is bound to the boot,
+database job, review and plan. A matched packet gets one decryption attempt.
+The recipient and packet confer no operator authority. Apply still requires a
+positive current authorization check under the journal lock.
+
+The public guided command still needs to carry the guest offer, trusted digest
+and encrypted packet between the operator and VM. Service-generation binding
+and replacement identity enrollment remain open.
 
 The database adapters bind the target to the Linux boot ID and postmaster
 start time. A Unix-socket connection is required, and PostgreSQL must have no
