@@ -47,10 +47,12 @@ class PacketTransfer:
                   and blob.resource_id(self.store.blob.account_id.split('/providers/')[0])
                   != blob.resource_id(self.target.vm_id.split('/providers/')[0]))
 
-    def _capability(self, token, permission):
-        part = {'object': f'{self.store.blob.operation}/restore-inputs/{self.packet_sha256}.sealed',
+    def object_metadata(self):
+        return {'object': f'{self.store.blob.operation}/restore-inputs/{self.packet_sha256}.sealed',
                 'sha256': self.packet_sha256}
-        return capability(self.store, self.target, part, token, permission)
+
+    def _capability(self, token, permission):
+        return capability(self.store, self.target, self.object_metadata(), token, permission)
 
     def upload(self, packet, token, journal_root, *, seconds=120, _transport=None):
         """Make one create-only request after reserving the exact packet."""
