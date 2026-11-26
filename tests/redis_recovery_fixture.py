@@ -139,11 +139,21 @@ def verify(root, quarantine, historical_identity, historical_generation, expecte
         expect_denied(client, marker, guard, historical_identity)
         identity = secrets.token_hex(32)
         assert identity != historical_identity
-        assert admission.initialize_fresh(client, client, identity, 0, marker) == 1
+        fixture_key = client.make_key('retained-replay-sentinel')
+        assert client.command('SET', fixture_key, 'retained') == 'OK'
+        replacement = secrets.token_hex(16)
+        parameters = dict(require_empty_database=True, generation=replacement)
+        assert admission.initialize_fresh(client, client, identity, 0, marker, **parameters) == 0
+        assert client.command('EXISTS', *keys) == 0
+        assert client.command('GET', fixture_key) == 'retained'
+        assert client.command('DEL', fixture_key) == 1
+        assert admission.initialize_fresh(client, client, identity, 0, marker, **parameters) == 1
+        assert admission.initialize_fresh(client, client, identity, 0, marker, **parameters) == 0
         assert client.eval(guard + 'return 1', 1, client.make_key(marker), identity) == 1
         expect_denied(client, marker, guard, historical_identity)
         generation = client.command('HGET', client.make_key(admission.STATE), 'generation')
-        assert re.fullmatch(r'[a-f0-9]{32}', generation) and generation != historical_generation
+        assert generation == replacement and generation != historical_generation
         assert client.command('EXISTS', *keys[2:]) == 0
     assert inventory(quarantine) == expected_files
     print('Redis AOF history stayed quarantined while a fresh generation rejected the historical identity')
+    print('Atomic restore admission bootstrap rejected a nonempty Redis database before writing either key')

@@ -134,16 +134,21 @@ def _eval(script, extra_keys=(), arguments=()):
                        _expected_store_id(), CONFIG.fingerprint, CONFIG.capacity, *arguments)
 
 
-def initialize_fresh(cache, client, expected_id, delay, marker):
+def initialize_fresh(cache, client, expected_id, delay, marker, *, require_empty_database=False, generation=None):
     # One atomic privileged operation initializes marker AND admission state.
-    script = '''
+    if generation is None:
+        generation = secrets.token_hex(16)
+    if type(require_empty_database) is not bool or not isinstance(generation, str) or not re.fullmatch('[a-f0-9]{32}', generation):
+        raise ValueError('Invalid fresh admission generation')
+    empty_check = "if redis.call('DBSIZE')~=0 then return 0 end\n" if require_empty_database else ''
+    script = empty_check + '''
 if redis.call('EXISTS',KEYS[1])~=0 or redis.call('EXISTS',KEYS[2])~=0 then return 0 end
 local ready=tonumber(redis.call('TIME')[1])+tonumber(ARGV[2])
 redis.call('SET',KEYS[1],ARGV[1]..':'..tostring(ready))
 redis.call('HSET',KEYS[2],'config',ARGV[3],'generation',ARGV[4]);return 1
 '''
     return client.eval(script, 2, cache.make_key(marker), cache.make_key(STATE),
-                       expected_id, delay, CONFIG.fingerprint, secrets.token_hex(16))
+                       expected_id, delay, CONFIG.fingerprint, generation)
 
 
 def state(*, allow_missing=False):

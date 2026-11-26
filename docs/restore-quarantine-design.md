@@ -7,8 +7,10 @@ source census. Quarantine neutralized two authority rows and preserved all 838
 rows, the catalog, applied migrations and the other 226 relations. Activation
 remained closed. [Azure pilot evidence](https://github.com/nathanmcnulty/azd-santa/issues/53#issuecomment-7195096868)
 
-Durable key custody, customer-facing recovery orchestration, fresh authority
-reissue and service activation remain open. See the [backend status](backend-status.md).
+The same Azure pilot created one fresh administrator and returned the sealed
+setup link through Run Command. Durable key custody, customer-facing recovery
+orchestration, browser setup, device reissue and service activation remain open.
+[Live administrator evidence](https://github.com/nathanmcnulty/azd-santa/issues/53#issuecomment-7196648755)
 
 The separate `experiments/server/restore_cipher.py` primitive now authenticates
 the existing sealed format against an externally trusted ciphertext digest and
@@ -290,8 +292,17 @@ the signature once. The isolated worker consumes it and publishes the
 original encrypted setup artifact after the reissue journal confirms commit.
 The operator can read the outcome using the original approval digest after
 a lost response. Readback never recreates the account or the setup link.
-The isolated worker launcher, fresh-runtime verification, live Azure delivery,
-browser setup and service activation remain open.
+The one-receiver Azure drill used an isolated launcher and exercised live
+delivery and ciphertext readback. Browser setup and service activation remain
+separate gates.
+
+Restore tooling bundle v27 initializes the MFA and Santa admission records in
+a dedicated fresh Redis database after checking the committed quarantine census.
+Its plan binds the selected Redis process, runtime, store identity and admission
+generation. One Lua operation rejects any existing key and writes both new
+records. The worker confirms the new generation with zero active permits before
+recording completion. A missing result requires inspection. The recovered
+runtime stays closed during this step.
 
 Recovery tooling bundle v5 includes the private census review handoff. The
 reviewer exports the complete dispositions and keyed census fingerprint,
@@ -536,8 +547,10 @@ offer. Guest and workstation outcomes matched, and the isolated services
 stopped before Azure deallocation. This offer test opened no database
 connection. [Live offer evidence](https://github.com/nathanmcnulty/azd-santa/issues/53#issuecomment-7191558146)
 
-Live signed request execution, workspace provisioning, object cleanup,
-service-generation binding and replacement identity enrollment remain open.
+The Azure receiver exercised signed rewrap, quarantine and administrator
+reissue in an isolated workspace. Automated workspace provisioning, durable
+cleanup after interruption, service-generation binding and device re-enrollment
+remain open.
 [Live packet transport evidence](https://github.com/nathanmcnulty/azd-santa/issues/190)
 
 The database adapters bind the target to the Linux boot ID and postmaster
