@@ -304,6 +304,13 @@ records. The worker confirms the new generation with zero active permits before
 recording completion. A missing result requires inspection. The recovered
 runtime stays closed during this step.
 
+An isolated Azure drill initialized that Redis generation and exercised the
+restored operator's original setup link through Django's request handlers.
+The app rejected reset replay and required TOTP before granting profile
+access. The drill stubbed static asset resolution and intercepted audit
+delivery. A TLS browser session and service activation remain separate.
+[Live restored MFA evidence](https://github.com/nathanmcnulty/azd-santa/issues/53#issuecomment-7197526783)
+
 Recovery tooling bundle v5 includes the private census review handoff. The
 reviewer exports the complete dispositions and keyed census fingerprint,
 bound to the exact target, archive, generation and step. Share the document
