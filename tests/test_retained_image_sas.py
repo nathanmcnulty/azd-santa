@@ -296,9 +296,8 @@ class ImageSasTests(unittest.TestCase):
                 sender_boot = '66666666-6666-4666-8666-666666666666'
 
                 class Guest:
-                    def __init__(_self, _selection, transfer, role, _tooling, **pins):
+                    def __init__(_self, _selection, _transfer, role, _tooling, **pins):
                         _self.role = role
-                        _self.transfer = transfer
                         _self.capsule = ('c' if role == 'c' else 'd') * 64
                         self.assertEqual(pins['boot_id'], sender_boot if role == 'c' else job.verified_boot_id)
 
