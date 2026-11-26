@@ -1,6 +1,6 @@
 """Verify a populated database rewrap and rollback on the sealed PostgreSQL fixture."""
 import base64
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 import hashlib
 import io
@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'experiments/server
 import restore_authority_transaction as recovery
 import restore_census as census
 import restore_census_review as review
+import restore_database_command as database_command
 import restore_guest_job as guest_job
 import restore_guest_readback as guest
 import restore_operator_approval as operator_approval
@@ -212,6 +213,7 @@ def run(root):
     fixture.MODELS.update(MODELS)
     fixture.configure(root)
     from django.apps import apps
+    from django.conf import settings
     from django.core.management import call_command
     from django.db import connections
 
@@ -266,7 +268,7 @@ def run(root):
         secret_options = dict(expected_contexts=CONTEXTS, old_material=OLD, new_material=NEW, targets=TARGETS)
         repo = Path(__file__).resolve().parents[1]
         commit = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
-        bundle = tooling.build(repo, commit, version=18)
+        bundle = tooling.build(repo, commit, version=19)
         carrier_root = root / 'carrier'
         carrier_root.mkdir(mode=0o700)
         recipient_root = root / 'recipients'
@@ -316,8 +318,15 @@ def run(root):
             host = receiver_target(selected_job)
             bound_stage = dict(binding=selected_job.binding(KEY), **selection)
             state = dict(root=recipient_root, _boot=lambda _: selected_job.verified_boot_id)
-            offer = sealed.BootRecipient.prepare(selected_job, host, public_pin, **bound_stage, **state)
+            job_input = dict(selection=asdict(selected_job.selection), target=asdict(selected_job.target),
+                             boot_id=selected_job.verified_boot_id, **bound)
+            frame = dict(scope=database_command.SCOPE, job=job_input, host=asdict(host), step=bound_stage)
+            offered = database_command.dispatch(blob.encoded(dict(**frame, action='offer', public_key_sha256=public_pin)),
+                                                recipient_root=state['root'], _boot=state['_boot'])
+            assert offered['state'] == 'offered'
+            offer = base64.b64decode(offered['offer'], validate=True)
             pin = sealed.sha(offer)
+            assert pin == offered['offer_sha256']
             recipient_key = recipient_root / pin / 'recipient.der'
             assert recipient_key.stat().st_mode & 0o777 == 0o600
             reject(lambda: sealed.BootRecipient(selected_job, host, pin, **bound_stage, root=recipient_root,
@@ -369,9 +378,15 @@ def run(root):
                 other_approval = sign(selection['plan_digest'], other_signer)
 
             def apply_file(result, digest=plan_sha, key=public_key, signed=approval):
-                recipient = sealed.BootRecipient(selected_job, host, pin, **bound_stage, **state)
-                return recipient.apply(plan, digest, result, signed, key, writer, observer, apps,
-                                       carrier_root=carrier_root, directory=directory)
+                request = dict(**frame, action='apply', offer_sha256=pin, plan=plan, plan_sha256=digest,
+                               receipt=result, approval=base64.b64encode(signed).decode(),
+                               public_key=base64.b64encode(key).decode())
+                try:
+                    return database_command.dispatch(blob.encoded(request), carrier_root=carrier_root,
+                        directory=directory, recipient_root=state['root'], _boot=state['_boot'])
+                finally:
+                    writer.ensure_connection()
+                    observer.ensure_connection()
 
             reject(lambda: apply_file(receipt, '0' * 64), operator_approval.ApprovalRejected)
             reject(lambda: apply_file(receipt, key=other_signer.public_key().public_bytes_raw(),
@@ -382,6 +397,8 @@ def run(root):
             forged = review.encode(dict(body=approval_body,
                                         signature=base64.b64encode(bytes(64)).decode()))
             reject(lambda: apply_file(receipt, signed=forged), operator_approval.ApprovalRejected)
+            with patch.dict(settings.DATABASES['observer'], {'HOST': 'unexpected.invalid'}):
+                reject(lambda: apply_file(receipt), blob.RetentionRejected)
             verifier = operator_approval.Verify(public_key, public_pin, approval, selected_job,
                                                offer, plan, plan_sha, receipt)
             request = approval_body['request']
@@ -395,6 +412,7 @@ def run(root):
             unchanged(baseline)
             received.write_bytes(packet)
             result = apply_file(receipt)
+            assert result['plan_sha256'] == selection['plan_digest']
             assert not recipient_key.exists() and (recipient_key.parent / 'consumed.json').is_file()
             reject(lambda: apply_file(receipt), sealed.InputRejected)
             return result
@@ -473,9 +491,8 @@ def run(root):
         assert not list(directory.iterdir())
         applied = sealed_apply('rewrap', baseline, reviewed_plan)
         assert applied['stages'] == {'rewrap': 'committed', 'quarantine': 'pending'}
-        result = applied['result']
-        assert result['rewrap_committed'] and result['performs_mutation']
-        assert not result['restore_accepted'] and not result['current_authority_established']
+        assert applied['state'] == 'committed' and applied['database_changed']
+        assert not applied['activation_allowed'] and not applied['current_authority_established']
         with observer.cursor() as cursor:
             cursor.execute("SELECT backend_kwargs #>> '{request_timeout}' FROM stores_store WHERE id=%s", (STORE,))
             assert cursor.fetchone() == (numeric,)
@@ -499,7 +516,7 @@ def run(root):
         subsequent = reviewed()
         quarantine = guided('quarantine', subsequent)
         completed = sealed_apply('quarantine', subsequent, quarantine)
-        assert completed['result']['authority_updates_committed'] and completed['result']['performs_mutation']
+        assert completed['state'] == 'committed' and completed['database_changed']
         user.refresh_from_db()
         assert not user.is_active and not user.check_password('synthetic archived password')
         inspected = job().inspect(directory, fingerprint_key=KEY)
@@ -522,6 +539,7 @@ def run(root):
         print('Verified receiver files fed both PostgreSQL steps and changed files or plans failed before writes')
         print('Verified signed operator approval before both isolated PostgreSQL writes')
         print('Reopened and consumed boot-local recipients for both PostgreSQL writes')
+        print('The guest command applied both signed stages through its local Django connections')
         print('Verified transactional rewrap, late rollback, unchanged Terraform bytes and exact JSONB numbers')
     finally:
         connections.close_all()
