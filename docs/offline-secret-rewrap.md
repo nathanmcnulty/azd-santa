@@ -130,3 +130,22 @@ On 2026-11-14, all14 focused Python tests passed with Python3.14.6 and
 cryptography48.0.1 from the existing Azure CLI interpreter. The template
 validation passed and the complete Pester6.2.0 suite passed231 tests under
 PowerShell7.6.9. No dependency installation or live operation was performed.
+
+## Secret coverage on the retained pilot database
+
+The lab restored the authenticated pilot database into a disposable copy and
+queried all three projections through the exact pinned Zentral image. It checked
+the concrete model columns and matched the projection counts to the read-only
+database census. The archive had one store, zero probe actions, and zero
+Terraform state versions. The covered rows contained zero secret fields.
+
+In the same image, a separate synthetic Fernet value was encrypted by Zentral,
+rewrapped with a different password and signing salt, and decrypted by Zentral
+using the replacement material. The database censuses before and after the
+test matched. The runner removed its temporary containers and data, and Azure
+confirmed VM deallocation. The receipt SHA-256 is
+`17dadb54e4c1040c3a1e3b3302513c3f172b67b2d2a42535beb59e4689ca30c1`.
+[Pinned Zentral Fernet implementation](https://github.com/zentralopensource/zentral/blob/88e67b3ce49033aab028029937a6e14f7c489073/zentral/core/secret_engines/backends/fernet.py)
+
+Writing and verifying replacements on a restored database with populated secret
+fields remains open, along with independent review of coverage and provenance.

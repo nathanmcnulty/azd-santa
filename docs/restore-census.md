@@ -309,5 +309,8 @@ all eight tables. A repeat preview found zero pending updates.
 The runner removed the disposable containers and files, and Azure confirmed VM
 deallocation. The receipt SHA-256 is
 `a613c10e1ca522f6d59e208a448e4e6a4ce6091f555260fe4c49a4f647136b73`.
-Independent review of the recovery baseline, secret rewrap, fresh administrator
-and device authority, and application activation remain open.
+Independent review of the recovery baseline, fresh administrator and device
+authority, and application activation remain open. The separate [pilot secret
+coverage check](offline-secret-rewrap.md#secret-coverage-on-the-retained-pilot-database)
+found zero secret fields in the covered models. Applying rewrap to a restored
+database with populated secret fields remains open.
