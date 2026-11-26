@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import hashlib
 import io
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -12,6 +13,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 import zlib
 
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'experiments/server'))
 import restore_authority_transaction as recovery
@@ -19,6 +21,7 @@ import restore_census as census
 import restore_census_review as review
 import restore_guest_job as guest_job
 import restore_guest_readback as guest
+import restore_operator_approval as operator_approval
 import restore_packet_operator as packet_operator
 import restore_tooling_bundle as tooling
 import restore_arm_authorization as arm
@@ -258,7 +261,7 @@ def run(root):
         secret_options = dict(expected_contexts=CONTEXTS, old_material=OLD, new_material=NEW, targets=TARGETS)
         repo = Path(__file__).resolve().parents[1]
         commit = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
-        bundle = tooling.build(repo, commit, version=16)
+        bundle = tooling.build(repo, commit, version=17)
         carrier_root = root / 'carrier'
         carrier_root.mkdir(mode=0o700)
 
@@ -337,12 +340,39 @@ def run(root):
             received.write_bytes(packet)
             received.chmod(0o600)
 
-            def apply_file(result, digest=plan_sha):
-                return recipient.run_received(plan, digest, result, writer, observer, apps,
-                                              carrier_root=carrier_root, directory=directory, authorize=approve)
+            signer = Ed25519PrivateKey.generate()
+            public_key = signer.public_key().public_bytes_raw()
+            public_pin = sealed.sha(public_key)
 
-            reject(lambda: apply_file(receipt, '0' * 64), sealed.InputRejected)
-            reject(lambda: apply_file({**receipt, 'state': 'interrupted'}), sealed.InputRejected)
+            def sign(digest):
+                return operator_approval.issue(signer, selected_job, KEY, recipient.offer,
+                                               plan, plan_sha, receipt, approved_plan_digest=digest)
+
+            with patch.object(guest_job.Job, 'confirm', return_value=approve) as confirm:
+                reject(lambda: sign('0' * 64), operator_approval.ApprovalRejected)
+                confirm.assert_not_called()
+                approval = sign(selection['plan_digest'])
+                confirm.assert_called_once_with(fingerprint_key=KEY, **selection)
+
+            def apply_file(result, digest=plan_sha, key_pin=public_pin, signed=approval):
+                return recipient.run_approved(plan, digest, result, signed, public_key, key_pin,
+                                              writer, observer, apps, carrier_root=carrier_root, directory=directory)
+
+            reject(lambda: apply_file(receipt, '0' * 64), operator_approval.ApprovalRejected)
+            reject(lambda: apply_file(receipt, key_pin='0' * 64), operator_approval.ApprovalRejected)
+            reject(lambda: apply_file({**receipt, 'upload_confirmed': not receipt['upload_confirmed']}),
+                   operator_approval.ApprovalRejected)
+            approval_body = json.loads(approval)['body']
+            forged = review.encode(dict(body=approval_body,
+                                        signature=base64.b64encode(bytes(64)).decode()))
+            reject(lambda: apply_file(receipt, signed=forged), operator_approval.ApprovalRejected)
+            verifier = operator_approval.Verify(public_key, public_pin, approval, selected_job,
+                                               recipient.offer, plan, plan_sha, receipt)
+            request = approval_body['request']
+            with patch.object(operator_approval.time, 'time', return_value=approval_body['expires']):
+                reject(lambda: verifier(request), operator_approval.ApprovalRejected)
+            assert verifier(request)
+            reject(lambda: verifier(request), operator_approval.ApprovalRejected)
             received.write_bytes(packet[:-1] + bytes([packet[-1] ^ 1]))
             reject(lambda: apply_file(receipt), sealed.InputRejected)
             unchanged(baseline)
@@ -472,6 +502,7 @@ def run(root):
         print('Verified exact-object Blob transport to both database steps with ambiguous upload and tamper checks')
         print('Verified sealed SAS delivery to distinct sender and receiver boots before both database steps')
         print('Verified receiver files fed both PostgreSQL steps and changed files or plans failed before writes')
+        print('Verified signed operator approval before both isolated PostgreSQL writes')
         print('Verified transactional rewrap, late rollback, unchanged Terraform bytes and exact JSONB numbers')
     finally:
         connections.close_all()

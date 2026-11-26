@@ -355,6 +355,17 @@ under the selected receiver capsule and rechecks size and SHA-256 before
 decryption. The existing offer and journal still gate each database step
 and require current authorization.
 
+Recovery tooling bundle v17 lets the operator sign the exact reviewed
+database step after a fresh Azure Resource Manager authorization check.
+The Ed25519 signature binds the guest offer, stage, transfer plan and
+receipt, and ciphertext for the selected receiver. It expires within
+three minutes or when the offer expires, whichever comes first. The
+receiver verifies the signature using a separately trusted public-key
+digest and consumes the approval once under the database journal lock.
+The receiver needs no Azure credentials for this check. Key provisioning
+and approval delivery over the authenticated guest channel still need
+integration and live validation.
+
 The guided VM entry point for the database job, live transfer and database
 execution, object cleanup, service-generation binding and replacement
 identity enrollment remain open.
