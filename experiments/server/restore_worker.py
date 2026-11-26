@@ -63,10 +63,11 @@ def arguments(name, image, tools, recipient, workspace, request, job, config_sha
               '--log-driver', 'none', '--memory', '512m', '--cpus', '1', '--pids-limit', '96',
               '--tmpfs', '/tmp:rw,nosuid,nodev,noexec,size=48m']
     result.extend(mount(tools, TOOLS))
-    result.extend(mount(recipient, str(RECIPIENT_ROOT), readonly=False))
+    action = request['action']
+    if action != 'preview':
+        result.extend(mount(recipient, str(RECIPIENT_ROOT), readonly=False))
     command = [SERVER + '/restore_database_command.py', '--host-receipt', HOST_RECEIPT]
-    if request['action'] == 'apply':
-        capsule, _, _ = delivery_binding(job, request['plan'], request['plan_sha256'], request['receipt'])
+    if action in ('apply', 'preview'):
         blob.need(job.target.socket_dir == WORKER_SOCKET and is_digest(config_sha256))
         config = workspace / 'base.json'
         with ExitStack() as guards:
@@ -76,8 +77,12 @@ def arguments(name, image, tools, recipient, workspace, request, job, config_sha
         socket = workspace / 'socket'
         result.extend(['--group-add', socket_group(socket)])
         result.extend(mount(socket, WORKER_SOCKET))
-        result.extend(mount(private_directory(workspace / 'journal'), WORKER_JOURNAL, readonly=False))
-        result.extend(mount(private_directory(carrier_root / capsule), str(CARRIER_ROOT / capsule)))
+        result.extend(mount(private_directory(workspace / 'journal'), WORKER_JOURNAL, readonly=action == 'preview'))
+        if action == 'apply':
+            capsule, _, _ = delivery_binding(job, request['plan'], request['plan_sha256'], request['receipt'])
+            result.extend(mount(private_directory(carrier_root / capsule), str(CARRIER_ROOT / capsule)))
+        else:
+            command.append('--local-preview')
         result.extend(['--env', 'ZENTRAL_CONF_DIR=/restore-conf',
                        '--env', 'DJANGO_SETTINGS_MODULE=restore_worker_settings',
                        '--env', 'PYTHONPATH=' + SERVER + ':/zentral:/zentral/server',
@@ -105,9 +110,14 @@ def checked_reply(raw_reply, raw, request, job):
     reply = checked_document(raw_reply[:-1], sha(raw_reply[:-1]), MAX_OUTPUT)
     step = request['step']
     common = {'scope', 'request_sha256', 'stage', 'state'}
-    blob.need(reply['scope'] == database.SCOPE and reply['request_sha256'] == sha(raw)
-              and reply['stage'] == step['stage'])
-    if request['action'] == 'offer':
+    action = request['action']
+    scope = database.PREVIEW_SCOPE if action == 'preview' else database.SCOPE
+    blob.need(reply['scope'] == scope and reply['request_sha256'] == sha(raw) and reply['stage'] == step['stage'])
+    if action == 'preview':
+        blob.need(set(reply) == common | {'plan_sha256', 'activation_allowed', 'current_authority_established'}
+                  and reply['state'] == 'previewed' and is_digest(reply['plan_sha256'])
+                  and reply['activation_allowed'] is False and reply['current_authority_established'] is False)
+    elif action == 'offer':
         blob.need(set(reply) == common | {'offer', 'offer_sha256'} and reply['state'] == 'offered')
         check_offer(decode(reply['offer'], 4096), reply['offer_sha256'], operation(job, **step))
     else:
@@ -123,8 +133,12 @@ def checked_reply(raw_reply, raw, request, job):
 
 
 def launch(raw, *, workspace, tooling, commit, tooling_sha256, image, config_sha256=None, docker_socket=None,
-           _boot=boot, _docker=subprocess.run, _recipient_root=RECIPIENT_ROOT, _carrier_root=CARRIER_ROOT):
-    request, job, host = database.parse_request(raw)
+           local_preview=False, _boot=boot, _docker=subprocess.run, _recipient_root=RECIPIENT_ROOT,
+           _carrier_root=CARRIER_ROOT):
+    if local_preview:
+        request, job, host, _ = database.parse_preview(raw)
+    else:
+        request, job, host = database.parse_request(raw)
     blob.need(re.fullmatch(r'sha256:[a-f0-9]{64}', image) is not None)
     blob.need(checked_document(tooling, tooling_sha256, MAX_BUNDLE)['scope'] in WORKER_SCOPES)
     workspace = private_directory(Path(workspace))
@@ -142,8 +156,11 @@ def launch(raw, *, workspace, tooling, commit, tooling_sha256, image, config_sha
         with ExitStack() as guards:
             folder, basename = blob.parent(tools / 'host.json', guards)
             write_at(folder, basename, blob.encoded(receipt))
-        _recipient_root.mkdir(mode=0o700, exist_ok=True)
-        args = arguments(name, image, tools, private_directory(_recipient_root), workspace, request, job,
+        recipient = None
+        if not local_preview:
+            _recipient_root.mkdir(mode=0o700, exist_ok=True)
+            recipient = private_directory(_recipient_root)
+        args = arguments(name, image, tools, recipient, workspace, request, job,
                          config_sha256, carrier_root=_carrier_root)
         environment = {'PATH': '/usr/bin:/bin', 'DOCKER_CONFIG': str(Path(temporary) / 'docker-config')}
 
@@ -170,11 +187,13 @@ def main():
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--config-sha256')
     parser.add_argument('--docker-socket', type=Path)
+    parser.add_argument('--local-preview', action='store_true')
     inputs = vars(parser.parse_args())
     try:
         with Path(inputs.pop('tooling')).open('rb') as stream:
             tooling = stream.read(MAX_BUNDLE + 1)
-        request = sys.stdin.buffer.read(database.MAX_REQUEST + 1)
+        maximum = database.MAX_PREVIEW if inputs['local_preview'] else database.MAX_REQUEST
+        request = sys.stdin.buffer.read(maximum + 1)
         reply = launch(request, tooling=tooling, **inputs)
         sys.stdout.buffer.write(blob.encoded(reply) + b'\n')
     except Exception:

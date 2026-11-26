@@ -1,5 +1,6 @@
 """Exercise the fixed recovery-worker wire format and no-replay journal."""
 import base64
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
@@ -10,12 +11,48 @@ from unittest.mock import patch
 
 import test_restore_operator_approval as signing_fixture
 import blob_retention as blob
+import restore_census_review as review
+import restore_database_command as database
 from restore_database_command import SCOPE as WORKER_SCOPE
 from restore_tooling_bundle import WORKER_TRANSPORT_SCOPE
 from restore_worker import check_worker_image
 import restore_worker_transport as transport
 from retained_image_handoff import sha
 from retained_image_run_command import DONE, RECEIPT
+
+
+class LocalPreviewTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = signing_fixture.OperatorRequestTests()
+        self.fixture.setUp()
+        self.key = b'k' * 32
+        self.review = review.encode(dict(scope=review.SCOPE, binding=self.fixture.job.binding(self.key),
+            stage='quarantine', census='a' * 64, dispositions={}))
+        self.request = database.preview_request(self.fixture.job, self.fixture.host, stage='quarantine',
+            review_bytes=self.review, review_sha256=sha(self.review), fingerprint_key=self.key,
+            options={'cutoff': datetime(2026, 1, 1, tzinfo=timezone.utc)})
+
+    def test_round_trip_and_local_transport_boundary(self):
+        header, job, host, (fingerprint_key, review_bytes, options) = database.parse_preview(self.request)
+        self.assertEqual(header['action'], 'preview')
+        self.assertEqual(job, self.fixture.job)
+        self.assertEqual(host, self.fixture.host)
+        self.assertEqual(fingerprint_key, self.key)
+        self.assertEqual(review_bytes, self.review)
+        self.assertEqual(options['cutoff'].year, 2026)
+        with self.assertRaises(ValueError):
+            database.parse_request(self.request)
+
+    def test_invalid_private_inputs_and_wrong_boot_reject_before_database_connection(self):
+        offset = 4 + int.from_bytes(self.request[:4], 'big')
+        wrong_key = self.request[:offset] + b'x' * 32 + self.request[offset + 32:]
+        for raw in (b'', self.request[:-1], wrong_key, b'\xff' * 4 + self.request[4:]):
+            with self.subTest(size=len(raw)), self.assertRaises(ValueError):
+                database.parse_preview(raw)
+        with patch.object(database, 'database_connections') as connection:
+            with self.assertRaises(ValueError):
+                database.preview(self.request, directory=None, _boot=lambda _: 'wrong')
+            connection.assert_not_called()
 
 
 class WorkerImageTests(unittest.TestCase):
