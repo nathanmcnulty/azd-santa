@@ -13,7 +13,7 @@ from retained_image_run_command import RECEIPT, build_script, submit_action
 from restore_arm_authorization import Selection, VM_PATH, observe
 
 SCOPE = 'santa-restore-guest-readback-v1'
-GUEST = """import base64, hashlib, json, os, re
+IDENTITY = """import base64, hashlib, json, os, re
 from pathlib import Path
 import urllib.request
 
@@ -30,9 +30,7 @@ def unique(pairs):
     return result
 
 
-def main():
-    raw = base64.b64decode(os.environ.pop('SANTA_GUEST_SELECTION'), validate=True)
-    requested = json.loads(raw, object_pairs_hook=unique)
+def selected_boot(requested):
     request = urllib.request.Request(
         'http://169.254.169.254/metadata/instance/compute?api-version=2021-02-01',
         headers={'Metadata': 'true'})
@@ -50,6 +48,15 @@ def main():
     boot = Path('/proc/sys/kernel/random/boot_id').read_text(encoding='ascii').strip()
     if not re.fullmatch(GUID, boot):
         raise ValueError()
+    return boot
+"""
+IDENTITY = f'GUID = {blob.GUID!r}\n' + IDENTITY
+GUEST = IDENTITY + """
+
+def main():
+    raw = base64.b64decode(os.environ.pop('SANTA_GUEST_SELECTION'), validate=True)
+    requested = json.loads(raw, object_pairs_hook=unique)
+    boot = selected_boot(requested)
     result = dict(scope=SCOPE, batch_sha256=hashlib.sha256(raw).hexdigest(),
                   vm_instance_id=requested['vm_instance_id'], boot_id=boot)
     print(RECEIPT + json.dumps(result, sort_keys=True, separators=(',', ':')))
@@ -60,7 +67,7 @@ try:
 except Exception:
     raise SystemExit(1) from None
 """
-GUEST = f'GUID = {blob.GUID!r}\nSCOPE = {SCOPE!r}\nRECEIPT = {RECEIPT!r}\n' + GUEST
+GUEST = f'SCOPE = {SCOPE!r}\nRECEIPT = {RECEIPT!r}\n' + GUEST
 
 
 def operation(selection, nonce):

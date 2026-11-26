@@ -8,7 +8,7 @@ import subprocess
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import test_restore_operator_approval as signing_fixture
 import blob_retention as blob
@@ -103,6 +103,7 @@ class TransportTests(unittest.TestCase):
         self.calls = []
         self.lose_reply = False
         self.wrong_receiver = False
+        self.readback_pending = False
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name).resolve(strict=True)
@@ -120,12 +121,20 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(args[args.index('--subscription') + 1], self.selection.subscription)
         self.assertEqual(args[args.index('--command-id') + 1], 'RunShellScript')
         script = Path(args[-1].removeprefix('@')).read_text(encoding='ascii')
-        frame = re.search(r"SANTA_WORKER_TRANSPORT='([A-Za-z0-9+/=]+)'", script)[1]
+        action, frame = re.search(r"SANTA_WORKER_(TRANSPORT|READBACK)='([A-Za-z0-9+/=]+)'", script).groups()
         raw_frame = base64.b64decode(frame, validate=True)
         body = json.loads(raw_frame)
-        self.assertEqual(base64.b64decode(body['request'], validate=True), self.raw)
+        if action == 'READBACK':
+            self.assertEqual(set(body), {'vm_id', 'vm_instance_id', 'region', 'boot', 'workspace',
+                                         'request_sha256', 'plan_sha256', 'stage'})
+            self.assertEqual(body['vm_instance_id'], self.fixture.host.instance_id)
+            self.assertEqual(body['plan_sha256'], self.fixture.step['plan_digest'])
+            self.assertNotIn('def launch', script)
+            self.assertLessEqual(seconds, 180)
+        else:
+            self.assertEqual(base64.b64decode(body['request'], validate=True), self.raw)
+            self.assertEqual(body['receiver'], self.fixture.host.instance_id)
         self.assertEqual(body['request_sha256'], sha(self.raw))
-        self.assertEqual(body['receiver'], self.fixture.host.instance_id)
         self.assertEqual(body['boot'], self.fixture.job.verified_boot_id)
         self.assertLess(len(f"{transport.WORKSPACE_ROOT}/{body['workspace']}/docker.sock"), 108)
         self.assertLessEqual(seconds, 270)
@@ -133,7 +142,7 @@ class TransportTests(unittest.TestCase):
             raise TimeoutError('synthetic lost acknowledgement')
         nonce = re.search(DONE + r'([0-9a-f]{32})', script)[1]
         reply = dict(scope=WORKER_SCOPE, stage='rewrap', request_sha256=sha(self.raw))
-        if body['action'] == 'offer':
+        if body.get('action') == 'offer':
             reply.update(state='offered', offer=base64.b64encode(self.fixture.offer).decode('ascii'),
                          offer_sha256=sha(self.fixture.offer))
         else:
@@ -142,7 +151,10 @@ class TransportTests(unittest.TestCase):
                          activation_allowed=False, current_authority_established=False)
         if self.wrong_receiver:
             reply['request_sha256'] = '0' * 64
-        result = blob.encoded(dict(scope=transport.SCOPE, batch_sha256=sha(raw_frame), reply=reply)).decode('ascii')
+        scope = transport.READBACK_SCOPE if action == 'READBACK' else transport.SCOPE
+        if action == 'READBACK' and self.readback_pending:
+            reply = None
+        result = blob.encoded(dict(scope=scope, batch_sha256=sha(raw_frame), reply=reply)).decode('ascii')
         self.assertLessEqual(len(result), 3072)
         return {'value': [{'code': 'ProvisioningState/succeeded', 'message': f'{RECEIPT}{result}\n{DONE}{nonce}'}]}
 
@@ -195,6 +207,46 @@ class TransportTests(unittest.TestCase):
                 self.operation().apply(self.root, pin)
         self.assertEqual(len(self.calls), 1)
 
+    def test_pending_readback_retains_unknown_then_recovers_validated_outcome(self):
+        operation = self.operation()
+        pin = operation.plan_sha256
+        with patch.object(transport.operator, 'observe', return_value={'stable': True}):
+            self.assertEqual(operation.readback(self.root, pin)['state'], 'not-attempted')
+            self.assertEqual(self.calls, [])
+            self.lose_reply = True
+            with self.assertRaises(TimeoutError):
+                operation.apply(self.root, pin)
+            self.lose_reply = False
+            self.readback_pending = True
+            self.assertEqual(operation.readback(self.root, pin)['state'], 'unknown')
+            self.assertEqual(operation.observe(self.root, pin)['state'], 'unknown')
+            self.readback_pending = False
+            reply = operation.readback(self.root, pin)
+            self.assertEqual(reply['state'], 'committed')
+            self.assertEqual(operation.observe(self.root, pin), reply)
+            self.assertEqual(operation.readback(self.root, pin), reply)
+            with self.assertRaises(blob.RetentionRejected):
+                operation.apply(self.root, pin)
+        self.assertEqual(len(self.calls), 3)
+
+    def test_readback_with_wrong_receipt_or_live_arm_drift_leaves_unknown(self):
+        operation = self.operation()
+        pin = operation.plan_sha256
+        self.lose_reply = True
+        with patch.object(transport.operator, 'observe', return_value={'stable': True}):
+            with self.assertRaises(TimeoutError):
+                operation.apply(self.root, pin)
+        self.lose_reply = False
+        self.wrong_receiver = True
+        with patch.object(transport.operator, 'observe', return_value={'stable': True}):
+            with self.assertRaises(blob.RetentionRejected):
+                operation.readback(self.root, pin)
+        self.wrong_receiver = False
+        with patch.object(transport.operator, 'observe', side_effect=[{'stable': True}, {'stable': False}]):
+            with self.assertRaises(blob.RetentionRejected):
+                operation.readback(self.root, pin)
+        self.assertEqual(operation.observe(self.root, pin)['state'], 'unknown')
+
     def test_unbound_response_or_drift_retains_only_attempt(self):
         for wrong in (True, False):
             with self.subTest(wrong_reply=wrong), TemporaryDirectory(dir=self.root) as scratch:
@@ -205,3 +257,52 @@ class TransportTests(unittest.TestCase):
                     with self.assertRaises(blob.RetentionRejected):
                         operation.apply(local, operation.plan_sha256)
                 self.assertEqual(operation.observe(local, operation.plan_sha256)['state'], 'unknown')
+
+
+class GuestReadbackTests(unittest.TestCase):
+    def setUp(self):
+        program, _, invocation = transport.READBACK.rpartition('\ntry:\n    readback()')
+        self.assertTrue(invocation)
+        self.guest = {}
+        exec(compile(program, '<worker-readback>', 'exec'), self.guest)
+        self.request = dict(boot='4' * 36, workspace='a' * 32, request_sha256='b' * 64,
+                            plan_sha256='c' * 64, stage='quarantine')
+        self.intent = dict(request_sha256=self.request['request_sha256'], boot=self.request['boot'])
+        self.outcome = dict(scope=WORKER_SCOPE, state='committed', request_sha256=self.request['request_sha256'],
+                            plan_sha256=self.request['plan_sha256'], stage='quarantine',
+                            stages={'rewrap': 'committed', 'quarantine': 'committed'},
+                            database_changed=True, activation_allowed=False, current_authority_established=False)
+
+    def test_guest_returns_only_the_required_commit_and_preserves_pending(self):
+        paths = []
+        self.guest['private_directory'] = paths.append
+        view = self.guest['checked_outcome']
+
+        def record(path):
+            if path.name == 'intent.json':
+                return self.intent
+            raise FileNotFoundError()
+
+        self.guest['read_record'] = record
+        self.assertIsNone(view(self.request))
+        self.assertEqual(paths[-1].name, 'transport-' + self.intent['request_sha256'])
+        self.guest['read_record'] = lambda path: self.intent if path.name == 'intent.json' else self.outcome
+        self.assertEqual(view(self.request), self.outcome)
+        for change in ({'boot': '5' * 36}, {'plan_sha256': 'f' * 64}, {'stage': 'rewrap'}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                view(self.request | change)
+        with self.assertRaises(ValueError):
+            self.outcome['unexpected'] = 'must not export'
+            view(self.request)
+
+    def test_guest_refuses_a_new_boot_before_reading_the_workspace(self):
+        self.guest['os'] = SimpleNamespace(geteuid=lambda: 0, environ={
+            'SANTA_WORKER_READBACK': base64.b64encode(blob.encoded(self.request | {
+                'vm_id': '/selected/vm', 'vm_instance_id': 'fixture', 'region': 'fixture'
+            })).decode('ascii'),
+        })
+        self.guest['selected_boot'] = Mock(return_value='5' * 36)
+        self.guest['checked_outcome'] = Mock()
+        with self.assertRaises(ValueError):
+            self.guest['readback']()
+        self.guest['checked_outcome'].assert_not_called()
