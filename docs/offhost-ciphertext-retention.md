@@ -589,6 +589,9 @@ that the daemon has no containers. Keep the attempt after a timeout or
 unverified reply. Docker may have received the archive, so inspect the same
 isolated daemon before taking further action. When the loader observes a
 failure, `failure.json` records the last Docker step and a bounded reason.
+When the backup pins the OCI manifest ID, the loader requires a containerd
+image store before sending the archive to Docker. Legacy stores register
+that archive under its configuration digest.
 Raw Docker diagnostics stay local to the process. The command never starts a
 container or accepts application restore. Configure the daemon for isolated
 recovery and apply a host-level deadline and disk limit to the Docker process

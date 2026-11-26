@@ -156,3 +156,20 @@ class ReadbackTests(unittest.TestCase):
             replacement.bind(str(path))
             with self.assertRaises(readback.ReadbackRejected):
                 daemon.assert_current()
+
+    def test_manifest_id_requires_compatible_store_before_loading(self):
+        with TemporaryDirectory(dir=Path.home()) as temporary:
+            attempt = Path(temporary) / 'attempt'
+            raw = export.encoded(self.result)
+            with patch.object(loader, 'RecoveryDocker') as docker:
+                daemon = docker.return_value
+                daemon.path = Path('/fixture.sock')
+                daemon.identity = (10, 11)
+                daemon.require_manifest_ids.side_effect = loader.IncompatibleImageStore()
+                with self.assertRaises(loader.IncompatibleImageStore):
+                    loader.verify_or_load(self.source, raw, self.key, self.home, completion_sha256=sha(raw),
+                        inventory_sha256=self.inventory_sha256, image_name='core', image_id=self.image_id,
+                        socket='/fixture.sock', attempt=attempt)
+                daemon.run.assert_not_called()
+                self.assertEqual(json.loads((attempt / 'failure.json').read_bytes()),
+                                 dict(scope=loader.SCOPE, phase='image-store', reason='containerd-image-store-required'))
