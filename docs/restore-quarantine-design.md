@@ -319,9 +319,17 @@ historical documents and the retained snapshot repository. The queues
 drained, PostgreSQL shut down cleanly, and the temporary restore and
 containers were removed before the receiver was deallocated. The test
 used a 256 MiB Elasticsearch heap and capped Elasticsearch and RabbitMQ at
-896 MiB and 320 MiB, respectively. No listener was started. HTTP, Celery,
-native-device recovery, and repeatable azd activation remain separate gates.
+896 MiB and 320 MiB, respectively. The drill kept all ports unpublished.
 [Live restored event delivery](https://github.com/nathanmcnulty/azd-santa/issues/53#issuecomment-7199797115)
+
+A subsequent drill stopped the event worker before starting the pinned Celery
+process on the same 4 GiB VM. At a 384 MiB memory limit and concurrency one,
+Celery consumed one synthetic JSON task on a dedicated queue in fresh RabbitMQ.
+The exact successful task result was read from restored PostgreSQL. The queue
+drained, Celery shut down with exit zero, and the receiver was deallocated.
+HTTPS sign-in, simultaneous service activation, native-device recovery,
+and repeatable azd activation remain open.
+[Live restored Celery task](https://github.com/nathanmcnulty/azd-santa/issues/53#issuecomment-7200272734)
 
 Recovery tooling bundle v5 includes the private census review handoff. The
 reviewer exports the complete dispositions and keyed census fingerprint,
