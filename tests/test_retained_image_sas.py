@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlencode
 import test_private_arm_adapter as native
 import retained_image_parts as parts
 import restore_carrier_command as carrier
+import restore_packet_operator as workflow
 import restore_tooling_bundle as tooling
 from retained_image_sas import ImageSasIssuer
 from restore_arm_authorization import Selection as Operator
@@ -282,3 +283,74 @@ class ImageSasTests(unittest.TestCase):
                     self.assertEqual(dispatch(*frames[1])['state'], 'packet-staged')
                     self.assertEqual((guest / 'packet.sealed').read_bytes(), ciphertext)
                     self.assertFalse((guest / 'packet.partial').exists())
+
+    def test_guided_transfer_reconciles_only_by_read_and_preserves_interruption(self):
+        for mode in ('success', 'lost-upload', 'lost-read'):
+            with self.subTest(mode=mode):
+                calls = []
+                root = self.root / mode
+                root.mkdir(mode=0o700)
+                packet = bytes(range(256)) * 3
+                job = self.restore_transfer().job
+                create_offer, read_offer = b'create-offer', b'read-offer'
+                sender_boot = '66666666-6666-4666-8666-666666666666'
+
+                class Guest:
+                    def __init__(_self, _selection, transfer, role, _tooling, **pins):
+                        _self.role = role
+                        _self.transfer = transfer
+                        _self.capsule = ('c' if role == 'c' else 'd') * 64
+                        self.assertEqual(pins['boot_id'], sender_boot if role == 'c' else job.verified_boot_id)
+
+                    def install(_self):
+                        calls.append('install-' + _self.role)
+
+                    def stage_packet(_self, data):
+                        self.assertEqual(data, packet)
+                        calls.append('stage-packet')
+
+                    def offer(_self):
+                        calls.append('offer-' + _self.role)
+                        return create_offer if _self.role == 'c' else read_offer
+
+                    def transfer(_self, offer, digest, issued):
+                        self.assertEqual(offer, create_offer if _self.role == 'c' else read_offer)
+                        self.assertEqual(digest, sha(offer))
+                        self.assertEqual(issued, _self.role)
+                        calls.append('transfer-' + _self.role)
+                        if (mode, _self.role) in (('lost-upload', 'c'), ('lost-read', 'r')):
+                            raise TimeoutError('simulated missing response')
+                        return dict(state='uploaded' if _self.role == 'c' else 'verified',
+                                    packet_sha256=sha(packet), packet_bytes=len(packet))
+
+                class Issuer:
+                    def __init__(_self, _selection, _transfer, role):
+                        _self.role = role
+
+                    def issue(_self, directory, *, apply):
+                        self.assertTrue(apply and (directory / 'intent.json').is_file())
+                        calls.append('issue-' + _self.role)
+                        return _self.role
+
+                with patch.object(workflow, 'Command', Guest), patch.object(workflow, 'RestoreInputSasIssuer', Issuer):
+                    operation = workflow.Operation(self.selection, job, packet, b'fixture',
+                                                   commit='a' * 40, tooling_sha256='b' * 64, sender_boot=sender_boot)
+                    pin = operation.preview()['plan_sha256']
+                    self.assertEqual(operation.observe(root, pin)['state'], 'not-attempted')
+                    self.assertFalse(calls)
+                    with self.assertRaises(native.retention.RetentionRejected):
+                        operation.apply(root, '0' * 64)
+                    if mode == 'lost-read':
+                        with self.assertRaises(TimeoutError):
+                            operation.apply(root, pin)
+                        self.assertEqual(operation.observe(root, pin)['state'], 'interrupted')
+                    else:
+                        result = operation.apply(root, pin)
+                        self.assertEqual(result['state'], 'verified')
+                        self.assertEqual(result['upload_confirmed'], mode == 'success')
+                    self.assertEqual(calls, ['install-c', 'stage-packet', 'install-r', 'offer-c', 'offer-r',
+                                             'issue-c', 'transfer-c', 'issue-r', 'transfer-r'])
+                    with self.assertRaises(FileExistsError):
+                        operation.apply(root, pin)
+                    self.assertEqual(calls.count('transfer-c'), 1)
+                    self.assertEqual(calls.count('transfer-r'), 1)

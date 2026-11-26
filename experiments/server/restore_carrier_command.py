@@ -221,11 +221,11 @@ class Command:
 
     def __init__(self, selection, transfer, permission, tooling, *, commit, tooling_sha256,
                  boot_id, packet_path=None, _cli=None):
-        from restore_tooling_bundle import PACKET_STAGING_SCOPE, SERVER, verify
+        from restore_tooling_bundle import PACKET_OPERATOR_SCOPE, PACKET_STAGING_SCOPE, SERVER, verify
 
         files = verify(tooling, commit=commit, bundle_sha256=tooling_sha256)
         if permission == 'c' and packet_path is None:
-            blob.need(json.loads(tooling)['scope'] == PACKET_STAGING_SCOPE)
+            blob.need(json.loads(tooling)['scope'] in (PACKET_STAGING_SCOPE, PACKET_OPERATOR_SCOPE))
         config = configuration(selection, transfer, permission, boot_id, packet_path)
         data = blob.encoded(config)
         blob.need(len(data) <= 8192)

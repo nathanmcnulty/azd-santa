@@ -338,8 +338,19 @@ file only after verifying its full size and SHA-256. The sender can still use
 an exact file already present inside the private network. Run Command stages
 one request per part, so transfer cost and time grow with packet size.
 
-The guided launcher, live transfer, object cleanup, service-generation
-binding and replacement identity enrollment remain open.
+Recovery tooling bundle v15 adds the `restore_packet_operator.py` launcher.
+Use `plan` with the selected private-store receipt, trusted job metadata,
+encrypted packet and pinned tooling bundle. The metadata carries the operator
+account, sender boot, receiver receipt, PostgreSQL target, archive digest, and
+recovery generation. Supply the displayed plan digest and an owner-private
+journal directory to `apply`. The launcher stages both guests, delivers the
+credentials in order, uploads once and independently verifies the receiver.
+A lost upload acknowledgement can be reconciled by a matching readback.
+Use `observe` to inspect local journal evidence without a cloud request.
+
+The launcher delivers ciphertext. Live transfer, object cleanup, database
+execution from the receiver file, service-generation binding and replacement
+identity enrollment remain open.
 [Live VM startup investigation](https://github.com/nathanmcnulty/azd-santa/issues/190)
 
 The database adapters bind the target to the Linux boot ID and postmaster
