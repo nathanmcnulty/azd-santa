@@ -9,6 +9,7 @@ from pathlib import Path
 import pickle
 import sys
 from tempfile import TemporaryDirectory
+from threading import Barrier
 import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlencode
@@ -285,7 +286,7 @@ class ImageSasTests(unittest.TestCase):
                     self.assertFalse((guest / 'packet.partial').exists())
 
     def test_guided_transfer_reconciles_only_by_read_and_preserves_interruption(self):
-        for mode in ('success', 'lost-upload', 'lost-read'):
+        for mode in ('success', 'lost-upload', 'lost-read', 'failed-stage'):
             with self.subTest(mode=mode):
                 calls = []
                 root = self.root / mode
@@ -294,6 +295,7 @@ class ImageSasTests(unittest.TestCase):
                 job = self.restore_transfer().job
                 create_offer, read_offer = b'create-offer', b'read-offer'
                 sender_boot = '66666666-6666-4666-8666-666666666666'
+                staging = Barrier(2, timeout=10)
 
                 class Guest:
                     def __init__(_self, _selection, _transfer, role, _tooling, **pins):
@@ -303,10 +305,13 @@ class ImageSasTests(unittest.TestCase):
 
                     def install(_self):
                         calls.append('install-' + _self.role)
+                        staging.wait()
 
                     def stage_packet(_self, data):
                         self.assertEqual(data, packet)
                         calls.append('stage-packet')
+                        if mode == 'failed-stage':
+                            raise ValueError('simulated staging failure')
 
                     def offer(_self):
                         calls.append('offer-' + _self.role)
@@ -339,6 +344,12 @@ class ImageSasTests(unittest.TestCase):
                     self.assertFalse(calls)
                     with self.assertRaises(native.retention.RetentionRejected):
                         operation.apply(root, '0' * 64)
+                    if mode == 'failed-stage':
+                        with self.assertRaises(ValueError):
+                            operation.apply(root, pin)
+                        self.assertCountEqual(calls, ['install-c', 'install-r', 'stage-packet', 'offer-r'])
+                        self.assertEqual(operation.observe(root, pin)['state'], 'interrupted')
+                        continue
                     if mode == 'lost-read':
                         with self.assertRaises(TimeoutError):
                             operation.apply(root, pin)
@@ -347,8 +358,11 @@ class ImageSasTests(unittest.TestCase):
                         result = operation.apply(root, pin)
                         self.assertEqual(result['state'], 'verified')
                         self.assertEqual(result['upload_confirmed'], mode == 'success')
-                    self.assertEqual(calls, ['install-c', 'stage-packet', 'install-r', 'offer-c', 'offer-r',
-                                             'issue-c', 'transfer-c', 'issue-r', 'transfer-r'])
+                    self.assertCountEqual(calls[:5], ['install-c', 'stage-packet', 'install-r', 'offer-c', 'offer-r'])
+                    self.assertEqual([call for call in calls[:5] if call not in ('install-r', 'offer-r')],
+                                     ['install-c', 'stage-packet', 'offer-c'])
+                    self.assertLess(calls.index('install-r'), calls.index('offer-r'))
+                    self.assertEqual(calls[5:], ['issue-c', 'transfer-c', 'issue-r', 'transfer-r'])
                     with self.assertRaises(FileExistsError):
                         operation.apply(root, pin)
                     self.assertEqual(calls.count('transfer-c'), 1)

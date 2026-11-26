@@ -304,7 +304,7 @@
       "evidenceState": "code",
       "evidence": [
         { "path": "experiments/server/restore_carrier_command.py", "sha256": "58dc7f6a40e881c55090126479ef959b6cc96c86e6b65d49ca6f48099b4290cf" },
-        { "path": "experiments/server/restore_packet_operator.py", "sha256": "8746b657ec18f20de19f5158eac2c67d501f2be9659c0ed84f620e7b954e9a46" }
+        { "path": "experiments/server/restore_packet_operator.py", "sha256": "5bf8513cf5214b5bd5178c072178f7e03617cc90e4b4a64bbd860c5a6443cb30" }
       ]
     },
     {
