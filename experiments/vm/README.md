@@ -90,7 +90,10 @@ loopback-only installation needs a separately established operator route.
 ```
 
 Use the same environment name you passed to `azd env new`. Add `-WhatIf` to
-check the local selection without submitting a setup request. The command uses
+check the local selection without contacting the HTTPS endpoint or submitting
+a setup request. Before reserving an attempt, the command checks that the login
+page is reachable over trusted HTTPS from your workstation. If that check fails,
+restore the route and run the same command again. The command uses
 the machine-produced binding and existing Azure CLI authorization. Setup is
 explicit, so repeating `azd up` neither creates a new administrator nor issues
 another link. For lost factors, use `-Mode recover -RecoveryAttempt <label>` and
