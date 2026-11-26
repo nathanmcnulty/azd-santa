@@ -291,3 +291,23 @@ deallocation. The receipt SHA-256 is
 `6d80351ff26901741ca7ce09c8395b673573cd932f5fb237bd965c0b84adad27`.
 Current-authority reissue, HTTP and worker activation, and native device
 acceptance remain open.
+
+## Authority quarantine transaction on the retained pilot database
+
+The original lab VM restored the authenticated pilot database into a disposable
+copy and renamed it to a reserved recovery database. The exact Zentral image
+opened two private Unix-socket connections without starting an application
+listener. The lab generated its baseline and dispositions inside the test.
+
+A preview planned two row updates in one table. Applying an incorrect plan
+digest was rejected, and the census remained identical. The matching digest
+then committed the two updates. A fresh census matched the previous schema,
+registry, migrations and 219 relations outside the eight authority tables.
+Keyed comparisons also matched every field outside the update allowlist within
+all eight tables. A repeat preview found zero pending updates.
+
+The runner removed the disposable containers and files, and Azure confirmed VM
+deallocation. The receipt SHA-256 is
+`a613c10e1ca522f6d59e208a448e4e6a4ce6091f555260fe4c49a4f647136b73`.
+Independent review of the recovery baseline, secret rewrap, fresh administrator
+and device authority, and application activation remain open.
