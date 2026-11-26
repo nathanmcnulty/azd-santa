@@ -106,6 +106,13 @@ class BundleTests(unittest.TestCase):
                 with self.assertRaises(bundle.ToolingRejected):
                     bundle.verify(raw, commit=self.commit, bundle_sha256=bundle.sha(raw))
 
+    def test_journal_version_includes_both_adapters_and_exact_journal(self):
+        raw = bundle.build(ROOT, self.commit, version=4)
+        files = bundle.verify(raw, commit=self.commit, bundle_sha256=bundle.sha(raw))
+        path = bundle.SERVER + 'restore_quarantine_journal.py'
+        self.assertEqual(set(files) - set(bundle.REWRAP_PATHS), {path})
+        compile(files[path], path, 'exec')
+
     def test_reads_commit_without_packaging_worktree_configuration_or_unapproved_blob(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

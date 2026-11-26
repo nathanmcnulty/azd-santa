@@ -37,8 +37,11 @@ AUTHORITY_PATHS = tuple(sorted((*PATHS, 'docs/restore-quarantine-design.md',
 REWRAP_SCOPE = 'azd-santa-restore-tooling-bundle-v3'
 REWRAP_PATHS = tuple(sorted((*AUTHORITY_PATHS, 'docs/offline-secret-rewrap.md',
                             SERVER + 'restore_secret_transaction.py')))
-INVENTORIES = {SCOPE: PATHS, AUTHORITY_SCOPE: AUTHORITY_PATHS, REWRAP_SCOPE: REWRAP_PATHS}
-VERSIONS = {1: SCOPE, 2: AUTHORITY_SCOPE, 3: REWRAP_SCOPE}
+JOURNAL_SCOPE = 'azd-santa-restore-tooling-bundle-v4'
+JOURNAL_PATHS = tuple(sorted((*REWRAP_PATHS, SERVER + 'restore_quarantine_journal.py')))
+INVENTORIES = {SCOPE: PATHS, AUTHORITY_SCOPE: AUTHORITY_PATHS, REWRAP_SCOPE: REWRAP_PATHS,
+               JOURNAL_SCOPE: JOURNAL_PATHS}
+VERSIONS = {1: SCOPE, 2: AUTHORITY_SCOPE, 3: REWRAP_SCOPE, 4: JOURNAL_SCOPE}
 MAX_FILE = 256 * 1024
 MAX_BUNDLE = 2 * 1024**2
 COMMIT = r'[0-9a-f]{40}'

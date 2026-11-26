@@ -1,5 +1,5 @@
 """Verify a populated database rewrap and rollback on the sealed PostgreSQL fixture."""
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 import zlib
@@ -9,6 +9,7 @@ from cryptography.fernet import Fernet
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'experiments/server'))
 import restore_authority_transaction as recovery
 import restore_census as census
+import restore_quarantine_journal as journal
 import restore_secret_transaction as transaction
 import run_restore_authority_transaction as fixture
 import secret_rewrap as secret
@@ -71,10 +72,10 @@ class StateVersion(models.Model):
 }
 
 
-def reject(call):
+def reject(call, error_type=transaction.TransactionRejected):
     try:
         call()
-    except transaction.TransactionRejected as error:
+    except error_type as error:
         return error
     raise AssertionError('Expected rewrap to reject the attempt')
 
@@ -99,6 +100,8 @@ def run(root):
 
         model = apps.get_model('stores', 'Store')
         recorded = datetime(2026, 1, 1)
+        user = apps.get_model('accounts', 'User').objects.create_user(
+            username='archived-operator', password='synthetic archived password', is_superuser=True)
         model.objects.create(id=STORE, name='retained store', description='description',
             created_at=recorded, updated_at=recorded, provisioning_uid='retained', slug='retained',
             admin_console=False, event_filters={'retain': True}, backend='HTTP', backend_kwargs={
@@ -121,6 +124,12 @@ def run(root):
                                CHECK (left(encryption_key, 4) = 'old$')""")
 
         observer.ensure_connection()
+        target = recovery.read_target(observer)
+        cutoff = datetime.now(timezone.utc)
+        directory = root / 'journal'
+        directory.mkdir(mode=0o700)
+        bound = dict(target=target, archive_sha256='a' * 64, generation='b' * 64, fingerprint_key=KEY)
+        secret_options = dict(expected_contexts=CONTEXTS, old_material=OLD, new_material=NEW, targets=TARGETS)
 
         def observe():
             return census.collect(observer, apps, fingerprint_key=KEY)
@@ -132,9 +141,16 @@ def run(root):
                         for item in census.coverage_items(initial, fingerprint_key=KEY)})
 
         def invoke(baseline, **kwargs):
-            options = dict(target=recovery.read_target(observer), expected_contexts=CONTEXTS,
-                           old_material=OLD, new_material=NEW, targets=TARGETS, fingerprint_key=KEY)
+            options = dict(target=target, fingerprint_key=KEY, **secret_options)
             return transaction.run(writer, observer, apps, **{**options, **baseline, **kwargs})
+
+        def guided(stage, baseline, *, folder=directory, context=bound, **kwargs):
+            options = secret_options if stage == 'rewrap' else dict(cutoff=cutoff)
+            return journal.run(writer, observer, apps, **context, **baseline,
+                               directory=folder, stage=stage, **{'options': options, **kwargs})
+
+        def deny(call):
+            return reject(call, journal.JournalRejected)
 
         def unchanged(baseline):
             assert census.compare(observe(), fingerprint_key=KEY, **baseline)['exact_match']
@@ -148,6 +164,16 @@ def run(root):
         constraint_failure = failed.__context__.__cause__
         assert isinstance(constraint_failure, writer.Database.errors.CheckViolation)
         assert constraint_failure.diag.constraint_name == 'preserved_old_key'
+        unchanged(baseline)
+        failed_directory = root / 'journal-failed'
+        failed_directory.mkdir(mode=0o700)
+        failed_bound = {**bound, 'generation': 'f' * 64}
+        interrupted = guided('rewrap', baseline, folder=failed_directory, context=failed_bound)
+        deny(lambda: guided('rewrap', baseline, folder=failed_directory, context=failed_bound,
+                            plan_digest=interrupted['plan_digest']))
+        assert journal.inspect(failed_directory, **failed_bound)['stages'] == {
+            'rewrap': 'inspect', 'quarantine': 'pending'}
+        deny(lambda: guided('rewrap', baseline, folder=failed_directory, context=failed_bound))
         unchanged(baseline)
 
         with writer.cursor() as cursor:
@@ -164,7 +190,17 @@ def run(root):
             peer.close()
         unchanged(baseline)
 
-        result = invoke(baseline, apply=True, plan_digest=preview['plan_digest'])
+        deny(lambda: guided('quarantine', baseline))
+        deny(lambda: guided('rewrap', baseline, options={**secret_options, 'apply': True,
+                                                          'plan_digest': preview['plan_digest']}))
+        reviewed_plan = guided('rewrap', baseline)
+        assert reviewed_plan['stages'] == {'rewrap': 'pending', 'quarantine': 'pending'}
+        deny(lambda: guided('rewrap', baseline, context={**bound, 'archive_sha256': 'c' * 64},
+                            plan_digest=reviewed_plan['plan_digest']))
+        assert not list(directory.iterdir())
+        applied = guided('rewrap', baseline, plan_digest=reviewed_plan['plan_digest'])
+        assert applied['stages'] == {'rewrap': 'committed', 'quarantine': 'pending'}
+        result = applied['result']
         assert result['rewrap_committed'] and result['performs_mutation']
         assert not result['restore_accepted'] and not result['current_authority_established']
         with observer.cursor() as cursor:
@@ -184,6 +220,26 @@ def run(root):
             engine, payload = value.split('$', 1)
             assert engine == 'new' and replacement.decrypt(payload, CONTEXTS[index]) == decoded
         reject(lambda: invoke(baseline, apply=True, plan_digest=preview['plan_digest']))
+        deny(lambda: guided('rewrap', baseline, plan_digest=reviewed_plan['plan_digest']))
+        deny(lambda: guided('quarantine', baseline))
+        deny(lambda: journal.inspect(directory, **{**bound, 'generation': '0' * 64}))
+        subsequent = reviewed()
+        quarantine = guided('quarantine', subsequent)
+        completed = guided('quarantine', subsequent, plan_digest=quarantine['plan_digest'])
+        assert completed['result']['authority_updates_committed'] and completed['result']['performs_mutation']
+        user.refresh_from_db()
+        assert not user.is_active and not user.check_password('synthetic archived password')
+        inspected = journal.inspect(directory, **bound)
+        assert inspected['stages'] == {'rewrap': 'committed', 'quarantine': 'committed'}
+        assert not inspected['activation_allowed'] and not inspected['current_authority_established']
+        deny(lambda: guided('quarantine', subsequent, plan_digest=quarantine['plan_digest']))
+        with journal.locked(directory):
+            deny(lambda: journal.inspect(directory, **bound))
+        (directory / 'quarantine-committed.json').write_text('{}')
+        deny(lambda: journal.inspect(directory, **bound))
+        unchanged_failure = journal.inspect(failed_directory, **failed_bound)
+        assert unchanged_failure['stages']['rewrap'] == 'inspect'
+        print('Verified guided rewrap and authority handoff, durable intent, replay denial and closed activation')
         print('Verified transactional rewrap, late rollback, unchanged Terraform bytes and exact JSONB numbers')
     finally:
         connections.close_all()
