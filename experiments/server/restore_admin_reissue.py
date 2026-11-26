@@ -36,7 +36,7 @@ def inspect(job, *, directory, fingerprint_key, plan_sha256):
 
 
 def run(job, observer, registry, *, directory, fingerprint_key, username, email,
-        runtime_sha256, recipient_sha256, approved_plan_sha256=None, authorize=None, create=None):
+        runtime_sha256, recipient_sha256, setup_origin_sha256, approved_plan_sha256=None, authorize=None, create=None):
     """Preview or consume a new-identity approval against the exact quarantined database.
 
     The trusted launcher verifies the fresh runtime and setup recipient separately.
@@ -46,7 +46,7 @@ def run(job, observer, registry, *, directory, fingerprint_key, username, email,
     """
     applying = approved_plan_sha256 is not None
     journal.require(type(job) is Job and journal.is_digest(runtime_sha256)
-                    and journal.is_digest(recipient_sha256)
+                    and journal.is_digest(recipient_sha256) and journal.is_digest(setup_origin_sha256)
                     and all(type(value) is str and 0 < len(value) <= limit
                             and value == value.strip() and not any(ord(char) < 32 for char in value)
                             for value, limit in ((username, 150), (email, 254)))
@@ -67,7 +67,7 @@ def run(job, observer, registry, *, directory, fingerprint_key, username, email,
                         and hmac.compare_digest(observed.receipt['fingerprint'], quarantine['census']))
         request = dict(scope=SCOPE, binding=binding, quarantine_plan_sha256=quarantine['plan'],
                        quarantine_census_sha256=quarantine['census'], runtime_sha256=runtime_sha256,
-                       recipient_sha256=recipient_sha256,
+                       recipient_sha256=recipient_sha256, setup_origin_sha256=setup_origin_sha256,
                        identity_sha256=census.keyed(key, SCOPE + ':identity', {'username': username, 'email': email}))
         plan = hashlib.sha256(journal.encode_record(request)).hexdigest()
         approval = {**request, 'plan_sha256': plan}

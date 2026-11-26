@@ -16,4 +16,8 @@ Describe 'Santa restore authority planning' {
         $result = & python -m unittest discover -s $PSScriptRoot -p test_restore_admin_reissue.py 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
     }
+    It 'verifies the exact signed administrator approval once and rejects expiry and tampering' {
+        $result = & python -m unittest discover -s $PSScriptRoot -p test_restore_admin_approval.py 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
+    }
 }

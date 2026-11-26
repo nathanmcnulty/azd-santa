@@ -212,3 +212,10 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(set(files) - set(bundle.ADMIN_REISSUE_PATHS), expected)
         for path in expected:
             compile(files[path], path, 'exec')
+
+    def test_admin_approval_extends_the_account_inventory(self):
+        raw = bundle.build(ROOT, self.commit, version=25)
+        files = bundle.verify(raw, commit=self.commit, bundle_sha256=bundle.sha(raw))
+        path = bundle.SERVER + 'restore_admin_approval.py'
+        self.assertEqual(set(files) - set(bundle.ADMIN_ACCOUNT_PATHS), {path})
+        compile(files[path], path, 'exec')
