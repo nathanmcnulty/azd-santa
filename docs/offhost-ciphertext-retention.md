@@ -606,8 +606,15 @@ and seals that single key to the guest's temporary recipient. The original
 private key stays on the workstation. Keep offers in an owner-private
 boot-local directory and preserve the separate durable load attempt if its
 result is unknown. The loader still verifies GCM, the archive digest and
-the exact image ID before confirming import. The guest transport and
-Azure load of the retained Zentral image remain live qualification gates.
+the exact image ID before confirming import.
+
+The selected Azure recovery VM verified the encrypted Zentral archive and
+loaded the exact pinned linux/amd64 image into a dedicated containerd-backed
+Docker daemon in 48 seconds. A separate network-isolated container imported
+Django and cryptography successfully. The recovery daemons stopped and the
+existing Docker daemon still reported its original eight containers. Full
+dependency retention and signed database recovery remain open.
+[Live recovery evidence](https://github.com/nathanmcnulty/azd-santa/issues/97#issuecomment-7186596155)
 
 [action-run-command]: https://learn.microsoft.com/en-us/azure/virtual-machines/linux/run-command
 [docker-image-inspect]: https://docs.docker.com/reference/cli/docker/image/inspect/
