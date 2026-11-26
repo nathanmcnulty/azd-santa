@@ -210,9 +210,25 @@ tables, including 24 Santa tables, and 236 Django migration records, including
 volatile copies, and verified Azure VM deallocation. The receipt SHA-256 is
 `04ba6c70d32e3094b0f8b8ab684badba82f03ebbea4fb5d5a7b4ea4e7a0d49f7`.
 
-The archived database can start in isolation and return catalog and migration
-records. Full schema and row comparison, application services and
-current-authority reconciliation remain open.
+### Census of the retained pilot database
+
+The original lab VM already held the exact Zentral image recorded in the
+authenticated archive. The census ran that image with synthetic configuration
+in its own network-disabled container. It read the disposable database copy
+over a private Unix socket with read-only transactions.
+
+Django 5.2.18 registered 121 models. The collector observed 720 catalog
+relations, 227 data relations, 838 row observations including sequence state,
+and 236 applied migrations. The supported catalog reported zero blockers.
+All eight authority tables passed the shape check. A second census matched
+the first with a shared ephemeral fingerprint key and fixture-generated
+dispositions. The VM was deallocated after clean database shutdown and removal
+of the temporary containers and memory-backed files. The receipt SHA-256 is
+`dfbc09278c1c869607e48785223e6b055c2017a928d23aa983242e65db9ea8ce`.
+
+The two observations came from the same quiescent restored copy. Comparison
+against an independently reviewed source baseline, referenced-definition
+coverage, application services and current-authority reconciliation remain open.
 
 ## Elasticsearch restore from the retained pilot archive
 
