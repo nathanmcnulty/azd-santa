@@ -1,9 +1,14 @@
 # Restore quarantine and fresh-authority reissue design
 
-**Design only; unimplemented and unqualified.** This is the bounded inventory
-and proposed workflow for [issue54](https://github.com/nathanmcnulty/azd-santa/issues/54).
-It does not enable restore, qualify full restoration, or establish an external
-current-authority ledger. Cold encrypted backup acceptance is a separate gate.
+This document describes the isolated database recovery steps and the design for
+fresh authority reissue. The Azure pilot completed separate signed rewrap and
+authority quarantine steps on one restored PostgreSQL copy. Rewrap preserved the
+source census. Quarantine neutralized two authority rows and preserved all 838
+rows, the catalog, applied migrations and the other 226 relations. Activation
+remained closed. [Azure pilot evidence](https://github.com/nathanmcnulty/azd-santa/issues/53#issuecomment-7195096868)
+
+Durable key custody, customer-facing recovery orchestration, fresh authority
+reissue and service activation remain open. See the [backend status](backend-status.md).
 
 The separate `experiments/server/restore_cipher.py` primitive now authenticates
 the existing sealed format against an externally trusted ciphertext digest and
@@ -11,15 +16,12 @@ recipient key. It discards decrypted chunks and returns only after complete GCM
 tag and digest verification. It creates no plaintext file, parses no archive and
 never restores or admits a service. Eight synthetic crypto tests cover producer
 roundtrip, tampering, truncation, recipient/digest/header/size/deadline failures.
-The Linux root/private-file descriptor guard still needs actual Linux filesystem
-qualification. The separate [authenticated archive quarantine primitive](authenticated-archive-quarantine.md)
-now adds bounded private extraction with producer-format/control checks and inert
-ownership/mode metadata. Its Linux descriptor/crash behavior still requires
-separate qualification. Key management, application compatibility and the full
-quarantine/reissue workflow below remain unimplemented. A successful
-ciphertext check does not establish current authority; the caller must obtain
-the expected digest from trusted external evidence and bound blocking I/O with
-an outer process deadline.
+The [authenticated archive quarantine primitive](authenticated-archive-quarantine.md)
+adds bounded private extraction with producer-format checks and inert ownership
+and mode metadata. The Azure pilot exercised this path on Linux using the retained
+encrypted archive. Crash and interruption cases remain separate qualification
+work. The caller obtains the expected digest from trusted external evidence and
+bounds blocking I/O with an outer process deadline.
 
 The proposed initial scope is a quarantined restore of the known Santa profile,
 followed by new identities and credentials. Preserve the original backup and
