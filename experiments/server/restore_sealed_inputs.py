@@ -1,10 +1,12 @@
 """Seal the private inputs for one confirmed Santa recovery step."""
 
+from contextlib import ExitStack
 from dataclasses import asdict
 from datetime import datetime
 import hashlib
 import hmac
 import os
+from pathlib import Path
 import threading
 import time
 
@@ -12,8 +14,10 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+import blob_retention as blob
 from cold_backup import recipient_key
-from retained_image_handoff import b64, decode
+from retained_image_delivery import read_at, write_at
+from retained_image_handoff import b64, boot, decode
 from retained_image_parts import checked_document
 import restore_authority_transaction as authority
 import restore_census as census
@@ -29,6 +33,7 @@ NONCE_BYTES = 12
 MAX_OPTIONS = MAX_BYTES
 MAX_PAYLOAD = 36 + review.MAX_REVIEW_BYTES + MAX_OPTIONS
 MAX_PACKET = WRAPPED_BYTES + NONCE_BYTES + MAX_PAYLOAD + 16
+RECIPIENT_ROOT = Path('/run/azd-santa-recovery-recipients')
 
 
 class InputRejected(ValueError):
@@ -146,12 +151,11 @@ class Recipient:
         """Consume pinned ciphertext and call the existing isolated database job."""
         try:
             with self._lock:
-                require(self._key is not None and callable(authorize)
+                require(callable(authorize)
                         and type(packet) is bytes and WRAPPED_BYTES + NONCE_BYTES + 16 < len(packet) <= MAX_PACKET
                         and journal.is_digest(packet_sha256) and hmac.compare_digest(sha(packet), packet_sha256))
-                key = self._key
-                self._key = None
-                check_offer(self.offer, sha(self.offer), self._expected)
+                public = check_offer(self.offer, sha(self.offer), self._expected)
+                key = self._take_key(public)
                 offset = WRAPPED_BYTES + NONCE_BYTES
                 content_key = key.decrypt(packet[:WRAPPED_BYTES], oaep())
                 raw = AESGCM(content_key).decrypt(packet[WRAPPED_BYTES:offset], packet[offset:], DOMAIN + self.offer)
@@ -166,3 +170,88 @@ class Recipient:
         return self._job.run(writer, observer, registry, directory=directory, fingerprint_key=fingerprint_key,
                              stage=stage, review_bytes=raw[36:36 + size], review_sha256=self._expected['review_sha256'],
                              options=options, plan_digest=self._expected['plan_digest'], authorize=authorize)
+
+    def _take_key(self, _public):
+        key, self._key = self._key, None
+        require(key is not None)
+        return key
+
+
+class BootRecipient:
+    """Keep one guest offer available across commands on the same boot."""
+
+    @staticmethod
+    def _verify_host(job, target, get_boot):
+        require(type(job) is Job)
+        selected = job.selection
+        require(type(target) is blob.SelectedTarget
+                and blob.resource_id(target.vm_id) == blob.resource_id(selected.vm_id)
+                and target.instance_id == selected.vm_instance_id and target.region == selected.region
+                and get_boot(target) == job.verified_boot_id)
+
+    @classmethod
+    def prepare(cls, job, target, public_key_sha256, *, stage, binding, review_sha256, plan_digest,
+                root=RECIPIENT_ROOT, _boot=boot):
+        """Publish a public offer and persist its key with the pinned operator key digest."""
+        try:
+            cls._verify_host(job, target, _boot)
+            require(journal.is_digest(public_key_sha256))
+            recipient = Recipient(job, stage=stage, binding=binding,
+                                  review_sha256=review_sha256, plan_digest=plan_digest)
+            digest = sha(recipient.offer)
+            root = Path(root)
+            root.mkdir(mode=0o700, exist_ok=True)
+            intent = {'offer_sha256': digest, 'public_key_sha256': public_key_sha256}
+            with ExitStack() as stack:
+                state = blob.Journal(root / digest, intent, stack)
+                key = recipient._key.private_bytes(serialization.Encoding.DER,
+                    serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+                write_at(state.fd, 'recipient.der', key)
+                write_at(state.fd, 'offer.json', recipient.offer)
+            return recipient.offer
+        except Exception:
+            raise InputRejected('Could not prepare the boot-local restore recipient') from None
+
+    def __init__(self, job, target, offer_sha256, *, stage, binding, review_sha256, plan_digest,
+                 root=RECIPIENT_ROOT, _boot=boot):
+        try:
+            self._verify_host(job, target, _boot)
+            require(journal.is_digest(offer_sha256))
+            expected = operation(job, stage, binding, review_sha256, plan_digest)
+            self._recipient = _StoredRecipient(job, expected, Path(root) / offer_sha256)
+        except Exception:
+            raise InputRejected('Could not reopen the boot-local restore recipient') from None
+
+    def apply(self, plan, plan_sha256, receipt, approval, public_key, writer, observer, registry, *,
+              directory, carrier_root=None):
+        """Use the operator key selected when the offer was created."""
+        return self._recipient.run_approved(plan, plan_sha256, receipt, approval, public_key,
+            self._recipient.operator_pin, writer, observer, registry, directory=directory, carrier_root=carrier_root)
+
+
+class _StoredRecipient(Recipient):
+    def __init__(self, job, expected, path):
+        self._job = job
+        self._expected = expected
+        self._path = path
+        self._lock = threading.Lock()
+        with ExitStack() as stack:
+            folder, name = blob.parent(path / 'offer.json', stack)
+            self.offer = read_at(folder, name, 4096)
+            check_offer(self.offer, path.name, expected)
+            raw = read_at(folder, 'intent.json', 1024)
+            intent = checked_document(raw, sha(raw), 1024)
+            require(set(intent) == {'offer_sha256', 'public_key_sha256'}
+                    and intent['offer_sha256'] == path.name and journal.is_digest(intent['public_key_sha256']))
+            self.operator_pin = intent['public_key_sha256']
+
+    def _take_key(self, public):
+        with ExitStack() as stack:
+            folder, name = blob.parent(self._path / 'recipient.der', stack)
+            key = serialization.load_der_private_key(read_at(folder, name, 8192), password=None)
+            require(isinstance(key, rsa.RSAPrivateKey)
+                    and key.public_key().public_numbers() == public.public_numbers())
+            write_at(folder, 'consumed.json', review.encode({'offer_sha256': self._path.name}))
+            os.unlink(name, dir_fd=folder)
+            os.fsync(folder)
+        return key
