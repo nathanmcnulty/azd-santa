@@ -16,9 +16,76 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'experiments/server'))
 import private_arm_adapter as arm
 import blob_retention as retention
+import restore_arm_authorization as restore_arm
+import restore_census_review as review
 from test_backup_store_selection import fixture, TENANT
 import test_blob_retention as retention_tests
 from test_blob_retention import Arm
+
+
+class RestoreArmTests(unittest.TestCase):
+    def setUp(self):
+        subscription = '1' * 8 + '-1111-1111-1111-' + '1' * 12
+        self.group = 'rg-azd-santa-vm-fixture'
+        vm_id = (f'/subscriptions/{subscription}/resourceGroups/{self.group}'
+                 '/providers/Microsoft.Compute/virtualMachines/vm-santa-lab')
+        self.selection = restore_arm.Selection(TENANT, subscription, 'operator@example.com',
+                                               vm_id, TENANT, 'westus2')
+        self.context = dict(id=subscription, tenantId=TENANT, environmentName='AzureCloud', state='Enabled',
+                            user={'type': 'user', 'name': 'operator@example.com'})
+        self.vm = dict(id=vm_id, vmId=TENANT, location='westus2', provisioningState='Succeeded',
+                       tags={'azd-solution': 'azd-santa', 'purpose': 'synthetic-vm-lab', 'azd-env-name': 'fixture'})
+        self.account_command = ['account', 'show', '--subscription', subscription]
+        self.vm_command = ['vm', 'show', '--subscription', subscription, '--resource-group', self.group,
+                           '--name', 'vm-santa-lab', '--query', restore_arm.VM_QUERY]
+
+    def test_readback_uses_only_selected_cached_user_and_exact_vm(self):
+        cli = Mock(side_effect=[self.context, self.vm, self.context])
+        result = restore_arm.observe(self.selection, _cli=cli)
+        self.assertEqual(result['vm_instance_id'], self.selection.vm_instance_id)
+        self.assertTrue(result['account_verified'] and result['exact_vm_verified'])
+        self.assertFalse(result['cloud_write'])
+        self.assertEqual([call.args[0] for call in cli.call_args_list],
+                         [self.account_command, self.vm_command, self.account_command])
+        self.assertTrue(all(0 < call.args[1] <= 30 for call in cli.call_args_list))
+
+    def test_denies_account_target_and_context_drift(self):
+        other = {**self.context, 'user': {'type': 'user', 'name': 'other@example.com'}}
+        principal = {**self.context, 'user': {**self.context['user'], 'type': 'servicePrincipal'}}
+        for replies in ([other], [principal], [self.context, {**self.vm, 'vmId': self.selection.subscription}],
+                        [self.context, {**self.vm, 'tags': {}}], [self.context, self.vm, other]):
+            with self.subTest(replies=replies):
+                cli = Mock(side_effect=replies)
+                with self.assertRaises(arm.ArmRejected):
+                    restore_arm.observe(self.selection, _cli=cli)
+                self.assertEqual(cli.call_count, len(replies))
+
+    def test_only_one_matching_confirmed_operation_is_accepted(self):
+        operation = dict(stage='rewrap', binding='0' * 64, review_sha256='1' * 64, plan_digest='2' * 64)
+        request = {**operation, 'scope': review.SCOPE}
+        cli = Mock(side_effect=[self.context, self.vm, self.context])
+        readback = Mock(side_effect=lambda target: restore_arm.observe(target, _cli=cli))
+        approve = restore_arm.ConfirmedOperation(self.selection, **operation, _observe=readback)
+        with self.assertRaises(arm.ArmRejected):
+            approve({**request, 'review_sha256': '3' * 64})
+        readback.assert_not_called()
+        self.assertTrue(approve(request))
+        with self.assertRaises(arm.ArmRejected):
+            approve(request)
+        readback.assert_called_once_with(self.selection)
+        fail = Mock(side_effect=RuntimeError('sensitive transport error'))
+        approve = restore_arm.ConfirmedOperation(self.selection, **operation, _observe=fail)
+        for _ in range(2):
+            with self.assertRaises(arm.ArmRejected) as rejected:
+                approve(request)
+            self.assertNotIn('sensitive', str(rejected.exception))
+        fail.assert_called_once_with(self.selection)
+
+        with patch.object(restore_arm.time, 'monotonic', return_value=100):
+            expired = restore_arm.ConfirmedOperation(self.selection, **operation, _observe=readback)
+        with patch.object(restore_arm.time, 'monotonic', return_value=400), self.assertRaises(arm.ArmRejected):
+            expired(request)
+        readback.assert_called_once_with(self.selection)
 
 
 class Protocol:

@@ -120,6 +120,13 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(set(files) - set(bundle.JOURNAL_PATHS), {path})
         compile(files[path], path, 'exec')
 
+    def test_arm_version_includes_the_operator_readback_adapter(self):
+        raw = bundle.build(ROOT, self.commit, version=6)
+        files = bundle.verify(raw, commit=self.commit, bundle_sha256=bundle.sha(raw))
+        path = bundle.SERVER + 'restore_arm_authorization.py'
+        self.assertEqual(set(files) - set(bundle.REVIEW_PATHS), {path})
+        compile(files[path], path, 'exec')
+
     def test_reads_commit_without_packaging_worktree_configuration_or_unapproved_blob(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
