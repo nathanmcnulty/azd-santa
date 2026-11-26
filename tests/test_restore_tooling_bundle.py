@@ -226,3 +226,11 @@ class BundleTests(unittest.TestCase):
         path = bundle.SERVER + 'restore_admin_transport.py'
         self.assertEqual(set(files) - set(bundle.ADMIN_APPROVAL_PATHS), {path})
         compile(files[path], path, 'exec')
+
+    def test_restore_security_store_extends_the_transport_inventory(self):
+        raw = bundle.build(ROOT, self.commit, version=27)
+        files = bundle.verify(raw, commit=self.commit, bundle_sha256=bundle.sha(raw))
+        expected = {bundle.SERVER + name for name in ('restore_security_store.py', 'santa_admission.py')}
+        self.assertEqual(set(files) - set(bundle.ADMIN_TRANSPORT_PATHS), expected)
+        for path in expected:
+            compile(files[path], path, 'exec')

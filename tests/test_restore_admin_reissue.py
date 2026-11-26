@@ -33,7 +33,7 @@ class AdminReissueTests(unittest.TestCase):
         self.directory = self.enterContext(TemporaryDirectory())
         self.key = b'k' * 32
         self.quarantine_census = 'c' * 64
-        self.read_target = self.enterContext(patch.object(reissue.authority, 'read_target', return_value=target))
+        self.read_target = self.enterContext(patch.object(journal.authority, 'read_target', return_value=target))
         self.collect = self.enterContext(patch.object(reissue.census, 'collect', return_value=SimpleNamespace(
             receipt=dict(complete_supported_data=True, fingerprint=self.quarantine_census))))
 

@@ -24,4 +24,8 @@ Describe 'Santa restore authority planning' {
         $result = & python -m unittest discover -s $PSScriptRoot -p test_restore_admin_transport.py 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
     }
+    It 'guards restored security-store initialization with the committed quarantine' -Skip:$IsWindows {
+        $result = & python -m unittest discover -s $PSScriptRoot -p test_restore_security_store.py 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
+    }
 }

@@ -118,6 +118,16 @@ def inspect(directory, *, target, archive_sha256, generation, fingerprint_key):
         raise JournalRejected('Restore journal status unverified; retain it and inspect privately') from None
 
 
+def committed_quarantine(fd, binding, key, target, observer, registry):
+    """Require the live isolated database to match its committed quarantine."""
+    done = inspect_records(fd, binding, key)['quarantine']['done']
+    require(done is not None and authority.read_target(observer) == target)
+    observed = census.collect(observer, registry, fingerprint_key=key)
+    require(observed.receipt['complete_supported_data'] is True
+            and hmac.compare_digest(observed.receipt['fingerprint'], done['census']))
+    return done
+
+
 def run(writer, observer, registry, *, directory, target, archive_sha256, generation, fingerprint_key,
         stage, expected, dispositions, options, limits=census.Limits(), plan_digest=None, before_apply=None):
     """Preview one named step, or apply its reviewed digest under a durable intent.
