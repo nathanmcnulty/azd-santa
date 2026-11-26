@@ -260,8 +260,20 @@ Journal status reports `pending`, `committed`, or `inspect` for each step. An
 intent without a valid committed record requires private inspection of the
 isolated database, even when an adapter reported an error. Keep the journal
 and original archive during inspection. The journal never enables activation.
-The guided operator command, external authorization, service-generation
-binding and replacement identity enrollment still require implementation.
+Recovery tooling bundle v5 includes the private census review handoff. The
+reviewer exports the complete dispositions and keyed census fingerprint,
+bound to the exact target, archive, generation and step. Share the document
+privately and deliver its SHA-256 through a separately trusted channel.
+The launcher compares the document and a fresh census before requesting a
+preview. An apply requires the preview digest and a positive current
+authorization check for that exact review and operation before journal intent.
+The document carries no database rows or credentials. A matching digest only
+establishes the integrity of the selected review. The launcher must obtain the
+expected digest and current authorization from outside the backup.
+
+The public guided operator command, live external authorization adapter,
+service-generation binding and replacement identity enrollment still require
+implementation.
 
 ## Required negative, preservation and fault tests
 
