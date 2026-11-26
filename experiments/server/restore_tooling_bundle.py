@@ -49,11 +49,14 @@ JOB_SCOPE = 'azd-santa-restore-tooling-bundle-v8'
 JOB_PATHS = tuple(sorted((*GUEST_PATHS, SERVER + 'restore_guest_job.py')))
 INPUT_SCOPE = 'azd-santa-restore-tooling-bundle-v9'
 INPUT_PATHS = tuple(sorted((*JOB_PATHS, SERVER + 'restore_sealed_inputs.py')))
+BLOB_SCOPE = 'azd-santa-restore-tooling-bundle-v10'
+BLOB_PATHS = tuple(sorted((*INPUT_PATHS, SERVER + 'restore_input_blob.py')))
 INVENTORIES = {SCOPE: PATHS, AUTHORITY_SCOPE: AUTHORITY_PATHS, REWRAP_SCOPE: REWRAP_PATHS,
                JOURNAL_SCOPE: JOURNAL_PATHS, REVIEW_SCOPE: REVIEW_PATHS, ARM_SCOPE: ARM_PATHS,
-               GUEST_SCOPE: GUEST_PATHS, JOB_SCOPE: JOB_PATHS, INPUT_SCOPE: INPUT_PATHS}
+               GUEST_SCOPE: GUEST_PATHS, JOB_SCOPE: JOB_PATHS, INPUT_SCOPE: INPUT_PATHS,
+               BLOB_SCOPE: BLOB_PATHS}
 VERSIONS = {1: SCOPE, 2: AUTHORITY_SCOPE, 3: REWRAP_SCOPE, 4: JOURNAL_SCOPE, 5: REVIEW_SCOPE, 6: ARM_SCOPE,
-            7: GUEST_SCOPE, 8: JOB_SCOPE, 9: INPUT_SCOPE}
+            7: GUEST_SCOPE, 8: JOB_SCOPE, 9: INPUT_SCOPE, 10: BLOB_SCOPE}
 MAX_FILE = 256 * 1024
 MAX_BUNDLE = 2 * 1024**2
 COMMIT = r'[0-9a-f]{40}'

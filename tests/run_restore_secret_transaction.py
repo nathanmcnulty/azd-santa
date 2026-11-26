@@ -1,9 +1,13 @@
 """Verify a populated database rewrap and rollback on the sealed PostgreSQL fixture."""
+import base64
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
+import io
 from pathlib import Path
 import sys
+from unittest.mock import patch
+from urllib.parse import parse_qs, urlencode, urlsplit
 import zlib
 
 from cryptography.fernet import Fernet
@@ -16,6 +20,8 @@ import restore_guest_job as guest_job
 import restore_guest_readback as guest
 import restore_arm_authorization as arm
 import restore_sealed_inputs as sealed
+import blob_retention as blob
+from restore_input_blob import PacketTransfer
 import restore_quarantine_journal as journal
 import restore_secret_transaction as transaction
 import run_restore_authority_transaction as fixture
@@ -85,6 +91,82 @@ def reject(call, error_type=transaction.TransactionRejected):
     except error_type as error:
         return error
     raise AssertionError('Expected rewrap to reject the attempt')
+
+
+def transfer_packet(root, job, packet, stage):
+    selected = job.selection
+    source_id = selected.vm_id.split('/providers/')[0]
+    subnet = source_id + '/providers/Microsoft.Network/virtualNetworks/santa/subnets/host'
+    account = (f'/subscriptions/{selected.subscription}/resourceGroups/rg-fixture-store'
+               '/providers/Microsoft.Storage/storageAccounts/santafixture')
+    target = blob.SelectedTarget(selected.vm_id, selected.vm_instance_id, subnet, selected.region)
+    store = blob.Store(blob.Blob(account, 'e' * 32), selected.region, (subnet,), selected.tenant)
+    transfer = PacketTransfer(job, store, target, sealed.sha(packet), len(packet))
+    uploads = root / ('upload-' + stage)
+    uploads.mkdir(mode=0o700)
+    now = datetime.now(timezone.utc)
+
+    def token(permission):
+        return urlencode(dict(sv='2023-11-03', sr='b', sp=permission, spr='https',
+                              st=(now - timedelta(minutes=1)).strftime('%Y-%m-%dT%H:%M:%SZ'),
+                              se=(now + timedelta(minutes=4)).strftime('%Y-%m-%dT%H:%M:%SZ'),
+                              sig=base64.b64encode(b'x' * 32).decode()))
+
+    class Connection:
+        calls = []
+        corrupt = False
+        unknown = stage == 'rewrap'
+
+        def request(self, method, path, body=None, headers=None):
+            parsed = urlsplit(path)
+            assert parsed.path == f'/native-captures/{store.blob.operation}/restore-inputs/{sealed.sha(packet)}.sealed'
+            assert parse_qs(parsed.query)['sp'] == ['c' if method == 'PUT' else 'r']
+            self.calls.append(method)
+            self.method = method
+            if method == 'PUT':
+                assert (uploads / sealed.sha(packet) / 'intent.json').is_file()
+                assert headers['If-None-Match'] == '*'
+                self.data = b''.join(iter(lambda: body.read(8192), b''))
+                assert self.data == packet and int(headers['Content-Length']) == len(packet)
+                assert headers['Content-MD5'] == base64.b64encode(
+                    hashlib.md5(self.data, usedforsecurity=False).digest()).decode()
+                if self.unknown:
+                    raise TimeoutError('synthetic lost PUT reply')
+
+        def getresponse(self):
+            data = b'' if self.method == 'PUT' else self.data
+            if self.corrupt:
+                data = data[:-1] + bytes([data[-1] ^ 1])
+            response = io.BytesIO(data)
+            response.status = 201 if self.method == 'PUT' else 200
+            response.getheader = lambda name: {'Content-Length': str(len(data)), 'ETag': '"fixture"'}[name]
+            return response
+
+        def close(self):
+            pass
+
+    connection = Connection()
+
+    def observed_boot(observed):
+        assert observed == target
+        return job.verified_boot_id
+
+    with patch.object(blob.BlobHttp, 'connection', return_value=connection):
+        reject(lambda: transfer.upload(packet, token('r'), uploads), blob.RetentionRejected)
+        assert not connection.calls
+        if connection.unknown:
+            reject(lambda: transfer.upload(packet, token('c'), uploads), blob.RetentionRejected)
+        else:
+            assert transfer.upload(packet, token('c'), uploads)['uploaded']
+        reject(lambda: transfer.upload(packet, token('c'), uploads), blob.RetentionRejected)
+        reject(lambda: transfer.download(token('r'), _boot=lambda _: selected.subscription), blob.RetentionRejected)
+        assert connection.calls == ['PUT']
+        connection.corrupt = True
+        reject(lambda: transfer.download(token('r'), _boot=observed_boot), blob.RetentionRejected)
+        connection.corrupt = False
+        result = transfer.download(token('r'), _boot=observed_boot)
+        assert connection.calls == ['PUT', 'GET', 'GET']
+        return result
 
 
 def run(root):
@@ -194,6 +276,7 @@ def run(root):
             assert KEY not in packet and inputs['review_bytes'] not in packet
             if stage == 'rewrap':
                 assert OLD['old'].passwords[0].encode() not in packet
+            packet = transfer_packet(root, selected_job, packet, stage)
             approve = lambda record: authorized(stage, baseline, preview, bound, record)
 
             def receive(current, data, digest):
@@ -330,6 +413,7 @@ def run(root):
         print('Verified private review handoff, stale census rejection and authorization before database intent')
         print('Verified the guest-bound job committed both steps and rejected a mismatched VM, boot, operator or database')
         print('Verified sealed input delivery to both database steps, including wrong recipient and replay rejection')
+        print('Verified exact-object Blob transport to both database steps with ambiguous upload and tamper checks')
         print('Verified transactional rewrap, late rollback, unchanged Terraform bytes and exact JSONB numbers')
     finally:
         connections.close_all()
