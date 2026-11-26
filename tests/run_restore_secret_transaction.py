@@ -474,7 +474,15 @@ def run(root):
             assert recipient_key.exists()
             unchanged(baseline)
             received.write_bytes(packet)
-            result = apply_file(receipt)
+            with patch.object(guest_job.Job, 'confirm', return_value=approve):
+                raw = operator_approval.apply_request(selected_job, host, offer, plan, receipt, signing_key=signer,
+                    fingerprint_key=KEY, offer_sha256=pin, plan_sha256=plan_sha,
+                    approved_plan_digest=selection['plan_digest'], public_key_sha256=public_pin)
+            try:
+                result = run_worker(json.loads(raw))
+            finally:
+                writer.ensure_connection()
+                observer.ensure_connection()
             assert result['plan_sha256'] == selection['plan_digest']
             assert not recipient_key.exists() and (recipient_key.parent / 'consumed.json').is_file()
             reject(lambda: apply_file(receipt), sealed.InputRejected)

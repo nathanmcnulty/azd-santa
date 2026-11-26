@@ -310,6 +310,22 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Compute/virtualMachines/read",
+      "principal": "Explicit selected cached Azure operator",
+      "phase": "runtime",
+      "feature": "restore-signed-worker-request",
+      "defaultEnabled": false,
+      "scope": "One selected recovery VM and one reviewed database step",
+      "rationale": "The opt-in operator command performs cached ARM account and VM readback before signing the reviewed worker request with the locally supplied key. It uses the earlier verified packet receipt and the pinned guest offer. It does not invoke Run Command, grant roles, or execute the worker.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/server/restore_operator_approval.py", "sha256": "2c2f2c833a70b1457c974939ba4ea64006b01809b5a404e1495edd26396c87ff" },
+        { "path": "experiments/server/restore_arm_authorization.py", "sha256": "77fcdb45dff798727219380cb65a3371459ec525ea4cf033f9a3c5b0185a46df" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
       "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/publicIPAddresses/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/networkSecurityGroups/read",
       "principal": "Explicit selected cached Azure CLI endpoint observer (existing rights only)",
       "phase": "deployment",

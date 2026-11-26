@@ -431,6 +431,19 @@ import. The launcher checks that the same socket is present throughout the
 worker invocation. Keep that daemon's storage and socket separate from the
 existing application daemon.
 
+The operator-side `restore_operator_approval.py` command in the reviewed
+v21 tooling assembles the worker's canonical apply request. Supply the
+selected store and job, the worker's offer reply, the packet transport plan
+and its verified receipt. Pin the offer SHA-256, transport plan SHA-256,
+reviewed database plan digest and operator public-key SHA-256 separately.
+The trusted operator launcher passes the Ed25519 seed and the census key as
+two consecutive 32-byte values on standard input. The command verifies the
+selection, confirmation and fresh cached ARM readback, then emits the signed
+request on standard output. The request contains the signed approval and
+public key. Keep the local signing material in the operator process and the
+request in the trusted guest transport. The command leaves transmission and
+execution to the recovery workflow.
+
 Azure delivery of signed database requests, live database execution,
 object cleanup, service-generation binding and replacement
 identity enrollment remain open.

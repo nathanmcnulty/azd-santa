@@ -636,10 +636,14 @@ The Redis binary, RabbitMQ Erlang runtime and Elasticsearch bundled JVM ran
 in network-isolated containers. All five images matched the authenticated
 backup inventory. Their encrypted archives total 1,344,756,710 bytes. The
 Elasticsearch retry preserved the existing Docker containers and successful
-recovery stores while reclaiming data from a failed test store. Independently
-retained tooling distribution, integrated startup and signed database
-recovery remain open.
+recovery stores while reclaiming data from a failed test store. The five
+images were then consolidated into one private store. Zentral connected to
+the restored database and Elasticsearch snapshot, verified a fresh Redis
+generation and acknowledged a RabbitMQ test message without starting an
+application listener. Independently retained tooling distribution and signed
+database recovery remain open.
 [Complete image-set evidence](https://github.com/nathanmcnulty/azd-santa/issues/97#issuecomment-7189943210)
+[Integrated recovery evidence](https://github.com/nathanmcnulty/azd-santa/issues/97#issuecomment-7190430145)
 
 [action-run-command]: https://learn.microsoft.com/en-us/azure/virtual-machines/linux/run-command
 [docker-image-inspect]: https://docs.docker.com/reference/cli/docker/image/inspect/
