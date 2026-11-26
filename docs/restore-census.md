@@ -268,5 +268,26 @@ archived broker user was absent from its user inventory.
 The verifier removed the network-disabled containers and memory-backed data.
 Azure confirmed VM deallocation. The receipt SHA-256 is
 `b38ea8931ed765b7ff65601105f8e25842bdbc5009ddf4c515f9f7eef7e9b533`.
-Application startup against the new stores and current-authority reissue
-remain open.
+The new stores were subsequently used by the integrated dependency check below.
+
+## Integrated dependency check from the retained pilot archive
+
+The original lab VM ran the exact archived Zentral image in a non-serving
+Django process. PostgreSQL supplied the shared loopback-only network namespace
+and exposed the restored database over a private Unix socket. The process used
+a fresh signing key, a fresh Redis identity, and newly generated RabbitMQ
+credentials. Elasticsearch restored the retained native snapshot from a
+read-only repository copy within the same namespace.
+
+In one run, Django 5.2.18 registered 121 models and read 236 migration records
+with PostgreSQL transactions set to read-only. The application initialized and
+verified a fresh Redis generation through its security-store client. Kombu
+published, received, and acknowledged one synthetic RabbitMQ message. The
+application's Elasticsearch client counted 26 documents in the restored index.
+
+The application stayed non-serving throughout the trial. The runner removed
+all temporary containers and memory-backed data, and Azure confirmed VM
+deallocation. The receipt SHA-256 is
+`6d80351ff26901741ca7ce09c8395b673573cd932f5fb237bd965c0b84adad27`.
+Current-authority reissue, HTTP and worker activation, and native device
+acceptance remain open.
