@@ -171,9 +171,10 @@ comparison rejects the changed state. This covers the encrypted archive path
 and physical PostgreSQL restore for the fixture. A fresh Elasticsearch node
 registers the quarantined repository read-only and restores the selected
 event index and alias. It checks both synthetic events and confirms the source
-cluster's template was excluded. A separate lab run authenticated and extracted
-the retained pilot archive into volatile quarantine. Restoration of the
-archive, full stack verification and current authority remain open.
+cluster's template was excluded. Separate lab runs authenticated and extracted
+the retained pilot archive into volatile quarantine and started its archived
+PostgreSQL cluster from a disposable copy. See the pilot-specific evidence
+below for the database observations and remaining restore work.
 [PostgreSQL file-system-level backup](https://www.postgresql.org/docs/18/backup-file.html)
 [Elasticsearch snapshot restore API](https://www.elastic.co/docs/api/doc/elasticsearch/v9/operation/operation-snapshot-restore)
 
@@ -192,3 +193,23 @@ empty broker starts with a fresh cookie and login. It rejects the historical
 password and exposes neither the historical user nor the virtual host or queue.
 Full application authority reissue remains open.
 [RabbitMQ backup and restore](https://www.rabbitmq.com/docs/backup)
+
+## PostgreSQL restore from the retained pilot archive
+
+The independent verifier authenticated and decrypted the retained archive, then
+matched its compatibility record to the local pinned PostgreSQL 18.6 image.
+`pg_controldata` confirmed a cleanly shut down source cluster and
+`pg_checksums --check` verified the archived data pages before startup.
+
+The verifier started PostgreSQL directly on a disposable memory-backed copy
+with fresh configuration, Docker networking disabled and a private Unix socket.
+A read-only SQL transaction matched the running cluster identifier to the
+archived identifier and read the `zentral` database. It observed 121 public
+tables, including 24 Santa tables, and 236 Django migration records, including
+51 Santa records. The test checked a clean shutdown, removed the containers and
+volatile copies, and verified Azure VM deallocation. The receipt SHA-256 is
+`04ba6c70d32e3094b0f8b8ab684badba82f03ebbea4fb5d5a7b4ea4e7a0d49f7`.
+
+The archived database can start in isolation and return catalog and migration
+records. Full schema and row comparison, application services, native
+Elasticsearch restore, and current-authority reconciliation remain open.
