@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 
 import blob_retention as blob
 import restore_census_review as review
-from restore_packet_operator import delivery_binding, selected_job
+from restore_packet_operator import LOCAL_SCOPE, SCOPE as BLOB_SCOPE, delivery_binding, selected_job
 from restore_quarantine_journal import is_digest
 import restore_sealed_inputs as sealed
 from retained_image_archive import parse
@@ -101,14 +101,19 @@ def main():
     for name in ('selection', 'job', 'operation', 'offer-reply', 'offer-sha256', 'plan', 'plan-sha256',
                  'receipt', 'approved-plan-digest', 'public-key-sha256'):
         parser.add_argument('--' + name, required=True)
+    parser.add_argument('--local-packet', action='store_true')
     args = parser.parse_args()
     try:
         selection, job, sender_boot = selected_job(read_bytes(args.selection, 8192), read_bytes(args.job, 8192),
                                                   args.operation)
         plan = parse(read_bytes(args.plan, 8192))
         receipt = parse(read_bytes(args.receipt, 8192))
-        require(plan['account_id'] == selection.store.blob.account_id and plan['operation'] == args.operation
-                and plan['sender'] == selection.source.instance_id and plan['sender_boot'] == sender_boot)
+        if args.local_packet:
+            require(plan['scope'] == LOCAL_SCOPE)
+        else:
+            require(plan['scope'] == BLOB_SCOPE and plan['account_id'] == selection.store.blob.account_id
+                    and plan['operation'] == args.operation and plan['sender'] == selection.source.instance_id
+                    and plan['sender_boot'] == sender_boot)
         reply = parse(read_bytes(args.offer_reply, 8192))
         require(set(reply) == {'scope', 'state', 'stage', 'offer', 'offer_sha256', 'request_sha256'}
                 and reply['scope'] == WORKER_SCOPE and reply['state'] == 'offered'

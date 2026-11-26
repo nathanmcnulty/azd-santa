@@ -304,7 +304,7 @@
       "evidenceState": "code",
       "evidence": [
         { "path": "experiments/server/restore_carrier_command.py", "sha256": "58dc7f6a40e881c55090126479ef959b6cc96c86e6b65d49ca6f48099b4290cf" },
-        { "path": "experiments/server/restore_packet_operator.py", "sha256": "bb6a4a444e6d6e27a9142d3ff2bec8954d3223db49923e5969262f07f036020a" }
+        { "path": "experiments/server/restore_packet_operator.py", "sha256": "f705f564f166322bc36b4f14883e0e4b6a3e778eabfb78c3a77eea84c33f86f4" }
       ]
     },
     {
@@ -319,7 +319,7 @@
       "rationale": "The opt-in operator command performs cached ARM account and VM readback before signing the reviewed worker request with the locally supplied key. It uses the earlier verified packet receipt and the pinned guest offer. It does not invoke Run Command, grant roles, or execute the worker.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/restore_operator_approval.py", "sha256": "2c2f2c833a70b1457c974939ba4ea64006b01809b5a404e1495edd26396c87ff" },
+        { "path": "experiments/server/restore_operator_approval.py", "sha256": "b65556433d7d3419844665a452e6b11db535aa5ce0eb76a9c68b660fb04cb4b2" },
         { "path": "experiments/server/restore_arm_authorization.py", "sha256": "77fcdb45dff798727219380cb65a3371459ec525ea4cf033f9a3c5b0185a46df" }
       ]
     },

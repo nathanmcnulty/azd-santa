@@ -457,6 +457,15 @@ that digest in the subsequent offer and approval. Keep the preview input
 local to the recovery host because it contains the private census key and
 stage options.
 
+When the private review and stage options are already on the recovery
+VM, seal the packet there to the worker's offer and use
+`restore_packet_operator.stage_local`. It verifies the selected VM and boot,
+creates an exclusive private packet directory, and reads the ciphertext
+back before returning the local plan and receipt. Select `--local-packet`
+when signing that receipt. The same operator approval and packet integrity
+checks apply, and the local receipt records no Blob upload. The Blob
+delivery remains available for a packet staged on a separate sender.
+
 The operator-side `restore_operator_approval.py` command in the reviewed
 v21 tooling assembles the worker's canonical apply request. Supply the
 selected store and job, the worker's offer reply, the packet transport plan
