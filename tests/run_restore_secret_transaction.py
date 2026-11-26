@@ -5,7 +5,9 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 from unittest.mock import patch
@@ -25,6 +27,7 @@ import restore_guest_readback as guest
 import restore_operator_approval as operator_approval
 import restore_packet_operator as packet_operator
 import restore_tooling_bundle as tooling
+import restore_worker as worker
 import restore_arm_authorization as arm
 import restore_sealed_inputs as sealed
 import blob_retention as blob
@@ -272,10 +275,60 @@ def run(root):
         secret_options = dict(expected_contexts=CONTEXTS, old_material=OLD, new_material=NEW, targets=TARGETS)
         repo = Path(__file__).resolve().parents[1]
         commit = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
-        bundle = tooling.build(repo, commit, version=19)
+        bundle = tooling.build(repo, commit, version=20)
         carrier_root = root / 'carrier'
         carrier_root.mkdir(mode=0o700)
         recipient_root = root / 'recipients'
+        workspace = root / 'signed-worker'
+        workspace.mkdir(mode=0o700)
+        config_path = workspace / 'base.json'
+        # Test the guarded mount with a fixture-only socket and use the real
+        # PostgreSQL socket for the simulated container's command.
+        config_path.write_bytes(b'{}')
+        config_path.chmod(0o600)
+        socket_dir = workspace / 'socket'
+        socket_dir.mkdir(mode=0o750)
+        socket_path = socket_dir / '.s.PGSQL.5432'
+        with socket.socket(socket.AF_UNIX) as endpoint:
+            endpoint.bind(str(socket_path))
+        socket_path.chmod(0o770)
+        if os.getegid() == 0:
+            os.chown(socket_dir, -1, 65534)
+            os.chown(socket_path, -1, 65534)
+        worker_journal = workspace / 'journal'
+        worker_journal.mkdir(mode=0o700)
+
+        def run_worker(request):
+            raw = blob.encoded(request)
+            is_apply = request['action'] == 'apply'
+            image = 'sha256:' + 'f' * 64
+
+            def docker(args, **options):
+                assert tuple(args[:3]) == worker.DOCKER
+                if args[3:5] == ['image', 'inspect']:
+                    return subprocess.CompletedProcess(args, 0, (image + ' linux amd64 null').encode())
+                assert args[3] == 'run' and args[args.index('--network') + 1] == 'none'
+                assert '--read-only' in args and args[args.index('--cap-drop') + 1] == 'ALL'
+                assert '--privileged' not in args and options['input'] == raw
+                mounts = [args[index + 1] for index, value in enumerate(args) if value == '--mount']
+                assert len(mounts) == (6 if is_apply else 2)
+                assert all('/var/run/docker.sock' not in value for value in mounts)
+                if is_apply:
+                    assert f'type=bind,source={socket_dir},target={target.socket_dir},readonly' in mounts
+                    picked = request['plan']['receiver_capsule']
+                    assert any(f'/{picked},readonly' in value for value in mounts)
+                    assert mounts[-2] == f'type=bind,source={worker_journal},target={worker.WORKER_JOURNAL}'
+                tools = Path(mounts[0].split(',')[1].removeprefix('source='))
+                read_boot = database_command.host_receipt(tools / 'host.json')
+                reply = database_command.dispatch(raw, directory=directory if is_apply else None,
+                    carrier_root=carrier_root, recipient_root=recipient_root, _boot=read_boot)
+                return subprocess.CompletedProcess(args, 0, blob.encoded(reply) + b'\n')
+
+            with patch.object(worker, 'WORKER_SOCKET', target.socket_dir):
+                return worker.launch(raw, workspace=workspace, tooling=bundle, commit=commit,
+                    tooling_sha256=sealed.sha(bundle), image=image,
+                    config_sha256=sealed.sha(config_path.read_bytes()) if is_apply else None,
+                    _boot=worker_boot, _docker=docker, _recipient_root=recipient_root, _carrier_root=carrier_root)
 
         def observe():
             return census.collect(observer, apps, fingerprint_key=KEY)
@@ -327,8 +380,7 @@ def run(root):
             job_input = dict(selection=asdict(selected_job.selection), target=asdict(selected_job.target),
                              boot_id=selected_job.verified_boot_id, **bound)
             frame = dict(scope=database_command.SCOPE, job=job_input, host=asdict(host), step=bound_stage)
-            offered = database_command.dispatch(blob.encoded(dict(**frame, action='offer', public_key_sha256=public_pin)),
-                                                recipient_root=state['root'], _boot=state['_boot'])
+            offered = run_worker(dict(**frame, action='offer', public_key_sha256=public_pin))
             assert offered['state'] == 'offered'
             offer = base64.b64decode(offered['offer'], validate=True)
             pin = sealed.sha(offer)
@@ -388,13 +440,12 @@ def run(root):
                                receipt=result, approval=base64.b64encode(signed).decode(),
                                public_key=base64.b64encode(key).decode())
                 try:
-                    return database_command.dispatch(blob.encoded(request), carrier_root=carrier_root,
-                        directory=directory, recipient_root=state['root'], _boot=state['_boot'])
+                    return run_worker(request)
                 finally:
                     writer.ensure_connection()
                     observer.ensure_connection()
 
-            reject(lambda: apply_file(receipt, '0' * 64), operator_approval.ApprovalRejected)
+            reject(lambda: apply_file(receipt, '0' * 64), blob.RetentionRejected)
             reject(lambda: apply_file(receipt, key=other_signer.public_key().public_bytes_raw(),
                                       signed=other_approval), operator_approval.ApprovalRejected)
             reject(lambda: apply_file({**receipt, 'upload_confirmed': not receipt['upload_confirmed']}),
@@ -546,6 +597,7 @@ def run(root):
         print('Verified signed operator approval before both isolated PostgreSQL writes')
         print('Reopened and consumed boot-local recipients for both PostgreSQL writes')
         print('The guest command applied both signed stages through its local Django connections')
+        print('Verified network-isolated worker arguments and both signed requests against PostgreSQL')
         print('Verified transactional rewrap, late rollback, unchanged Terraform bytes and exact JSONB numbers')
     finally:
         connections.close_all()

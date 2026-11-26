@@ -80,7 +80,7 @@ def database_connections(job):
         writer.close()
 
 
-def dispatch(raw, *, directory=None, recipient_root=RECIPIENT_ROOT, carrier_root=None, _boot=boot):
+def parse_request(raw):
     request = checked_document(raw, sha(raw), MAX_REQUEST)
     action = request['action']
     blob.need(request['scope'] == SCOPE and action in ('offer', 'apply'))
@@ -92,6 +92,12 @@ def dispatch(raw, *, directory=None, recipient_root=RECIPIENT_ROOT, carrier_root
     host = blob.SelectedTarget(**request['host'])
     step = request['step']
     blob.need(set(step) == {'stage', 'binding', 'review_sha256', 'plan_digest'} and step['stage'] in STAGES)
+    return request, job, host
+
+
+def dispatch(raw, *, directory=None, recipient_root=RECIPIENT_ROOT, carrier_root=None, _boot=boot):
+    request, job, host = parse_request(raw)
+    action, step = request['action'], request['step']
     reply = dict(scope=SCOPE, stage=step['stage'], request_sha256=sha(raw))
     if action == 'offer':
         blob.need(directory is None)
