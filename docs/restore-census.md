@@ -144,10 +144,17 @@ same row and migration observations and verifies that a disabled subscription
 blocks collection. The catalog check counts subscriptions using their database
 ID. The runtime role has no access to the connection-string column.
 [PostgreSQL subscription catalog](https://www.postgresql.org/docs/18/catalog-pg-subscription.html)
-The database
-and input data are disposable. The complete Zentral app registry and restored
-application data still require separate qualification, along with administrator
-and device reissue and native postflight.
+The database and input data are disposable.
+
+A separate lab run used the pinned Zentral core image and PostgreSQL 18.6.
+Django 5.2.18 applied the image's migrations to a fresh database reachable
+only through a private Unix socket. The census covered all nine configured apps,
+121 registered models and 227 physical data relations, including sequences.
+The census found no blockers in this fixture, a repeated observation matched,
+and all eight authority table checks passed. The comparison used a baseline
+and dispositions generated within the fixture. Independent coverage review,
+referenced definitions, restore of the retained pilot archive, administrator and
+device reissue, and native postflight still require evidence.
 
 The Linux fixture also stops the synthetic cluster and checks the clean
 shutdown through `pg_controldata`. It mounts the source volume read-only and
