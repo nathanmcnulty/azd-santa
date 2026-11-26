@@ -622,6 +622,16 @@ existing Docker daemon still reported its original eight containers. Full
 dependency retention and signed database recovery remain open.
 [Live recovery evidence](https://github.com/nathanmcnulty/azd-santa/issues/97#issuecomment-7186596155)
 
+A PostgreSQL trial verified all 168,561,762 bytes of the encrypted Azure Blob
+copy. The recovery VM imported the pinned OCI index in 15 seconds and ran
+the PostgreSQL 18.6 binary in a network-isolated container. A new boot
+reopened the private image store and used the recovered image to start the
+cluster from the retained application backup. Page checksums passed, and
+the expected migration and table counts were present over the Unix socket.
+The cluster shut down cleanly. The recovery containers and volatile
+quarantine were removed.
+[Database recovery evidence](https://github.com/nathanmcnulty/azd-santa/issues/97#issuecomment-7188335571)
+
 [action-run-command]: https://learn.microsoft.com/en-us/azure/virtual-machines/linux/run-command
 [docker-image-inspect]: https://docs.docker.com/reference/cli/docker/image/inspect/
 
