@@ -219,3 +219,10 @@ class BundleTests(unittest.TestCase):
         path = bundle.SERVER + 'restore_admin_approval.py'
         self.assertEqual(set(files) - set(bundle.ADMIN_ACCOUNT_PATHS), {path})
         compile(files[path], path, 'exec')
+
+    def test_admin_transport_extends_the_signed_approval_inventory(self):
+        raw = bundle.build(ROOT, self.commit, version=26)
+        files = bundle.verify(raw, commit=self.commit, bundle_sha256=bundle.sha(raw))
+        path = bundle.SERVER + 'restore_admin_transport.py'
+        self.assertEqual(set(files) - set(bundle.ADMIN_APPROVAL_PATHS), {path})
+        compile(files[path], path, 'exec')
