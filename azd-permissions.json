@@ -300,10 +300,10 @@
       "feature": "restore-packet-carrier-command",
       "defaultEnabled": false,
       "scope": "Exact selected sender or receiver lab VM, boot, reviewed tooling and encrypted packet",
-      "rationale": "The optional command stages reviewed source in guest-private temporary storage and passes only a public offer and encrypted SAS through Run Command. Blob capability issuance is separately scoped. It grants no permissions and does not connect to a restored database or activate services.",
+      "rationale": "The optional command stages reviewed source and encrypted packet bytes in guest-private temporary storage. It passes the public offer and encrypted SAS through Run Command. Blob capability issuance is separately scoped. It grants no permissions and does not connect to a restored database or activate services.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/restore_carrier_command.py", "sha256": "420938816cdbae479bc556c01cc0f4141167d23b5ce6b4a1510d97a153b008db" }
+        { "path": "experiments/server/restore_carrier_command.py", "sha256": "8f9c3f2551657640dc3876450cad1ef1f1ba1115bbc560347a8f843494db33c7" }
       ]
     },
     {
