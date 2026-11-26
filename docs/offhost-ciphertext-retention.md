@@ -618,8 +618,7 @@ The selected Azure recovery VM verified the encrypted Zentral archive and
 loaded the exact pinned linux/amd64 image into a dedicated containerd-backed
 Docker daemon in 48 seconds. A separate network-isolated container imported
 Django and cryptography successfully. The recovery daemons stopped and the
-existing Docker daemon still reported its original eight containers. Full
-dependency retention and signed database recovery remain open.
+existing Docker daemon still reported its original eight containers.
 [Live recovery evidence](https://github.com/nathanmcnulty/azd-santa/issues/97#issuecomment-7186596155)
 
 A PostgreSQL trial verified all 168,561,762 bytes of the encrypted Azure Blob
@@ -631,6 +630,16 @@ the expected migration and table counts were present over the Unix socket.
 The cluster shut down cleanly. The recovery containers and volatile
 quarantine were removed.
 [Database recovery evidence](https://github.com/nathanmcnulty/azd-santa/issues/97#issuecomment-7188335571)
+
+The recovery VM also verified and imported Redis, RabbitMQ and Elasticsearch.
+The Redis binary, RabbitMQ Erlang runtime and Elasticsearch bundled JVM ran
+in network-isolated containers. All five images matched the authenticated
+backup inventory. Their encrypted archives total 1,344,756,710 bytes. The
+Elasticsearch retry preserved the existing Docker containers and successful
+recovery stores while reclaiming data from a failed test store. Independently
+retained tooling distribution, integrated startup and signed database
+recovery remain open.
+[Complete image-set evidence](https://github.com/nathanmcnulty/azd-santa/issues/97#issuecomment-7189943210)
 
 [action-run-command]: https://learn.microsoft.com/en-us/azure/virtual-machines/linux/run-command
 [docker-image-inspect]: https://docs.docker.com/reference/cli/docker/image/inspect/
