@@ -103,6 +103,25 @@ def receipt(result, nonce, digest, *, scope=delivery.SCOPE):
     return value
 
 
+def build_script(exports, bootstrap, nonce):
+    script = ("set -eu\n" + exports + "python3 -I -B - 2>/dev/null <<'SANTA_IMAGE_PY'\n"
+              f"{bootstrap}SANTA_IMAGE_PY\nprintf '%s\\n' '{DONE}{nonce}'\n").encode('ascii')
+    blob.need(len(script) <= MAX_SCRIPT)
+    return script
+
+
+def submit_action(call, args, script, nonce, digest, seconds, *, scope):
+    with tempfile.TemporaryDirectory(prefix='santa-vm-command-') as folder:
+        path = Path(folder) / 'frame.sh'
+        blob.need(re.fullmatch(r'[A-Za-z0-9_ .:/\\~-]+', str(path)))
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, 'wb') as stream:
+            stream.write(script)
+        result = call(['vm', 'run-command', 'invoke', *args,
+                       '--command-id', 'RunShellScript', '--scripts', '@' + str(path)], seconds)
+    return receipt(result, nonce, digest, scope=scope)
+
+
 class SelectedVmCommand:
     """Send one bounded script to a VM after checking the cached account and resource."""
 
@@ -135,23 +154,10 @@ class SelectedVmCommand:
                   and vm['vmId'].lower() == self.target.instance_id and vm['location'] == self.target.region)
         return args
 
-    @staticmethod
-    def _script(exports, bootstrap, nonce):
-        script = ("set -eu\n" + exports + "python3 -I -B - 2>/dev/null <<'SANTA_IMAGE_PY'\n"
-                  f"{bootstrap}SANTA_IMAGE_PY\nprintf '%s\\n' '{DONE}{nonce}'\n").encode('ascii')
-        blob.need(len(script) <= MAX_SCRIPT)
-        return script
+    _script = staticmethod(build_script)
 
     def _submit(self, args, script, nonce, digest, seconds, *, scope=delivery.SCOPE):
-        with tempfile.TemporaryDirectory(prefix='santa-image-command-') as folder:
-            path = Path(folder) / 'frame.sh'
-            blob.need(re.fullmatch(r'[A-Za-z0-9_ .:/\\~-]+', str(path)))
-            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(descriptor, 'wb') as stream:
-                stream.write(script)
-            result = self._call(['vm', 'run-command', 'invoke', *args,
-                                 '--command-id', 'RunShellScript', '--scripts', '@' + str(path)], seconds)
-        return receipt(result, nonce, digest, scope=scope)
+        return submit_action(self._call, args, script, nonce, digest, seconds, scope=scope)
 
 
 class RunCommand(SelectedVmCommand):

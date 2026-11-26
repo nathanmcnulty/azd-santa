@@ -43,9 +43,13 @@ REVIEW_SCOPE = 'azd-santa-restore-tooling-bundle-v5'
 REVIEW_PATHS = tuple(sorted((*JOURNAL_PATHS, SERVER + 'restore_census_review.py')))
 ARM_SCOPE = 'azd-santa-restore-tooling-bundle-v6'
 ARM_PATHS = tuple(sorted((*REVIEW_PATHS, SERVER + 'restore_arm_authorization.py')))
+GUEST_SCOPE = 'azd-santa-restore-tooling-bundle-v7'
+GUEST_PATHS = tuple(sorted((*ARM_PATHS, SERVER + 'restore_guest_readback.py')))
 INVENTORIES = {SCOPE: PATHS, AUTHORITY_SCOPE: AUTHORITY_PATHS, REWRAP_SCOPE: REWRAP_PATHS,
-               JOURNAL_SCOPE: JOURNAL_PATHS, REVIEW_SCOPE: REVIEW_PATHS, ARM_SCOPE: ARM_PATHS}
-VERSIONS = {1: SCOPE, 2: AUTHORITY_SCOPE, 3: REWRAP_SCOPE, 4: JOURNAL_SCOPE, 5: REVIEW_SCOPE, 6: ARM_SCOPE}
+               JOURNAL_SCOPE: JOURNAL_PATHS, REVIEW_SCOPE: REVIEW_PATHS, ARM_SCOPE: ARM_PATHS,
+               GUEST_SCOPE: GUEST_PATHS}
+VERSIONS = {1: SCOPE, 2: AUTHORITY_SCOPE, 3: REWRAP_SCOPE, 4: JOURNAL_SCOPE, 5: REVIEW_SCOPE, 6: ARM_SCOPE,
+            7: GUEST_SCOPE}
 MAX_FILE = 256 * 1024
 MAX_BUNDLE = 2 * 1024**2
 COMMIT = r'[0-9a-f]{40}'

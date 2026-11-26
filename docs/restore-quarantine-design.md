@@ -279,10 +279,16 @@ a live read of the exact Santa pilot VM resource and instance ID. A mismatch,
 expired confirmation or failed read closes the attempt. The readback grants no
 permission and is insufficient to authorize VM execution on its own.
 
-The public guided command still needs to request confirmation, use the
-privileged VM execution transport, and verify the isolated database binding
-on that guest. Service-generation binding and replacement identity enrollment
-remain open.
+Recovery tooling bundle v7 includes `restore_guest_readback.py`. It plans
+offline by default. An explicit `--live` runs one fixed guest probe on the
+selected VM using existing Azure Action Run Command rights. The probe checks
+instance metadata and returns a nonce-bound Linux boot ID. The caller checks
+the Azure account and exact VM before and after the command. The receipt
+contains no secrets and does not include a database observation.
+
+The public guided command still needs to request confirmation and connect
+the guest boot receipt to the isolated database before execution.
+Service-generation binding and replacement identity enrollment remain open.
 
 The database adapters bind the target to the Linux boot ID and postmaster
 start time. A Unix-socket connection is required, and PostgreSQL must have no

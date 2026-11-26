@@ -249,7 +249,7 @@
       "evidence": [
         { "path": "experiments/server/private_arm_adapter.py", "sha256": "69a8abfdbe60e0826a7e000a092794ec4bb32425522fc06d41ce1f64da22e82f" },
         { "path": "experiments/server/retained_image_sas.py", "sha256": "da7c5ca8441ee3016ee2d4d02e2e865a656402fa151e00cd166bc8bea373badb" },
-        { "path": "experiments/server/retained_image_run_command.py", "sha256": "79dc452639b3c82285123d0b8a0272dd5019cfc34cbd98414870bc55ffa63bb0" },
+        { "path": "experiments/server/retained_image_run_command.py", "sha256": "18927077a537a7108feec02be1b408780a1d577b32f4a5850e9d795acf818091" },
         { "path": "experiments/server/retained_image_delivery.py", "sha256": "55807fd74ed3f4a67a00a103964e4b7a1b21516ca9b315b3eccc72059bcb0cab" },
         { "path": "experiments/server/retained_image_export.py", "sha256": "b59dea54ae45516acbd7b3d938b762cbdd0312d054dffe86f1d90b6abb8612e2" },
         { "path": "experiments/server/retained_image_export_job.py", "sha256": "745aa9f963c1526924babcc2adf9b0829048ec54763a1bec2746b5729fff52b6" },
@@ -259,6 +259,21 @@
         { "path": "experiments/server/retained_image_inventory_command.py", "sha256": "4f54cd13580d9da5d12d0eaf10eb1f2b557773a2d85c28155fcee63565913a2a" },
         { "path": "experiments/server/retained_image_operator.py", "sha256": "e2fecb1b530fbd1986e346100ead0f85191f60671935fd3cdac4bdaf39fea6aa" },
         { "path": "experiments/server/retained_image_runner.py", "sha256": "8033c367e86bc5452ad0c5d8815411cfa08483cbd5182d08ee62c32d3110a0d5" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "principal": "Explicit selected cached Azure operator",
+      "phase": "runtime",
+      "feature": "restore-guest-identity-readback",
+      "defaultEnabled": false,
+      "scope": "One explicitly selected Santa recovery lab VM resource and instance",
+      "rationale": "The default plan is offline. Explicit live mode invokes a single fixed guest probe using existing Run Command rights. It verifies Azure instance metadata and returns a nonce-bound Linux boot receipt. No grants, database access, secret transport or service activation are included.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/server/restore_guest_readback.py", "sha256": "1038421b2ef7f447bc0495507882ec96c93ebae3e30166c07dad0a7f10c1177e" }
       ]
     },
     {

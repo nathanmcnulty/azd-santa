@@ -18,6 +18,8 @@ import private_arm_adapter as arm
 import blob_retention as retention
 import restore_arm_authorization as restore_arm
 import restore_census_review as review
+import restore_guest_readback as guest
+from retained_image_run_command import DONE, RECEIPT
 from test_backup_store_selection import fixture, TENANT
 import test_blob_retention as retention_tests
 from test_blob_retention import Arm
@@ -86,6 +88,46 @@ class RestoreArmTests(unittest.TestCase):
         with patch.object(restore_arm.time, 'monotonic', return_value=400), self.assertRaises(arm.ArmRejected):
             expired(request)
         readback.assert_called_once_with(self.selection)
+
+    def test_guest_readback_submits_only_one_probe_and_requires_exact_completion(self):
+        for mode in ('complete', 'wrong_nonce', 'wrong_vm', 'account_drift'):
+            with self.subTest(mode=mode):
+                calls = []
+                nonce = 'f' * 32
+                script, digest = guest.operation(self.selection, nonce)
+                boot = '0' * 8 + '-0000-4000-8000-' + '0' * 12
+                reply = dict(scope=guest.SCOPE, batch_sha256=digest, vm_instance_id=self.selection.vm_instance_id,
+                             boot_id=boot)
+                if mode == 'wrong_vm':
+                    reply['vm_instance_id'] = self.selection.subscription
+                suffix = '0' * 32 if mode == 'wrong_nonce' else nonce
+                response = {'value': [{'code': 'ComponentStatus/StdOut/succeeded',
+                    'message': RECEIPT + retention.encoded(reply).decode() + '\n' + DONE + suffix + '\n'}]}
+
+                def cli(args, seconds):
+                    calls.append(args[:2])
+                    if args == self.account_command:
+                        if mode == 'account_drift' and len(calls) > 4:
+                            return {**self.context, 'user': {'type': 'user', 'name': 'other@example.com'}}
+                        return self.context
+                    if args == self.vm_command:
+                        return self.vm
+                    self.assertEqual(args[:-1], ['vm', 'run-command', 'invoke', '--subscription',
+                        self.selection.subscription, '--resource-group', self.group, '--name', 'vm-santa-lab',
+                        '--command-id', 'RunShellScript', '--scripts'])
+                    self.assertEqual(Path(args[-1][1:]).read_bytes(), script)
+                    self.assertEqual(seconds, 180)
+                    return response
+
+                with patch.object(guest.uuid, 'uuid4', return_value=Mock(hex=nonce)):
+                    if mode == 'complete':
+                        result = guest.readback(self.selection, _cli=cli)
+                        self.assertEqual(result, dict(scope=guest.SCOPE, vm_instance_id=self.selection.vm_instance_id,
+                                                      boot_id=boot))
+                    else:
+                        with self.assertRaises(arm.ArmRejected):
+                            guest.readback(self.selection, _cli=cli)
+                self.assertEqual(calls.count(['vm', 'run-command']), 1)
 
 
 class Protocol:

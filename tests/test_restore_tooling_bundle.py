@@ -127,6 +127,13 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(set(files) - set(bundle.REVIEW_PATHS), {path})
         compile(files[path], path, 'exec')
 
+    def test_guest_version_includes_the_privileged_readback_command(self):
+        raw = bundle.build(ROOT, self.commit, version=7)
+        files = bundle.verify(raw, commit=self.commit, bundle_sha256=bundle.sha(raw))
+        path = bundle.SERVER + 'restore_guest_readback.py'
+        self.assertEqual(set(files) - set(bundle.ARM_PATHS), {path})
+        compile(files[path], path, 'exec')
+
     def test_reads_commit_without_packaging_worktree_configuration_or_unapproved_blob(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
