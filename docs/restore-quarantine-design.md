@@ -412,6 +412,21 @@ Keep the restored PostgreSQL instance and worker isolated while using
 this command. An applied stage reports whether database rows
 changed and leaves application activation closed.
 
+Recovery tooling bundle v20 stages that command in a disposable Zentral
+worker using the selected local image ID. Run `restore_worker.py` on the
+recovery host with the canonical request on standard input and the
+reviewed tooling, commit, bundle digest and image selected explicitly.
+For apply, select an owner-private workspace with `base.json`, a
+`journal` directory and the isolated PostgreSQL `socket` directory.
+Supply the reviewed digest of `base.json` with `--config-sha256`.
+The database socket listens on the default port inside `/probe-socket`.
+Use mode 0750 on the socket directory and 0770 on the socket, both in
+the dedicated PostgreSQL group. The worker joins that group and mounts
+the socket directory read-only. The worker has no network, no Linux
+capabilities, and no application data mount. It receives only the reviewed
+tooling, fresh host receipt, private recipient state, and the specific
+configuration, carrier and journal needed for apply.
+
 Azure delivery of signed database requests, live database execution,
 object cleanup, service-generation binding and replacement
 identity enrollment remain open.
