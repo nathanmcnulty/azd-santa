@@ -331,8 +331,15 @@ loading it. Each request checks the selected Azure operator and VM on both
 sides and requires a fresh completion marker. The receiver writes verified
 ciphertext to a private, boot-local file and returns its digest and byte count.
 
-Staging the sender packet, the guided launcher, live transfer, object cleanup,
-service-generation binding and replacement identity enrollment remain open.
+Recovery tooling bundle v14 also stages sender ciphertext automatically.
+The command sends bounded packet parts after verifying the full input digest.
+The guest checks the expected boot, part order and digest, and publishes the
+file only after verifying its full size and SHA-256. The sender can still use
+an exact file already present inside the private network. Run Command stages
+one request per part, so transfer cost and time grow with packet size.
+
+The guided launcher, live transfer, object cleanup, service-generation
+binding and replacement identity enrollment remain open.
 [Live VM startup investigation](https://github.com/nathanmcnulty/azd-santa/issues/190)
 
 The database adapters bind the target to the Linux boot ID and postmaster

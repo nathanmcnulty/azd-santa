@@ -225,3 +225,60 @@ class ImageSasTests(unittest.TestCase):
                 self.assertEqual(receipt, result)
                 self.assertEqual((guest / 'packet.sealed').read_bytes(), ciphertext)
                 self.assertEqual((guest / 'packet.sealed').stat().st_mode & 0o777, 0o600)
+
+    def test_sender_stages_exact_ciphertext_within_run_command_limit(self):
+        import subprocess
+        root = Path(__file__).resolve().parents[1]
+        commit = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
+        raw = tooling.build(root, commit, version=14)
+        ciphertext = bytes(range(256)) * 200
+        transfer = replace(self.restore_transfer(), packet_sha256=sha(ciphertext), packet_bytes=len(ciphertext))
+        command = carrier.Command(self.selection, transfer, 'c', raw, commit=commit,
+                                  tooling_sha256=sha(raw), boot_id=transfer.job.verified_boot_id)
+        frames = []
+
+        def submit(_cli, args, script, _nonce, digest, _seconds, *, scope):
+            frame_line, part_line = script.splitlines()[1:3]
+            raw_frame = base64.b64decode(frame_line.split(b"'", 2)[1], validate=True)
+            part = base64.b64decode(part_line.split(b"'", 2)[1], validate=True)
+            frame = json.loads(raw_frame)
+            self.assertEqual(sha(raw_frame), digest)
+            self.assertEqual(scope, carrier.SCOPE)
+            self.assertEqual(frame['part_sha256'], sha(part))
+            self.assertLessEqual(len(script), 64 * 1024)
+            self.assertEqual(args[args.index('--resource-group') + 1], self.selection.source.vm_id.split('/')[4])
+            frames.append((frame, part))
+            received = sum(len(body) for _, body in frames)
+            return dict(index=frame['index'], received_bytes=received,
+                        state='packet-staged' if received == len(ciphertext) else 'packet-part-staged')
+
+        with patch.object(carrier.operator, 'observe', return_value={'exact_vm_verified': True}), \
+             patch.object(carrier, 'submit_action', side_effect=submit):
+            with self.assertRaises(native.retention.RetentionRejected):
+                command.stage_packet(ciphertext[:-1])
+            self.assertFalse(frames)
+            command.stage_packet(ciphertext)
+        self.assertEqual(len(frames), 2)
+        self.assertEqual(b''.join(part for _, part in frames), ciphertext)
+        if sys.platform == 'linux':
+            package = lzma.decompress(b''.join(command._parts))
+            with TemporaryDirectory(dir=Path.home()) as folder:
+                guest = Path(folder) / command.capsule
+                guest.mkdir(mode=0o700)
+
+                def dispatch(frame, part):
+                    return carrier.dispatch(guest, package, carrier.blob.encoded(frame), packet_part=part)
+
+                with patch.object(carrier, 'boot', return_value=transfer.job.verified_boot_id):
+                    with self.assertRaises(FileNotFoundError):
+                        dispatch(*frames[1])
+                    first, body = frames[0]
+                    with self.assertRaises(native.retention.RetentionRejected):
+                        dispatch({**first, 'part_sha256': '0' * 64}, body)
+                    self.assertEqual(dispatch(*frames[0])['state'], 'packet-part-staged')
+                    self.assertFalse((guest / 'packet.sealed').exists())
+                    with self.assertRaises(FileExistsError):
+                        dispatch(*frames[0])
+                    self.assertEqual(dispatch(*frames[1])['state'], 'packet-staged')
+                    self.assertEqual((guest / 'packet.sealed').read_bytes(), ciphertext)
+                    self.assertFalse((guest / 'packet.partial').exists())
