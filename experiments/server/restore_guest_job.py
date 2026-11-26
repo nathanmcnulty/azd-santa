@@ -71,6 +71,12 @@ class Job:
     def inspect(self, directory, *, fingerprint_key):
         return journal.inspect(directory, **self._context(fingerprint_key))
 
+    def reissue_admin(self, observer, registry, **options):
+        """Use the verified quarantine journal to guard one fresh administrator."""
+        from restore_admin_reissue import run
+
+        return run(self, observer, registry, **options)
+
     def run(self, writer, observer, registry, *, directory, fingerprint_key, stage,
             review_bytes, review_sha256, options, limits=census.Limits(), plan_digest=None, authorize=None):
         """Check the live socket target and run the confirmed or previewed database step."""

@@ -262,6 +262,17 @@ Journal status reports `pending`, `committed`, or `inspect` for each step. An
 intent without a valid committed record requires private inspection of the
 isolated database, even when an adapter reported an error. Keep the journal
 and original archive during inspection. The journal never enables activation.
+
+Restore tooling bundle v23 includes a guard for issuing one fresh administrator.
+The guard requires the authenticated quarantine receipt and a new census that
+matches the committed post-quarantine state. Its approval binds the selected
+recovery job, new administrator identity, fresh runtime, and setup recipient.
+It records intent before calling the trusted administrator creator. When
+the creator returns a confirmed sealed artifact digest, the guard records
+completion. Inspect the original attempt if the result is uncertain. Service
+activation stays closed. The fresh-runtime verifier, administrator creator,
+and setup delivery still need integration and live qualification.
+
 Recovery tooling bundle v5 includes the private census review handoff. The
 reviewer exports the complete dispositions and keyed census fingerprint,
 bound to the exact target, archive, generation and step. Share the document
