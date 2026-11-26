@@ -92,7 +92,8 @@ def readback(selection, *, _cli=None):
                     and receipt['vm_instance_id'] == selection.vm_instance_id
                     and re.fullmatch(blob.GUID, receipt['boot_id'])
                     and observe(selection, _cli=call) == before)
-        return dict(scope=SCOPE, vm_instance_id=receipt['vm_instance_id'], boot_id=receipt['boot_id'])
+        return dict(scope=SCOPE, vm_id=selection.vm_id, vm_instance_id=receipt['vm_instance_id'],
+                    boot_id=receipt['boot_id'])
     except Exception:
         raise arm.ArmRejected() from None
 

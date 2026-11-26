@@ -286,9 +286,16 @@ instance metadata and returns a nonce-bound Linux boot ID. The caller checks
 the Azure account and exact VM before and after the command. The receipt
 contains no secrets and does not include a database observation.
 
-The public guided command still needs to request confirmation and connect
-the guest boot receipt to the isolated database before execution.
-Service-generation binding and replacement identity enrollment remain open.
+Recovery tooling bundle v8 connects the verified guest readback to the
+isolated database job. Both census reviews, the exact operator confirmation,
+and journal records bind to the same tenant, operator, VM resource, instance,
+boot, archive and database. The job checks the live PostgreSQL target before
+preview or apply. The launcher must keep the journal and operation generation
+consistent across the two steps.
+
+The public guided command still needs to request confirmation and deliver
+the reviewed job and its private inputs to the guest. Service-generation
+binding and replacement identity enrollment remain open.
 
 The database adapters bind the target to the Linux boot ID and postmaster
 start time. A Unix-socket connection is required, and PostgreSQL must have no
