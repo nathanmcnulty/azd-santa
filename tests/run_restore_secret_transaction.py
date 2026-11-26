@@ -1,4 +1,5 @@
 """Verify a populated database rewrap and rollback on the sealed PostgreSQL fixture."""
+from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
@@ -11,6 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'experiments/server
 import restore_authority_transaction as recovery
 import restore_census as census
 import restore_census_review as review
+import restore_guest_job as guest_job
+import restore_guest_readback as guest
+import restore_arm_authorization as arm
 import restore_quarantine_journal as journal
 import restore_secret_transaction as transaction
 import run_restore_authority_transaction as fixture
@@ -130,7 +134,14 @@ def run(root):
         cutoff = datetime.now(timezone.utc)
         directory = root / 'journal'
         directory.mkdir(mode=0o700)
-        bound = dict(target=target, archive_sha256='a' * 64, generation='b' * 64, fingerprint_key=KEY)
+        sub = '11111111-1111-4111-8111-111111111111'
+        vm_id = (f'/subscriptions/{sub}/resourceGroups/rg-azd-santa-vm-fixture'
+                 '/providers/Microsoft.Compute/virtualMachines/vm-santa-lab')
+        selected = arm.Selection('22222222-2222-4222-8222-222222222222', sub, 'operator@example.com',
+                                 vm_id, '33333333-3333-4333-8333-333333333333', 'westus2')
+        guest_receipt = dict(scope=guest.SCOPE, vm_id=vm_id, vm_instance_id=selected.vm_instance_id,
+                             boot_id=target.boot_id)
+        bound = dict(archive_sha256='a' * 64, generation='b' * 64)
         secret_options = dict(expected_contexts=CONTEXTS, old_material=OLD, new_material=NEW, targets=TARGETS)
 
         def observe():
@@ -146,22 +157,24 @@ def run(root):
             options = dict(target=target, fingerprint_key=KEY, **secret_options)
             return transaction.run(writer, observer, apps, **{**options, **baseline, **kwargs})
 
+        def job(context=bound, selection=selected, receipt=guest_receipt, db_target=target):
+            return guest_job.Job.from_readback(selection, db_target, guest_receipt=receipt, **context)
+
         def published(stage, baseline, context=bound):
-            raw = review.publish(**baseline, **context, stage=stage)
-            return dict(review=raw, review_sha256=hashlib.sha256(raw).hexdigest())
+            raw = job(context).publish(**baseline, fingerprint_key=KEY, stage=stage)
+            return dict(review_bytes=raw, review_sha256=hashlib.sha256(raw).hexdigest())
 
         def guided(stage, baseline, *, folder=directory, context=bound, **kwargs):
             options = secret_options if stage == 'rewrap' else dict(cutoff=cutoff)
             inputs = published(stage, baseline, context)
-            return review.run(writer, observer, apps, **context, directory=folder, stage=stage,
-                              **{**inputs, 'options': options, **kwargs})
+            return job(context).run(writer, observer, apps, directory=folder, stage=stage, fingerprint_key=KEY,
+                                    **{**inputs, 'options': options, **kwargs})
 
         def deny(call):
             return reject(call, (journal.JournalRejected, review.ReviewRejected))
 
         def authorized(stage, baseline, preview, context, record):
-            assert record == dict(scope=review.SCOPE, binding=journal.binding_for(
-                context['target'], context['archive_sha256'], context['generation'], KEY), stage=stage,
+            assert record == dict(scope=review.SCOPE, binding=job(context).binding(KEY), stage=stage,
                 plan_digest=preview['plan_digest'], review_sha256=published(stage, baseline, context)['review_sha256'])
             return True
 
@@ -185,7 +198,7 @@ def run(root):
         deny(lambda: guided('rewrap', baseline, folder=failed_directory, context=failed_bound,
                             plan_digest=interrupted['plan_digest'], authorize=lambda record: authorized(
                                 'rewrap', baseline, interrupted, failed_bound, record)))
-        assert journal.inspect(failed_directory, **failed_bound)['stages'] == {
+        assert job(failed_bound).inspect(failed_directory, fingerprint_key=KEY)['stages'] == {
             'rewrap': 'inspect', 'quarantine': 'pending'}
         deny(lambda: guided('rewrap', baseline, folder=failed_directory, context=failed_bound))
         unchanged(baseline)
@@ -210,7 +223,18 @@ def run(root):
         reviewed_plan = guided('rewrap', baseline)
         assert reviewed_plan['stages'] == {'rewrap': 'pending', 'quarantine': 'pending'}
         artifact = published('rewrap', baseline)
-        deny(lambda: guided('rewrap', baseline, review=artifact['review'] + b' '))
+        deny(lambda: guided('rewrap', baseline, review_bytes=artifact['review_bytes'] + b' '))
+        deny(lambda: job(receipt={**guest_receipt, 'boot_id': sub}))
+        deny(lambda: job(receipt={**guest_receipt, 'vm_id': vm_id.replace('fixture', 'other')}))
+        deny(lambda: job(receipt={**guest_receipt, 'vm_instance_id': sub}))
+        other_operator = job(selection=replace(selected, account='other@example.com'))
+        deny(lambda: other_operator.run(writer, observer, apps, directory=directory, stage='rewrap',
+                                       fingerprint_key=KEY, options=secret_options, **artifact))
+        other_database = job(db_target=replace(target, database_oid=target.database_oid + 1))
+        raw = other_database.publish(**baseline, fingerprint_key=KEY, stage='rewrap')
+        deny(lambda: other_database.run(writer, observer, apps, directory=directory, stage='rewrap',
+                                       fingerprint_key=KEY, options=secret_options, review_bytes=raw,
+                                       review_sha256=hashlib.sha256(raw).hexdigest()))
         deny(lambda: guided('quarantine', baseline, **artifact))
         deny(lambda: guided('rewrap', baseline, context={**bound, 'generation': '0' * 64}, **artifact))
         deny(lambda: guided('rewrap', baseline, plan_digest=reviewed_plan['plan_digest']))
@@ -251,7 +275,7 @@ def run(root):
         reject(lambda: invoke(baseline, apply=True, plan_digest=preview['plan_digest']))
         deny(lambda: guided('rewrap', baseline, plan_digest=reviewed_plan['plan_digest'], authorize=calls.append))
         deny(lambda: guided('quarantine', baseline))
-        deny(lambda: journal.inspect(directory, **{**bound, 'generation': '0' * 64}))
+        deny(lambda: job({**bound, 'generation': '0' * 64}).inspect(directory, fingerprint_key=KEY))
         subsequent = reviewed()
         quarantine = guided('quarantine', subsequent)
         completed = guided('quarantine', subsequent, plan_digest=quarantine['plan_digest'],
@@ -259,19 +283,20 @@ def run(root):
         assert completed['result']['authority_updates_committed'] and completed['result']['performs_mutation']
         user.refresh_from_db()
         assert not user.is_active and not user.check_password('synthetic archived password')
-        inspected = journal.inspect(directory, **bound)
+        inspected = job().inspect(directory, fingerprint_key=KEY)
         assert inspected['stages'] == {'rewrap': 'committed', 'quarantine': 'committed'}
         assert not inspected['activation_allowed'] and not inspected['current_authority_established']
         deny(lambda: guided('quarantine', subsequent, plan_digest=quarantine['plan_digest'], authorize=calls.append))
         assert not calls
         with journal.locked(directory):
-            deny(lambda: journal.inspect(directory, **bound))
+            deny(lambda: job().inspect(directory, fingerprint_key=KEY))
         (directory / 'quarantine-committed.json').write_text('{}')
-        deny(lambda: journal.inspect(directory, **bound))
-        unchanged_failure = journal.inspect(failed_directory, **failed_bound)
+        deny(lambda: job().inspect(directory, fingerprint_key=KEY))
+        unchanged_failure = job(failed_bound).inspect(failed_directory, fingerprint_key=KEY)
         assert unchanged_failure['stages']['rewrap'] == 'inspect'
         print('Verified guided rewrap and authority handoff, durable intent, replay denial and closed activation')
         print('Verified private review handoff, stale census rejection and authorization before database intent')
+        print('Verified the guest-bound job committed both steps and rejected a mismatched VM, boot, operator or database')
         print('Verified transactional rewrap, late rollback, unchanged Terraform bytes and exact JSONB numbers')
     finally:
         connections.close_all()

@@ -17,7 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'experiments/server
 import private_arm_adapter as arm
 import blob_retention as retention
 import restore_arm_authorization as restore_arm
+from restore_authority_transaction import Target
 import restore_census_review as review
+import restore_guest_job as guest_job
 import restore_guest_readback as guest
 from retained_image_run_command import DONE, RECEIPT
 from test_backup_store_selection import fixture, TENANT
@@ -122,12 +124,32 @@ class RestoreArmTests(unittest.TestCase):
                 with patch.object(guest.uuid, 'uuid4', return_value=Mock(hex=nonce)):
                     if mode == 'complete':
                         result = guest.readback(self.selection, _cli=cli)
-                        self.assertEqual(result, dict(scope=guest.SCOPE, vm_instance_id=self.selection.vm_instance_id,
+                        self.assertEqual(result, dict(scope=guest.SCOPE, vm_id=self.selection.vm_id,
+                                                      vm_instance_id=self.selection.vm_instance_id,
                                                       boot_id=boot))
                     else:
                         with self.assertRaises(arm.ArmRejected):
                             guest.readback(self.selection, _cli=cli)
                 self.assertEqual(calls.count(['vm', 'run-command']), 1)
+
+    def test_guest_job_confirmation_uses_the_bound_operation(self):
+        boot = '44444444-4444-4444-8444-444444444444'
+        target = Target('azd_recovery_' + 'a' * 24, 'postgres', '/private/socket',
+                        42, 24, '2026-01-01T00:00:00', boot)
+        job = guest_job.Job.from_readback(self.selection, target, archive_sha256='a' * 64, generation='b' * 64,
+                                         guest_receipt=dict(scope=guest.SCOPE, vm_id=self.selection.vm_id,
+                                                            vm_instance_id=self.selection.vm_instance_id, boot_id=boot))
+        key = b'k' * 32
+        plan = dict(stage='rewrap', review_sha256='1' * 64, plan_digest='2' * 64)
+        approve = job.confirm(fingerprint_key=key, **plan)
+        request = dict(scope=review.SCOPE, binding=job.binding(key), **plan)
+        with patch.object(arm, 'resolve_cli'), patch.object(arm, 'bounded_cli',
+                side_effect=[self.context, self.vm, self.context]) as cli:
+            with self.assertRaises(arm.ArmRejected):
+                approve({**request, 'binding': '0' * 64})
+            cli.assert_not_called()
+            self.assertTrue(approve(request))
+            self.assertEqual(cli.call_count, 3)
 
 
 class Protocol:

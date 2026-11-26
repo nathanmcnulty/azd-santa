@@ -273,7 +273,7 @@
       "rationale": "The default plan is offline. Explicit live mode invokes a single fixed guest probe using existing Run Command rights. It verifies Azure instance metadata and returns a nonce-bound Linux boot receipt. No grants, database access, secret transport or service activation are included.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/restore_guest_readback.py", "sha256": "1038421b2ef7f447bc0495507882ec96c93ebae3e30166c07dad0a7f10c1177e" }
+        { "path": "experiments/server/restore_guest_readback.py", "sha256": "1666b8ea528904d24fa34c52559d9d62eaaa8bd9eae3fea4390a8d3bea90cbc1" }
       ]
     },
     {
