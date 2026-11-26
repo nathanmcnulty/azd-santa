@@ -426,6 +426,10 @@ the socket directory read-only. The worker has no network, no Linux
 capabilities, and no application data mount. It receives only the reviewed
 tooling, fresh host receipt, private recipient state, and the specific
 configuration, carrier and journal needed for apply.
+Use `--docker-socket` to select the dedicated local daemon used for image
+import. The launcher checks that the same socket is present throughout the
+worker invocation. Keep that daemon's storage and socket separate from the
+existing application daemon.
 
 Azure delivery of signed database requests, live database execution,
 object cleanup, service-generation binding and replacement

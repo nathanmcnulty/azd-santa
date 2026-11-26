@@ -28,9 +28,12 @@ class RecoveryDocker:
         self.path = path
         self.identity = (info.st_dev, info.st_ino)
 
-    def run(self, arguments, deadline, *, archive=None):
+    def assert_current(self):
         info = self.path.lstat()
         need(stat.S_ISSOCK(info.st_mode) and (info.st_dev, info.st_ino) == self.identity)
+
+    def run(self, arguments, deadline, *, archive=None):
+        self.assert_current()
         command = ['/usr/bin/docker', '--host', 'unix://' + self.path.as_posix(), *arguments]
         result = subprocess.run(command, stdin=archive if archive is not None else subprocess.DEVNULL,
                                 stdout=subprocess.DEVNULL if archive is not None else subprocess.PIPE,

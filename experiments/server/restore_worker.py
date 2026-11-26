@@ -17,9 +17,10 @@ from restore_guest_readback import SCOPE as GUEST_SCOPE
 from restore_packet_operator import CARRIER_ROOT, delivery_binding
 from restore_quarantine_journal import is_digest
 from restore_sealed_inputs import RECIPIENT_ROOT, check_offer, operation, sha
-from restore_tooling_bundle import DATABASE_WORKER_SCOPE, MAX_BUNDLE, stage
+from restore_tooling_bundle import DATABASE_WORKER_SCOPE, IMAGE_KEY_SCOPE, MAX_BUNDLE, stage
 from retained_image_delivery import read_at, write_at
 from retained_image_handoff import boot, decode
+from retained_image_load import RecoveryDocker
 from retained_image_parts import checked_document
 
 DOCKER = ('/usr/bin/docker', '--host', 'unix:///var/run/docker.sock')
@@ -109,15 +110,18 @@ def checked_reply(raw_reply, raw, request, job):
     return reply
 
 
-def launch(raw, *, workspace, tooling, commit, tooling_sha256, image, config_sha256=None,
+def launch(raw, *, workspace, tooling, commit, tooling_sha256, image, config_sha256=None, docker_socket=None,
            _boot=boot, _docker=subprocess.run, _recipient_root=RECIPIENT_ROOT, _carrier_root=CARRIER_ROOT):
     request, job, host = database.parse_request(raw)
     blob.need(re.fullmatch(r'sha256:[a-f0-9]{64}', image) is not None)
-    blob.need(checked_document(tooling, tooling_sha256, MAX_BUNDLE)['scope'] == DATABASE_WORKER_SCOPE)
+    blob.need(checked_document(tooling, tooling_sha256, MAX_BUNDLE)['scope']
+              in (DATABASE_WORKER_SCOPE, IMAGE_KEY_SCOPE))
     workspace = private_directory(Path(workspace))
     blob.need(_boot(host) == job.verified_boot_id
               and blob.resource_id(host.vm_id) == blob.resource_id(job.selection.vm_id)
               and host.instance_id == job.selection.vm_instance_id and host.region == job.selection.region)
+    daemon = RecoveryDocker(docker_socket) if docker_socket is not None else None
+    docker = (*DOCKER[:2], 'unix://' + daemon.path.as_posix()) if daemon else DOCKER
     name = 'azd-santa-recovery-' + uuid.uuid4().hex
     with TemporaryDirectory(prefix='worker-', dir=workspace) as temporary:
         tools = Path(temporary) / 'tools'
@@ -131,18 +135,24 @@ def launch(raw, *, workspace, tooling, commit, tooling_sha256, image, config_sha
         args = arguments(name, image, tools, private_directory(_recipient_root), workspace, request, job,
                          config_sha256, carrier_root=_carrier_root)
         environment = {'PATH': '/usr/bin:/bin', 'DOCKER_CONFIG': str(Path(temporary) / 'docker-config')}
+
+        def call(command, **options):
+            if daemon:
+                daemon.assert_current()
+            return _docker([*docker, *command], env=environment, stderr=subprocess.DEVNULL, **options)
+
         output_format = '{{.Id}} {{.Os}} {{.Architecture}} {{json .Config.Volumes}}'
-        inspected = _docker([*DOCKER, 'image', 'inspect', '--format', output_format, image],
-                            env=environment, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True, timeout=15)
+        inspected = call(['image', 'inspect', '--format', output_format, image],
+                         stdout=subprocess.PIPE, check=True, timeout=15)
         fields = inspected.stdout.decode('ascii').split()
         blob.need(fields in ([image, 'linux', 'amd64', 'null'], [image, 'linux', 'amd64', '{}']))
         try:
-            completed = _docker([*DOCKER, *args], env=environment, input=raw, stdout=subprocess.PIPE,
-                                stderr=subprocess.DEVNULL, check=True, timeout=TIMEOUT)
+            completed = call(args, input=raw, stdout=subprocess.PIPE, check=True, timeout=TIMEOUT)
         except subprocess.TimeoutExpired:
-            _docker([*DOCKER, 'rm', '--force', name], env=environment, stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL, check=False, timeout=15)
+            call(['rm', '--force', name], stdout=subprocess.DEVNULL, check=False, timeout=15)
             raise
+        if daemon:
+            daemon.assert_current()
     return checked_reply(completed.stdout, raw, request, job)
 
 
@@ -151,6 +161,7 @@ def main():
     for name in ('workspace', 'tooling', 'commit', 'tooling-sha256', 'image'):
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--config-sha256')
+    parser.add_argument('--docker-socket', type=Path)
     inputs = vars(parser.parse_args())
     try:
         with Path(inputs.pop('tooling')).open('rb') as stream:
