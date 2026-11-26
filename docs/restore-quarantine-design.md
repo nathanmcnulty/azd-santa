@@ -583,9 +583,14 @@ requires the local configuration, socket and
 packet described above. The command verifies the cached Azure selection
 before dispatch and after readback. The guest checks the bundle and boot,
 then records an exclusive intent before invoking the isolated worker.
-The workstation `observe` action reads its local journal. For an uncertain
-submission, preserve both journals and inspect the guest's durable
-`transport-<request SHA-256>` directory before continuing recovery.
+The workstation `observe` action reads its local journal. If a signed rewrap or
+quarantine submission is uncertain, preserve both journals and run the same
+command with `readback` in place of `apply`, using the original reviewed plan,
+workspace and journal root. It reads the exact guest transport journal on the
+same VM boot and records a validated committed outcome locally. The probe sends
+the request digest and target details. It leaves the signed request on the
+workstation and does not launch the recovery worker. A missing outcome remains
+unknown. Offer requests and outcomes after a reboot still require inspection.
 
 On the recovery VM, a diagnostic run confirmed that Docker's Go-template
 image inspection failed for the retained Zentral image. Docker's default
