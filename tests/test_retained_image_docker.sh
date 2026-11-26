@@ -110,8 +110,10 @@ assert set(readback.iterdir()) == {copy, portable, completion_path, attempt}
 # recovery side receives only the encrypted single-image data key.
 subprocess.run(['docker', 'image', 'rm', image], timeout=20, check=True, stdout=subprocess.DEVNULL)
 boot_id = '33333333-3333-4333-8333-333333333333'
-host = SelectedTarget('/subscriptions/fixture/virtualMachines/receiver',
-                      '44444444-4444-4444-8444-444444444444', '/fixture/socket', 'westus2')
+group = '/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/fixture'
+host = SelectedTarget(group + '/providers/Microsoft.Compute/virtualMachines/receiver',
+                      '44444444-4444-4444-8444-444444444444',
+                      group + '/providers/Microsoft.Network/virtualNetworks/fixture/subnets/recovery', 'westus2')
 handoff = Handoff(host, completion, completion_sha256=completion_sha256, inventory_sha256=inventory_sha256,
                   recipient_sha256=hashlib.sha256(public).hexdigest(), image_name='core', image_id=image,
                   boot_id=boot_id)
