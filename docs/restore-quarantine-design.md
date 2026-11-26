@@ -316,10 +316,17 @@ access and the recovery VM receives read-only access to the same exact packet.
 The issuer keeps the SAS values in memory. The reservation records the target
 and object so an unknown issuance can be inspected. [Azure List Service SAS](https://learn.microsoft.com/rest/api/storagerp/storage-accounts/list-service-sas?view=rest-storagerp-2025-06-01)
 
-The operator workflow still needs to deliver each capability to its intended
-VM and pass the guest offer and receipt through the authenticated control
-channel. Live network reachability, object cleanup, service-generation
-binding and replacement identity enrollment remain open.
+Recovery tooling bundle v12 seals each SAS to the public offer from its
+intended sender or receiver. The caller supplies the verified boot and
+owner-private temporary directory. The guest checks the packet object and
+operation role, then records consumption and removes its private recipient
+key before using the capability. A lost transfer response requires inspection
+of the reserved operation. The SAS stays out of command arguments and receipts.
+
+The operator workflow still needs to carry the guest offer, envelope and
+receipts through the authenticated control channel. Live network reachability,
+object cleanup, service-generation binding and replacement identity enrollment
+remain open. [Live VM startup investigation](https://github.com/nathanmcnulty/azd-santa/issues/190)
 
 The database adapters bind the target to the Linux boot ID and postmaster
 start time. A Unix-socket connection is required, and PostgreSQL must have no

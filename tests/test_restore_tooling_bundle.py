@@ -162,6 +162,13 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(set(files) - set(bundle.BLOB_PATHS), {path})
         compile(files[path], path, 'exec')
 
+    def test_handoff_version_includes_the_boot_bound_sas_delivery(self):
+        raw = bundle.build(ROOT, self.commit, version=12)
+        files = bundle.verify(raw, commit=self.commit, bundle_sha256=bundle.sha(raw))
+        path = bundle.SERVER + 'restore_input_handoff.py'
+        self.assertEqual(set(files) - set(bundle.SAS_PATHS), {path})
+        compile(files[path], path, 'exec')
+
     def test_reads_commit_without_packaging_worktree_configuration_or_unapproved_blob(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

@@ -21,7 +21,10 @@ import restore_guest_readback as guest
 import restore_arm_authorization as arm
 import restore_sealed_inputs as sealed
 import blob_retention as blob
+import private_arm_adapter as cached_arm
 from restore_input_blob import PacketTransfer
+from restore_input_handoff import Handoff
+from retained_image_sas import IssuedBatch
 import restore_quarantine_journal as journal
 import restore_secret_transaction as transaction
 import run_restore_authority_transaction as fixture
@@ -96,15 +99,19 @@ def reject(call, error_type=transaction.TransactionRejected):
 def transfer_packet(root, job, packet, stage):
     selected = job.selection
     source_id = selected.vm_id.split('/providers/')[0]
-    subnet = source_id + '/providers/Microsoft.Network/virtualNetworks/santa/subnets/host'
+    subnet = source_id + '/providers/Microsoft.Network/virtualNetworks/vnet-santa-lab/subnets/host'
     account = (f'/subscriptions/{selected.subscription}/resourceGroups/rg-fixture-store'
                '/providers/Microsoft.Storage/storageAccounts/santafixture')
     target = blob.SelectedTarget(selected.vm_id, selected.vm_instance_id, subnet, selected.region)
-    store = blob.Store(blob.Blob(account, 'e' * 32), selected.region, (subnet,), selected.tenant)
+    sender = blob.SelectedTarget(selected.vm_id.replace('-fixture/', '-sender/'),
+        '44444444-4444-4444-8444-444444444444', subnet.replace('-fixture/', '-sender/'), selected.region)
+    store = blob.Store(blob.Blob(account, 'e' * 32), selected.region, (sender.subnet_id, subnet), selected.tenant)
     transfer = PacketTransfer(job, store, target, sealed.sha(packet), len(packet))
+    placement = cached_arm.Selection(selected.tenant, selected.subscription, store, sender, target)
     uploads = root / ('upload-' + stage)
     uploads.mkdir(mode=0o700)
     now = datetime.now(timezone.utc)
+    sender_boot = '55555555-5555-4555-8555-555555555555'
 
     def token(permission):
         return urlencode(dict(sv='2023-11-03', sr='b', sp=permission, spr='https',
@@ -124,7 +131,9 @@ def transfer_packet(root, job, packet, stage):
             self.calls.append(method)
             self.method = method
             if method == 'PUT':
-                assert (uploads / sealed.sha(packet) / 'intent.json').is_file()
+                handoff_root = uploads / (sealed.sha(packet) + '-sas-offer-c')
+                assert (handoff_root / sealed.sha(packet) / 'intent.json').is_file()
+                assert (handoff_root / 'consumed.json').is_file() and not (handoff_root / 'recipient.der').exists()
                 assert headers['If-None-Match'] == '*'
                 self.data = b''.join(iter(lambda: body.read(8192), b''))
                 assert self.data == packet and int(headers['Content-Length']) == len(packet)
@@ -148,23 +157,41 @@ def transfer_packet(root, job, packet, stage):
     connection = Connection()
 
     def observed_boot(observed):
-        assert observed == target
-        return job.verified_boot_id
+        assert observed in (sender, target)
+        return sender_boot if observed == sender else job.verified_boot_id
+
+    def sealed_capability(permission, host, boot_id):
+        courier = Handoff(placement, transfer, permission, boot_id=boot_id)
+        offer = courier.offer(uploads, _boot=observed_boot)
+        sas = token(permission)
+        batch = IssuedBatch(host, permission, transfer.packet_sha256,
+                            {transfer.object_metadata()['object']: sas}, account_id=store.blob.account_id)
+        envelope = courier.seal(offer, sealed.sha(offer), batch)
+        assert sas.encode() not in envelope
+        reject(lambda: courier.seal(offer, sealed.sha(offer), batch), blob.RetentionRejected)
+        return courier, envelope, sealed.sha(offer), sealed.sha(envelope)
 
     with patch.object(blob.BlobHttp, 'connection', return_value=connection):
         reject(lambda: transfer.upload(packet, token('r'), uploads), blob.RetentionRejected)
         assert not connection.calls
+        send, *create = sealed_capability('c', sender, sender_boot)
+        reject(lambda: send.use(uploads, create[0], create[1], '0' * 64, packet=packet, _boot=observed_boot),
+               blob.RetentionRejected)
+        reject(lambda: send.use(uploads, *create, packet=packet, _boot=lambda _: selected.subscription),
+               blob.RetentionRejected)
         if connection.unknown:
-            reject(lambda: transfer.upload(packet, token('c'), uploads), blob.RetentionRejected)
+            reject(lambda: send.use(uploads, *create, packet=packet, _boot=observed_boot), blob.RetentionRejected)
         else:
-            assert transfer.upload(packet, token('c'), uploads)['uploaded']
-        reject(lambda: transfer.upload(packet, token('c'), uploads), blob.RetentionRejected)
+            assert send.use(uploads, *create, packet=packet, _boot=observed_boot)['uploaded']
+        reject(lambda: send.use(uploads, *create, packet=packet, _boot=observed_boot), blob.RetentionRejected)
         reject(lambda: transfer.download(token('r'), _boot=lambda _: selected.subscription), blob.RetentionRejected)
         assert connection.calls == ['PUT']
         connection.corrupt = True
         reject(lambda: transfer.download(token('r'), _boot=observed_boot), blob.RetentionRejected)
         connection.corrupt = False
-        result = transfer.download(token('r'), _boot=observed_boot)
+        receive, *read = sealed_capability('r', target, job.verified_boot_id)
+        result = receive.use(uploads, *read, _boot=observed_boot)
+        reject(lambda: receive.use(uploads, *read, _boot=observed_boot), blob.RetentionRejected)
         assert connection.calls == ['PUT', 'GET', 'GET']
         return result
 
@@ -414,6 +441,7 @@ def run(root):
         print('Verified the guest-bound job committed both steps and rejected a mismatched VM, boot, operator or database')
         print('Verified sealed input delivery to both database steps, including wrong recipient and replay rejection')
         print('Verified exact-object Blob transport to both database steps with ambiguous upload and tamper checks')
+        print('Verified sealed SAS delivery to distinct sender and receiver boots before both database steps')
         print('Verified transactional rewrap, late rollback, unchanged Terraform bytes and exact JSONB numbers')
     finally:
         connections.close_all()
