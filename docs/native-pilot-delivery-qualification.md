@@ -2,8 +2,8 @@
 
 On 2026-11-15 UTC, the selected private VM completed actual one-device backend
 enrollment and owner-private profile export, followed by an Intune payload update.
-These operations prepare the device for policy sync. The November 25 endpoint
-readback below records what the Mac reported and where sync stopped.
+These operations prepare the device for policy sync. The endpoint and Intune
+reports below record what the Mac and management service each observed.
 
 ## Maintained path and verified boundaries
 
@@ -85,9 +85,18 @@ At 13:10 UTC, the profile diagnostic on the same Mac successfully read both
 the text and XML inventories. It found the Santa configuration identifier and
 the expected inner payload UUID. The template's outer payload UUID was absent
 from the device XML. This establishes the observed local payload markers and
-runtime sync hostname. The complete installed payload bytes and a fresh Intune
-service report remain unverified. No Intune object or assignment was changed
-during these checks.
+runtime sync hostname. The complete installed payload bytes remain unverified.
+No Intune object or assignment was changed during these checks.
+
+## Intune delivery report on November 26
+
+The Intune admin center showed Santa 2026.8 as **Installed** in the selected
+Mac's Managed apps report. Its Device configuration report showed **Succeeded**
+for the configuration, notifications, service management, system extension,
+and TCC profiles. The configuration row matched the previously reviewed
+profile object. These are Intune-reported delivery states. The November 25
+Defender readback separately established the local profile markers and Santa's
+effective Monitor mode. [Pilot evidence](https://github.com/nathanmcnulty/azd-santa/issues/33#issuecomment-7198081388)
 
 ## Live sync and rule receipt on November 25
 
