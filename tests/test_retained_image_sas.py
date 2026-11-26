@@ -2,6 +2,8 @@
 import base64
 import hashlib
 import io
+import json
+import lzma
 from pathlib import Path
 import pickle
 from tempfile import TemporaryDirectory
@@ -11,6 +13,8 @@ from urllib.parse import parse_qs, urlencode
 
 import test_private_arm_adapter as native
 import retained_image_parts as parts
+import restore_carrier_command as carrier
+import restore_tooling_bundle as tooling
 from retained_image_sas import ImageSasIssuer
 from restore_arm_authorization import Selection as Operator
 from restore_authority_transaction import Target
@@ -160,3 +164,47 @@ class ImageSasTests(unittest.TestCase):
             self.assertIsNone(issuer._token)
         self.assertFalse(self.protocol.calls)
         self.assertTrue((self.root / (transfer.packet_sha256 + '-restore-input-c') / 'intent.json').is_file())
+
+    def test_recovery_command_frames_the_exact_reviewed_capsule_and_opaque_envelope(self):
+        import subprocess
+        root = Path(__file__).resolve().parents[1]
+        commit = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
+        raw = tooling.build(root, commit, version=13)
+        transfer = self.restore_transfer()
+        command = carrier.Command(self.selection, transfer, 'r', raw, commit=commit,
+                                  tooling_sha256=sha(raw), boot_id=transfer.job.verified_boot_id)
+        envelope = bytes(range(256)) * 12
+        offer = b'fixture-offer'
+        frames = []
+
+        def submit(_cli, args, script, _nonce, digest, seconds, *, scope):
+            line = script.splitlines()[1]
+            frame_bytes = base64.b64decode(line.split(b"'", 2)[1], validate=True)
+            frame = json.loads(frame_bytes)
+            self.assertEqual(sha(frame_bytes), digest)
+            self.assertEqual(frame['capsule'], command.capsule)
+            self.assertEqual(scope, carrier.SCOPE)
+            self.assertLessEqual(len(script), 64 * 1024)
+            self.assertEqual(args[args.index('--resource-group') + 1], transfer.target.vm_id.split('/')[4])
+            frames.append(frame)
+            if frame['action'] == 'stage':
+                index = frame['index']
+                return dict(state='staged', index=index, installed=index == frame['parts'] - 1)
+            if frame['action'] == 'offer':
+                return dict(state='offered', offer=carrier.b64(offer))
+            return dict(state='verified', packet_sha256=transfer.packet_sha256, packet_bytes=transfer.packet_bytes)
+
+        with patch.object(carrier.operator, 'observe', return_value={'exact_vm_verified': True}), \
+             patch.object(carrier, 'submit_action', side_effect=submit), \
+             patch.object(command._handoff, 'seal', return_value=envelope) as encrypt:
+            command.install()
+            self.assertEqual(command.offer(), offer)
+            result = command.transfer(offer, sha(offer), object())
+            self.assertEqual(result['state'], 'verified')
+            encrypt.assert_called_once()
+        staged = frames[:-2]
+        self.assertGreater(len(staged), 1)
+        recovered = lzma.decompress(b''.join(base64.b64decode(frame['bytes']) for frame in staged))
+        self.assertEqual(sha(recovered), command.capsule)
+        self.assertEqual(frames[-1]['envelope_sha256'], sha(envelope))
+        self.assertEqual(set(frames[-1]), {'action', 'capsule', 'offer_sha256', 'envelope_sha256', 'envelope'})

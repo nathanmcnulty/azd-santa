@@ -323,10 +323,17 @@ operation role, then records consumption and removes its private recipient
 key before using the capability. A lost transfer response requires inspection
 of the reserved operation. The SAS stays out of command arguments and receipts.
 
-The operator workflow still needs to carry the guest offer, envelope and
-receipts through the authenticated control channel. Live network reachability,
-object cleanup, service-generation binding and replacement identity enrollment
-remain open. [Live VM startup investigation](https://github.com/nathanmcnulty/azd-santa/issues/190)
+Recovery tooling bundle v13 carries the public offer and encrypted SAS through
+the existing Action Run Command transport. The caller selects a reviewed
+tooling bundle and an exact sender ciphertext file. The command splits the
+source capsule into bounded requests and the guest verifies its hash before
+loading it. Each request checks the selected Azure operator and VM on both
+sides and requires a fresh completion marker. The receiver writes verified
+ciphertext to a private, boot-local file and returns its digest and byte count.
+
+Staging the sender packet, the guided launcher, live transfer, object cleanup,
+service-generation binding and replacement identity enrollment remain open.
+[Live VM startup investigation](https://github.com/nathanmcnulty/azd-santa/issues/190)
 
 The database adapters bind the target to the Linux boot ID and postmaster
 start time. A Unix-socket connection is required, and PostgreSQL must have no
