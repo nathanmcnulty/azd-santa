@@ -311,7 +311,9 @@ def run(root):
                 expected_docker = (*worker.DOCKER[:2], 'unix://' + str(selected_socket)) if selected_socket else worker.DOCKER
                 assert tuple(args[:3]) == expected_docker
                 if args[3:5] == ['image', 'inspect']:
-                    return subprocess.CompletedProcess(args, 0, (image + ' linux amd64 null').encode())
+                    assert args[5:] == [image]
+                    inspected = [dict(Id=image, Os='linux', Architecture='amd64', Config={})]
+                    return subprocess.CompletedProcess(args, 0, blob.encoded(inspected))
                 assert args[3] == 'run' and args[args.index('--network') + 1] == 'none'
                 assert '--read-only' in args and args[args.index('--cap-drop') + 1] == 'ALL'
                 assert '--privileged' not in args and options['input'] == raw
