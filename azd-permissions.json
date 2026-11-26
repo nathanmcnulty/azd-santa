@@ -303,7 +303,8 @@
       "rationale": "The optional command stages reviewed source and encrypted packet bytes in guest-private temporary storage. It passes the public offer and encrypted SAS through Run Command. Blob capability issuance is separately scoped. It grants no permissions and does not connect to a restored database or activate services.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/server/restore_carrier_command.py", "sha256": "8f9c3f2551657640dc3876450cad1ef1f1ba1115bbc560347a8f843494db33c7" }
+        { "path": "experiments/server/restore_carrier_command.py", "sha256": "0ff488de011437cebcce327ab0ea91b4ff7b7ce7d87645d3adfadae08aadc051" },
+        { "path": "experiments/server/restore_packet_operator.py", "sha256": "9759317ef6f38d96a0b969c504fb21e9ec501aeb7c104961518bcb92bcdfaf38" }
       ]
     },
     {
