@@ -587,7 +587,9 @@ and passes only the verified anonymous archive to
 It compares the resulting immutable image ID and platform and checks again
 that the daemon has no containers. Keep the attempt after a timeout or
 unverified reply. Docker may have received the archive, so inspect the same
-isolated daemon before taking further action. The command never starts a
+isolated daemon before taking further action. When the loader observes a
+failure, `failure.json` records the last Docker step and a bounded reason.
+Raw Docker diagnostics stay local to the process. The command never starts a
 container or accepts application restore. Configure the daemon for isolated
 recovery and apply a host-level deadline and disk limit to the Docker process
 and its data directory.

@@ -119,10 +119,32 @@ class ReadbackTests(unittest.TestCase):
                     loader.verify_or_load(self.source, raw, self.key, self.home, **pins)
                 self.assertEqual(json.loads((attempt / 'intent.json').read_bytes())['state'], 'load-uncertain')
                 self.assertFalse((attempt / 'outcome.json').exists())
+                self.assertEqual(json.loads((attempt / 'failure.json').read_bytes()),
+                                 dict(scope=loader.SCOPE, phase='image-load', reason='deadline'))
                 with self.assertRaises(FileExistsError):
                     loader.verify_or_load(self.source, raw, self.key, self.home, **pins)
                 daemon.run.assert_called_once()
                 daemon.confirm_image.assert_not_called()
+
+    def test_load_records_allowlisted_docker_failure_without_raw_output(self):
+        with TemporaryDirectory(dir=Path.home()) as temporary:
+            attempt = Path(temporary) / 'attempt'
+            raw = export.encoded(self.result)
+            with patch.object(loader, 'RecoveryDocker') as docker:
+                daemon = docker.return_value
+                daemon.path = Path('/fixture.sock')
+                daemon.identity = (10, 11)
+                daemon.run.side_effect = loader.DockerCommandRejected(
+                    1, b'Error processing tar file: /private/staging/unknown')
+                with self.assertRaises(loader.DockerCommandRejected):
+                    loader.verify_or_load(self.source, raw, self.key, self.home, completion_sha256=sha(raw),
+                        inventory_sha256=self.inventory_sha256, image_name='core', image_id=self.image_id,
+                        socket='/fixture.sock', attempt=attempt)
+                failure = (attempt / 'failure.json').read_bytes()
+                self.assertEqual(json.loads(failure), dict(scope=loader.SCOPE, phase='image-load',
+                                                          reason='tar-processing', exit_code=1))
+                self.assertNotIn(b'/private/', failure)
+                self.assertFalse((attempt / 'outcome.json').exists())
 
     def test_recovery_daemon_rejects_socket_replacement(self):
         path = self.home / 'docker.sock'
