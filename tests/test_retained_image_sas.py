@@ -1,11 +1,13 @@
 """Offline retained image SAS issuance with the maintained ARM observation path."""
 import base64
+from dataclasses import replace
 import hashlib
 import io
 import json
 import lzma
 from pathlib import Path
 import pickle
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -170,7 +172,8 @@ class ImageSasTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         commit = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
         raw = tooling.build(root, commit, version=13)
-        transfer = self.restore_transfer()
+        ciphertext = bytes(range(256)) * 3
+        transfer = replace(self.restore_transfer(), packet_sha256=sha(ciphertext), packet_bytes=len(ciphertext))
         command = carrier.Command(self.selection, transfer, 'r', raw, commit=commit,
                                   tooling_sha256=sha(raw), boot_id=transfer.job.verified_boot_id)
         envelope = bytes(range(256)) * 12
@@ -208,3 +211,17 @@ class ImageSasTests(unittest.TestCase):
         self.assertEqual(sha(recovered), command.capsule)
         self.assertEqual(frames[-1]['envelope_sha256'], sha(envelope))
         self.assertEqual(set(frames[-1]), {'action', 'capsule', 'offer_sha256', 'envelope_sha256', 'envelope'})
+        if sys.platform == 'linux':
+            with TemporaryDirectory(dir=Path.home()) as folder:
+                guest = Path(folder) / command.capsule
+                guest.mkdir(mode=0o700)
+                with patch.object(carrier.Handoff, 'offer', return_value=offer) as make_offer:
+                    staged_offer = carrier.dispatch(guest, recovered, carrier.blob.encoded(frames[-2]))
+                self.assertEqual(staged_offer, dict(state='offered', offer=carrier.b64(offer)))
+                make_offer.assert_called_once_with(guest / 'offers')
+                with patch.object(carrier.Handoff, 'use', return_value=ciphertext) as use:
+                    receipt = carrier.dispatch(guest, recovered, carrier.blob.encoded(frames[-1]))
+                use.assert_called_once_with(guest / 'offers', envelope, sha(offer), sha(envelope), packet=None)
+                self.assertEqual(receipt, result)
+                self.assertEqual((guest / 'packet.sealed').read_bytes(), ciphertext)
+                self.assertEqual((guest / 'packet.sealed').stat().st_mode & 0o777, 0o600)
