@@ -309,6 +309,7 @@ def run(root):
             is_apply = request['action'] == 'apply'
             image = 'sha256:' + 'f' * 64
             selected_socket = recovery_socket if request['step']['stage'] == 'quarantine' else None
+            staged_commands = []
 
             def docker(args, **options):
                 expected_docker = (*worker.DOCKER[:2], 'unix://' + str(selected_socket)) if selected_socket else worker.DOCKER
@@ -317,11 +318,34 @@ def run(root):
                     assert args[5:] == [image]
                     inspected = [dict(Id=image, Os='linux', Architecture='amd64', Config={})]
                     return subprocess.CompletedProcess(args, 0, blob.encoded(inspected))
+                if args[3] == 'create':
+                    assert is_apply or local_preview
+                    assert args[args.index('--network')+1] == 'none'
+                    assert args[args.index('--pull')+1] == 'never'
+                    assert '--read-only' in args and args[args.index('--entrypoint')+1] == '/bin/false'
+                    assert args[-1] == image
+                    staged_commands.append('create')
+                    return subprocess.CompletedProcess(args, 0, b'')
+                if args[3] == 'cp':
+                    assert args[4].endswith('-source:/zentral/.')
+                    app = Path(args[5])
+                    settings = app / 'server' / 'server' / 'settings.py'
+                    settings.parent.mkdir(parents=True)
+                    settings.write_text('# fixture application settings')
+                    staged_commands.append('cp')
+                    return subprocess.CompletedProcess(args, 0, b'')
+                if args[3] == 'rm':
+                    assert args[4:6] == ['--force', '--volumes'] and args[-1].endswith('-source')
+                    staged_commands.append('rm')
+                    return subprocess.CompletedProcess(args, 0, b'')
                 assert args[3] == 'run' and args[args.index('--network') + 1] == 'none'
                 assert '--read-only' in args and args[args.index('--cap-drop') + 1] == 'ALL'
                 assert '--privileged' not in args and options['input'] == raw
                 mounts = [args[index + 1] for index, value in enumerate(args) if value == '--mount']
-                assert len(mounts) == (6 if is_apply else 4 if local_preview else 2)
+                needs_application = is_apply or local_preview
+                assert staged_commands == (['create', 'cp', 'rm'] if needs_application else [])
+                assert len(mounts) == (7 if is_apply else 5 if local_preview else 2)
+                assert any(item.endswith('/application,target=/zentral,readonly') for item in mounts) == needs_application
                 if local_preview:
                     assert '--local-preview' in args
                     assert mounts[-1] == f'type=bind,source={worker_journal},target={worker.WORKER_JOURNAL},readonly'

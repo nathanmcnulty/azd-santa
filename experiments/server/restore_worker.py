@@ -57,7 +57,7 @@ def socket_group(path):
     return str(folder.st_gid)
 
 
-def arguments(name, image, tools, recipient, workspace, request, job, config_sha256, *, carrier_root):
+def arguments(name, image, tools, recipient, workspace, request, job, config_sha256, *, carrier_root, application):
     result = ['run', '--rm', '--interactive', '--name', name, '--network', 'none', '--pull', 'never',
               '--user', '0:0', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
               '--log-driver', 'none', '--memory', '512m', '--cpus', '1', '--pids-limit', '96',
@@ -69,6 +69,7 @@ def arguments(name, image, tools, recipient, workspace, request, job, config_sha
     command = [SERVER + '/restore_database_command.py', '--host-receipt', HOST_RECEIPT]
     if action in ('apply', 'preview'):
         blob.need(job.target.socket_dir == WORKER_SOCKET and is_digest(config_sha256))
+        result.extend(mount(application, '/zentral'))
         config = workspace / 'base.json'
         with ExitStack() as guards:
             folder, name = blob.parent(config, guards)
@@ -103,6 +104,25 @@ def check_worker_image(raw, image):
     blob.need(inspected.get('Id') == image and inspected.get('Os') == 'linux'
               and inspected.get('Architecture') == 'amd64' and type(config) is dict
               and config.get('Volumes') in (None, {}))
+
+
+def stage_application(call, image, container, application):
+    """Copy the pinned app tree from an unstarted container into private staging."""
+    application.mkdir(mode=0o700)
+    created = False
+    try:
+        call(['create', '--name', container, '--network', 'none', '--pull', 'never', '--read-only',
+              '--entrypoint', '/bin/false', image], stdout=subprocess.DEVNULL, check=True, timeout=15)
+        created = True
+        call(['cp', f'{container}:/zentral/.', str(application)],
+             stdout=subprocess.DEVNULL, check=True, timeout=45)
+    finally:
+        call(['rm', '--force', '--volumes', container], stdout=subprocess.DEVNULL, check=created, timeout=15)
+    private_directory(application)
+    settings = application / 'server' / 'server' / 'settings.py'
+    info = settings.lstat()
+    blob.need(settings.resolve(strict=True) == settings and stat.S_ISREG(info.st_mode)
+              and info.st_uid == os.geteuid() and not info.st_mode & 0o022)
 
 
 def checked_reply(raw_reply, raw, request, job):
@@ -160,8 +180,9 @@ def launch(raw, *, workspace, tooling, commit, tooling_sha256, image, config_sha
         if not local_preview:
             _recipient_root.mkdir(mode=0o700, exist_ok=True)
             recipient = private_directory(_recipient_root)
+        application = Path(temporary) / 'application'
         args = arguments(name, image, tools, recipient, workspace, request, job,
-                         config_sha256, carrier_root=_carrier_root)
+                         config_sha256, carrier_root=_carrier_root, application=application)
         environment = {'PATH': '/usr/bin:/bin', 'DOCKER_CONFIG': str(Path(temporary) / 'docker-config')}
 
         def call(command, **options):
@@ -171,6 +192,8 @@ def launch(raw, *, workspace, tooling, commit, tooling_sha256, image, config_sha
 
         inspected = call(['image', 'inspect', image], stdout=subprocess.PIPE, check=True, timeout=15)
         check_worker_image(inspected.stdout, image)
+        if request['action'] != 'offer':
+            stage_application(call, image, name + '-source', application)
         try:
             completed = call(args, input=raw, stdout=subprocess.PIPE, check=True, timeout=TIMEOUT)
         except subprocess.TimeoutExpired:

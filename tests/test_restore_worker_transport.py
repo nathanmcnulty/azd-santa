@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
+import subprocess
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
@@ -15,7 +16,7 @@ import restore_census_review as review
 import restore_database_command as database
 from restore_database_command import SCOPE as WORKER_SCOPE
 from restore_tooling_bundle import WORKER_TRANSPORT_SCOPE
-from restore_worker import check_worker_image
+from restore_worker import check_worker_image, stage_application
 import restore_worker_transport as transport
 from retained_image_handoff import sha
 from retained_image_run_command import DONE, RECEIPT
@@ -53,6 +54,22 @@ class LocalPreviewTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 database.preview(self.request, directory=None, _boot=lambda _: 'wrong')
             connection.assert_not_called()
+
+
+class ApplicationStagingTests(unittest.TestCase):
+    def test_copy_failure_removes_the_unstarted_container(self):
+        calls = []
+
+        def docker(args, **options):
+            calls.append(args)
+            if args[0] == 'cp':
+                raise subprocess.CalledProcessError(1, args)
+            self.assertTrue(options['check'])
+
+        with TemporaryDirectory() as directory, self.assertRaises(subprocess.CalledProcessError):
+            stage_application(docker, 'sha256:' + 'f' * 64, 'stage-fixture', Path(directory) / 'application')
+        self.assertEqual([args[0] for args in calls], ['create', 'cp', 'rm'])
+        self.assertEqual(calls[-1], ['rm', '--force', '--volumes', 'stage-fixture'])
 
 
 class WorkerImageTests(unittest.TestCase):
