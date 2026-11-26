@@ -248,3 +248,25 @@ and memory-backed files, and verified VM deallocation. The receipt SHA-256 is
 The capture recorded index and shard inventory. Comparison of individual
 documents against an independently captured baseline and integration with the
 restored application remain open.
+
+## Redis and RabbitMQ state from the retained pilot archive
+
+The independent verifier matched both local images to the authenticated
+archive. The pinned Redis checker accepted a disposable copy of the three-file
+multipart AOF, and the verifier matched the file hashes afterward. The fresh
+Redis instance started with all 16 databases empty, created a new admission
+generation, and rejected the archived security-store identity.
+[Redis persistence](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/)
+
+The authenticated capture record reported five drained RabbitMQ queues. The
+verifier preserved all 43 archived broker files in quarantine and checked
+their hashes after the trial. A fresh broker authenticated its new user and
+reported one virtual host, zero queues and a different Erlang cookie. The
+archived broker user was absent from its user inventory.
+[RabbitMQ backup and restore](https://www.rabbitmq.com/docs/backup)
+
+The verifier removed the network-disabled containers and memory-backed data.
+Azure confirmed VM deallocation. The receipt SHA-256 is
+`b38ea8931ed765b7ff65601105f8e25842bdbc5009ddf4c515f9f7eef7e9b533`.
+Application startup against the new stores and current-authority reissue
+remain open.
