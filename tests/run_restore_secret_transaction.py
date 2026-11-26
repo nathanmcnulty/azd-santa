@@ -15,6 +15,7 @@ import restore_census_review as review
 import restore_guest_job as guest_job
 import restore_guest_readback as guest
 import restore_arm_authorization as arm
+import restore_sealed_inputs as sealed
 import restore_quarantine_journal as journal
 import restore_secret_transaction as transaction
 import run_restore_authority_transaction as fixture
@@ -178,6 +179,39 @@ def run(root):
                 plan_digest=preview['plan_digest'], review_sha256=published(stage, baseline, context)['review_sha256'])
             return True
 
+        def sealed_apply(stage, baseline, preview):
+            selected_job = job()
+            options = secret_options if stage == 'rewrap' else dict(cutoff=cutoff)
+            inputs = published(stage, baseline)
+            selection = dict(stage=stage, plan_digest=preview['plan_digest'], review_sha256=inputs['review_sha256'])
+            recipient = sealed.Recipient(selected_job, binding=selected_job.binding(KEY), **selection)
+            pin = sealed.sha(recipient.offer)
+            reject(lambda: sealed.seal(selected_job, recipient.offer, pin, stage=stage, **inputs,
+                                       plan_digest='0' * 64, fingerprint_key=KEY, options=options),
+                   sealed.InputRejected)
+            packet = sealed.seal(selected_job, recipient.offer, pin, **selection, review_bytes=inputs['review_bytes'],
+                                 fingerprint_key=KEY, options=options)
+            assert KEY not in packet and inputs['review_bytes'] not in packet
+            if stage == 'rewrap':
+                assert OLD['old'].passwords[0].encode() not in packet
+            approve = lambda record: authorized(stage, baseline, preview, bound, record)
+
+            def receive(current, data, digest):
+                return current.run(data, digest, writer, observer, apps, directory=directory, authorize=approve)
+
+            reject(lambda: receive(recipient, packet, '0' * 64), sealed.InputRejected)
+            other = sealed.Recipient(selected_job, binding=selected_job.binding(KEY), **selection)
+            reject(lambda: receive(other, packet, sealed.sha(packet)), sealed.InputRejected)
+            if stage == 'rewrap':
+                tamper = sealed.Recipient(selected_job, binding=selected_job.binding(KEY), **selection)
+                separate = sealed.seal(selected_job, tamper.offer, sealed.sha(tamper.offer), **selection,
+                                       review_bytes=inputs['review_bytes'], fingerprint_key=KEY, options=options)
+                corrupt = separate[:-1] + bytes([separate[-1] ^ 1])
+                reject(lambda: receive(tamper, corrupt, sealed.sha(corrupt)), sealed.InputRejected)
+            result = receive(recipient, packet, sealed.sha(packet))
+            reject(lambda: receive(recipient, packet, sealed.sha(packet)), sealed.InputRejected)
+            return result
+
         def unchanged(baseline):
             assert census.compare(observe(), fingerprint_key=KEY, **baseline)['exact_match']
 
@@ -250,8 +284,7 @@ def run(root):
             cursor.execute("UPDATE stores_store SET description='description'")
         unchanged(baseline)
         assert not list(directory.iterdir())
-        applied = guided('rewrap', baseline, plan_digest=reviewed_plan['plan_digest'],
-                         authorize=lambda record: authorized('rewrap', baseline, reviewed_plan, bound, record))
+        applied = sealed_apply('rewrap', baseline, reviewed_plan)
         assert applied['stages'] == {'rewrap': 'committed', 'quarantine': 'pending'}
         result = applied['result']
         assert result['rewrap_committed'] and result['performs_mutation']
@@ -278,8 +311,7 @@ def run(root):
         deny(lambda: job({**bound, 'generation': '0' * 64}).inspect(directory, fingerprint_key=KEY))
         subsequent = reviewed()
         quarantine = guided('quarantine', subsequent)
-        completed = guided('quarantine', subsequent, plan_digest=quarantine['plan_digest'],
-                           authorize=lambda record: authorized('quarantine', subsequent, quarantine, bound, record))
+        completed = sealed_apply('quarantine', subsequent, quarantine)
         assert completed['result']['authority_updates_committed'] and completed['result']['performs_mutation']
         user.refresh_from_db()
         assert not user.is_active and not user.check_password('synthetic archived password')
@@ -297,6 +329,7 @@ def run(root):
         print('Verified guided rewrap and authority handoff, durable intent, replay denial and closed activation')
         print('Verified private review handoff, stale census rejection and authorization before database intent')
         print('Verified the guest-bound job committed both steps and rejected a mismatched VM, boot, operator or database')
+        print('Verified sealed input delivery to both database steps, including wrong recipient and replay rejection')
         print('Verified transactional rewrap, late rollback, unchanged Terraform bytes and exact JSONB numbers')
     finally:
         connections.close_all()
