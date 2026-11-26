@@ -18,7 +18,7 @@ from restore_authority_transaction import Target
 from restore_database_command import SCOPE as WORKER_SCOPE, parse_request
 from restore_guest_job import Job
 import restore_operator_approval as approval
-from restore_packet_operator import SCOPE as PACKET_SCOPE
+from restore_packet_operator import SCOPE as PACKET_SCOPE, delivery_binding, delivery_receipt, local_plan
 from restore_sealed_inputs import Recipient, sha
 from retained_image_handoff import b64, decode
 
@@ -85,19 +85,19 @@ class OperatorRequestTests(unittest.TestCase):
                     self.request(**fields)
                 confirm.assert_not_called()
 
-    def test_cli_accepts_pretty_printed_plan_and_receipt_and_emits_canonical_request(self):
+    def run_cli(self, *, local=False, expected_rejection=False):
         reply = dict(scope=WORKER_SCOPE, state='offered', stage='rewrap', offer=b64(self.offer),
                      offer_sha256=sha(self.offer), request_sha256='e' * 64)
         selection = SimpleNamespace(verifier=self.host, source=SimpleNamespace(instance_id='fixture-sender'),
                                     store=SimpleNamespace(blob=SimpleNamespace(account_id='fixture-account')))
         with TemporaryDirectory() as directory:
-            args = ['operator']
+            args = ['operator'] + (['--local-packet'] if local else [])
             for name, data in (('selection', {}), ('job', {}), ('offer-reply', reply), ('plan', self.plan),
                                ('receipt', self.receipt)):
                 path = Path(directory) / (name + '.json')
                 path.write_text(json.dumps(data, indent=2), encoding='utf-8')
                 args.extend(('--' + name, str(path)))
-            args.extend(('--operation', self.plan['operation'], '--offer-sha256', sha(self.offer),
+            args.extend(('--operation', self.plan.get('operation', '1' * 32), '--offer-sha256', sha(self.offer),
                          '--plan-sha256', self.plan_sha, '--approved-plan-digest', self.step['plan_digest'],
                          '--public-key-sha256', sha(self.public)))
             source = SimpleNamespace(buffer=io.BytesIO(self.key.private_bytes_raw() + self.fingerprint))
@@ -105,5 +105,30 @@ class OperatorRequestTests(unittest.TestCase):
             with (patch.object(sys, 'argv', args), patch.object(sys, 'stdin', source), patch.object(sys, 'stdout', sink),
                   patch.object(approval, 'selected_job', return_value=(selection, self.job, 'fixture-boot')),
                   patch.object(Job, 'confirm', return_value=lambda _: True)):
+                if expected_rejection:
+                    with self.assertRaises(SystemExit):
+                        approval.main()
+                    return
                 approval.main()
             self.assert_request(sink.buffer.getvalue())
+
+    def test_cli_accepts_pretty_printed_plan_and_receipt(self):
+        self.run_cli()
+        self.run_cli(local=True, expected_rejection=True)
+
+    def test_explicit_local_cli_accepts_the_pinned_packet(self):
+        self.plan = local_plan(self.job, 'f' * 64, 512)
+        self.plan_sha = self.plan['plan_sha256']
+        self.receipt = delivery_receipt(self.plan, upload_confirmed=False)
+        self.run_cli(local=True)
+        self.run_cli(expected_rejection=True)
+
+    def test_local_receipt_cannot_claim_an_upload_or_change_receiver_identity(self):
+        plan = local_plan(self.job, 'f' * 64, 512)
+        receipt = delivery_receipt(plan, upload_confirmed=False)
+        for fields in ({'upload_confirmed': True}, {'database_applied': 0}, {'scope': PACKET_SCOPE}):
+            with self.subTest(fields=fields), self.assertRaises(blob.RetentionRejected):
+                delivery_binding(self.job, plan, plan['plan_sha256'], {**receipt, **fields})
+        moved = replace(self.job, generation='1' * 64)
+        with self.assertRaises(blob.RetentionRejected):
+            delivery_binding(moved, plan, plan['plan_sha256'], receipt)

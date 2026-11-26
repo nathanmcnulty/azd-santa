@@ -472,11 +472,29 @@ def run(root):
             plan = transport.preview()
             plan_sha = plan['plan_sha256']
             receipt = transport._summary(state='verified', upload_confirmed=(stage != 'rewrap'))
-            guest = carrier_root / plan['receiver_capsule']
-            guest.mkdir(mode=0o700)
-            received = guest / 'packet.sealed'
-            received.write_bytes(packet)
-            received.chmod(0o600)
+            if stage == 'quarantine':
+                reject(lambda: packet_operator.stage_local(selected_job, host, packet, root=carrier_root,
+                    _boot=lambda _: '55555555-5555-4555-8555-555555555555'), sealed.InputRejected)
+                plan, receipt = packet_operator.stage_local(selected_job, host, packet, root=carrier_root,
+                                                            _boot=worker_boot)
+                plan_sha = plan['plan_sha256']
+                carrier = carrier_root / plan['receiver_capsule']
+                verified = carrier / 'verified.json'
+                saved = verified.read_bytes()
+                verified.write_bytes(blob.encoded({**receipt, 'state': 'interrupted'}))
+                reject(lambda: packet_operator.received_packet(selected_job, plan, plan_sha, receipt,
+                                                                root=carrier_root), blob.RetentionRejected)
+                verified.write_bytes(saved)
+                reject(lambda: packet_operator.stage_local(selected_job, host, packet, root=carrier_root,
+                                                            _boot=worker_boot), FileExistsError)
+                assert packet_operator.received_packet(selected_job, plan, plan_sha, receipt, root=carrier_root) == packet
+                received = carrier / 'packet.sealed'
+            else:
+                guest = carrier_root / plan['receiver_capsule']
+                guest.mkdir(mode=0o700)
+                received = guest / 'packet.sealed'
+                received.write_bytes(packet)
+                received.chmod(0o600)
 
             def sign(digest, key=signer):
                 return operator_approval.issue(key, selected_job, KEY, offer,
@@ -503,8 +521,8 @@ def run(root):
             reject(lambda: apply_file(receipt, '0' * 64), blob.RetentionRejected)
             reject(lambda: apply_file(receipt, key=other_signer.public_key().public_bytes_raw(),
                                       signed=other_approval), operator_approval.ApprovalRejected)
-            reject(lambda: apply_file({**receipt, 'upload_confirmed': not receipt['upload_confirmed']}),
-                   operator_approval.ApprovalRejected)
+            error = blob.RetentionRejected if stage == 'quarantine' else operator_approval.ApprovalRejected
+            reject(lambda: apply_file({**receipt, 'upload_confirmed': not receipt['upload_confirmed']}), error)
             approval_body = json.loads(approval)['body']
             forged = review.encode(dict(body=approval_body,
                                         signature=base64.b64encode(bytes(64)).decode()))
