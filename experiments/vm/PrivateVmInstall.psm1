@@ -57,6 +57,28 @@ function Assert-PrivateProvisionedVmOutputs {
     }
 }
 
+function Assert-PrivateOperatorHttps {
+    param([uri]$Origin)
+    $handler = [Net.Http.HttpClientHandler]::new()
+    $handler.AllowAutoRedirect = $false
+    $handler.UseCookies = $false
+    $client = [Net.Http.HttpClient]::new($handler)
+    $client.Timeout = [TimeSpan]::FromSeconds(8)
+    try {
+        $login = [uri]::new($Origin, '/accounts/login/')
+        try {
+            $response = $client.GetAsync($login, [Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        } catch {
+            throw 'Santa login is unreachable over trusted HTTPS from this workstation. Check VM power and the HTTPS route, then retry. No setup attempt was reserved.'
+        }
+        try {
+            if ($response.StatusCode -ne [Net.HttpStatusCode]::OK) {
+                throw "Santa login returned HTTP $([int]$response.StatusCode). Check the HTTPS route, then retry. No setup attempt was reserved."
+            }
+        } finally { $response.Dispose() }
+    } finally { $client.Dispose() }
+}
+
 function Invoke-PrivateVmOperatorSetup {
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -114,6 +136,7 @@ function Invoke-PrivateVmOperatorSetup {
     Assert-PrivateProvisionedVmOutputs $values $binding
     if (-not $PSCmdlet.ShouldProcess($EnvironmentName, "Request Santa administrator $attempt and open the local browser")) { return }
 
+    Assert-PrivateOperatorHttps $binding.Origin
     $stream = [IO.FileStream]::new($intent, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
     try { $stream.Flush($true) } finally { $stream.Dispose() }
     $null = [IO.Directory]::CreateDirectory($checkpoints)

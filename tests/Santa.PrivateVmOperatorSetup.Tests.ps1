@@ -46,6 +46,7 @@ if ($Reason -eq 'simulated unknown') { throw 'Synthetic unknown outcome.' }
             Mock Get-PrivateEnvironmentDirectory { $script:directory }
             Mock Invoke-PrivateAzd { $script:values }
             Mock Invoke-PrivateAzure { throw 'Unexpected external operation.' }
+            Mock Assert-PrivateOperatorHttps {}
         }
 
         It 'uses the selected binding and reserves bootstrap once per immutable VM' {
@@ -55,6 +56,7 @@ if ($Reason -eq 'simulated unknown') { throw 'Synthetic unknown outcome.' }
             $result.Username | Should -BeExactly 'admin'
             $result.Email | Should -BeExactly 'admin@example.invalid'
             $result.Directory | Should -BeExactly (Join-Path $directory "operator-$instance-bootstrap")
+            Should -Invoke Assert-PrivateOperatorHttps -Times 1 -Exactly -ParameterFilter { $Origin.AbsoluteUri -ceq 'https://localhost:8000/' }
             Should -Invoke Invoke-PrivateAzd -Times 1 -Exactly -ParameterFilter {
                 ($Arguments -join ' ') -ceq 'env get-values --environment synthetic --output json' -and $Json
             }
@@ -83,6 +85,15 @@ if ($Reason -eq 'simulated unknown') { throw 'Synthetic unknown outcome.' }
             Invoke-PrivateVmOperatorSetup @arguments -WhatIf | Should -BeNullOrEmpty
             @(Get-ChildItem -LiteralPath $directory).Count | Should -Be 1
             Should -Invoke Invoke-PrivateAzure -Times 0
+            Should -Invoke Assert-PrivateOperatorHttps -Times 0
+        }
+
+        It 'leaves the same attempt available if the login page is unreachable' {
+            Mock Assert-PrivateOperatorHttps { throw 'Synthetic login unavailable.' }
+            { Invoke-PrivateVmOperatorSetup @arguments } | Should -Throw '*Synthetic login unavailable*'
+            @(Get-ChildItem -LiteralPath $directory).Count | Should -Be 1
+            Mock Assert-PrivateOperatorHttps {}
+            (Invoke-PrivateVmOperatorSetup @arguments).Mode | Should -BeExactly 'bootstrap'
         }
 
         It 'rejects a foreign binding path, disabled backend, or stale instance before reserving an attempt' {

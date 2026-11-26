@@ -382,7 +382,7 @@
       "rationale": "Nested VM postprovision validates the selected account/group/VM outputs and schedules two-hour shutdown for that exact VM, including host-only mode. When SANTA_PRIVATE_BACKEND_INSTALL=true, it additionally transports bounded pinned sources, submits one durable privileged fresh-install job and observes it before nonmutating finalization. SANTA_PRIVATE_HTTPS_ORIGIN=true optionally consumes the existing selected cached HTTPS endpoint reader for a fresh origin-bound profile only. No root Intune hook, network admission, tenant grant or operator reset is added; actual complete ARM/hook/cold-install delivery remains unqualified.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "bab03ee40d1229e83494d13077fac9552f7d9c4f3662229d865b6220cd6a80d0" },
+        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "a928d3822389b179a3962840940272abedbeb429644563b6a44e8053ef946aa7" },
         { "path": "experiments/vm/Install-PrivateBackend.ps1", "sha256": "33c620439f5abadef688f4a6f0477e80e4676986beac0cb6d43b975c092320d5" },
         { "path": "experiments/server/private_install.py", "sha256": "8b2c2e3867ed19e462a8d26e2df873077946596541c1cf767952e5c207e710dc" },
         { "path": "experiments/server/private_install_transport.py", "sha256": "ec26e620151179eef05e97d4d274d88a90717126c68a3d6eedd488357d273a16" },
@@ -430,7 +430,7 @@
       "feature": "operator-setup-transport",
       "defaultEnabled": false,
       "scope": "Exact selected tenant/subscription and tagged private pilot RG/VM only",
-      "rationale": "Optional operator setup checks cached selected account/group/VM, then sends a hash-pinned stdlib host program to verify private runtime bindings and invoke the installed sealed operator command or ciphertext-only readback. The VM operator command reads its binding from the selected azd environment and reserves an explicit local attempt. Setup remains separate from provisioning; no grants are created.",
+      "rationale": "Optional operator setup checks cached selected account/group/VM, then sends a hash-pinned stdlib host program to verify private runtime bindings and invoke the installed sealed operator command or ciphertext-only readback. The VM operator command reads its binding from the selected azd environment and verifies trusted HTTPS reachability before reserving a local attempt. Setup remains separate from provisioning; no grants are created.",
       "evidenceState": "code",
       "evidence": [
         { "path": "experiments/server/SetupTransport.psm1", "sha256": "4b68586fc44f19901777be373856794aa89687f849746f1cc72168989999a9c9" },
