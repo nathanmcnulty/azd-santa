@@ -364,18 +364,13 @@ def private_parent(path, stack):
 
 def decrypt_staging(source, size, expected, key, output, deadline):
     """Second authenticated pass; staged bytes are never parsed before finalize."""
-    from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives.asymmetric import padding
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-    source.seek(0); prefix = source.read(len(restore_cipher.MAGIC) + 4)
-    length = struct.unpack('>I', prefix[-4:])[0]; need(1 <= length <= 2048)
-    header = source.read(length); value = document(header)
-    secret = key.decrypt(base64.b64decode(value['wrapped_key']), padding.OAEP(
-        mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=restore_cipher.MAGIC))
+    header = restore_cipher.read_header(source, size)
+    secret = restore_cipher.unwrap(header, key, expected)
     source.seek(size-16); tag = source.read(16)
-    decryptor = Cipher(algorithms.AES256(secret), modes.GCM(base64.b64decode(value['nonce']), tag)).decryptor()
-    decryptor.authenticate_additional_data(prefix + header); digest = hashlib.sha256(prefix + header)
-    source.seek(len(prefix) + length); remaining = size - len(prefix) - length - 16
+    decryptor = Cipher(algorithms.AES256(secret), modes.GCM(header.nonce, tag)).decryptor()
+    decryptor.authenticate_additional_data(header.aad); digest = hashlib.sha256(header.aad)
+    source.seek(len(header.aad)); remaining = size - len(header.aad) - 16
     while remaining:
         need(time.monotonic() < deadline)
         raw = source.read(min(CHUNK, remaining)); need(0 < len(raw) <= remaining)
