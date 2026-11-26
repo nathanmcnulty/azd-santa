@@ -348,8 +348,15 @@ credentials in order, uploads once and independently verifies the receiver.
 A lost upload acknowledgement can be reconciled by a matching readback.
 Use `observe` to inspect local journal evidence without a cloud request.
 
-The launcher delivers ciphertext. Live transfer, object cleanup, database
-execution from the receiver file, service-generation binding and replacement
+Recovery tooling bundle v16 connects the approved delivery to the existing
+isolated database job. The receiver requires the trusted plan digest and a
+matching verified transfer receipt. It opens the exact owner-private file
+under the selected receiver capsule and rechecks size and SHA-256 before
+decryption. The existing offer and journal still gate each database step
+and require current authorization.
+
+The guided VM entry point for the database job, live transfer and database
+execution, object cleanup, service-generation binding and replacement
 identity enrollment remain open.
 [Live VM startup investigation](https://github.com/nathanmcnulty/azd-santa/issues/190)
 

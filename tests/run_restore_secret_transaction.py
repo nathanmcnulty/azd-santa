@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import io
 from pathlib import Path
+import subprocess
 import sys
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -18,6 +19,8 @@ import restore_census as census
 import restore_census_review as review
 import restore_guest_job as guest_job
 import restore_guest_readback as guest
+import restore_packet_operator as packet_operator
+import restore_tooling_bundle as tooling
 import restore_arm_authorization as arm
 import restore_sealed_inputs as sealed
 import blob_retention as blob
@@ -193,7 +196,7 @@ def transfer_packet(root, job, packet, stage):
         result = receive.use(uploads, *read, _boot=observed_boot)
         reject(lambda: receive.use(uploads, *read, _boot=observed_boot), blob.RetentionRejected)
         assert connection.calls == ['PUT', 'GET', 'GET']
-        return result
+        return result, placement, sender_boot
 
 
 def run(root):
@@ -253,6 +256,11 @@ def run(root):
                              boot_id=target.boot_id)
         bound = dict(archive_sha256='a' * 64, generation='b' * 64)
         secret_options = dict(expected_contexts=CONTEXTS, old_material=OLD, new_material=NEW, targets=TARGETS)
+        repo = Path(__file__).resolve().parents[1]
+        commit = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
+        bundle = tooling.build(repo, commit, version=16)
+        carrier_root = root / 'carrier'
+        carrier_root.mkdir(mode=0o700)
 
         def observe():
             return census.collect(observer, apps, fingerprint_key=KEY)
@@ -303,7 +311,7 @@ def run(root):
             assert KEY not in packet and inputs['review_bytes'] not in packet
             if stage == 'rewrap':
                 assert OLD['old'].passwords[0].encode() not in packet
-            packet = transfer_packet(root, selected_job, packet, stage)
+            packet, placement, sender_boot = transfer_packet(root, selected_job, packet, stage)
             approve = lambda record: authorized(stage, baseline, preview, bound, record)
 
             def receive(current, data, digest):
@@ -318,8 +326,29 @@ def run(root):
                                        review_bytes=inputs['review_bytes'], fingerprint_key=KEY, options=options)
                 corrupt = separate[:-1] + bytes([separate[-1] ^ 1])
                 reject(lambda: receive(tamper, corrupt, sealed.sha(corrupt)), sealed.InputRejected)
-            result = receive(recipient, packet, sealed.sha(packet))
-            reject(lambda: receive(recipient, packet, sealed.sha(packet)), sealed.InputRejected)
+            transport = packet_operator.Operation(placement, selected_job, packet, bundle, commit=commit,
+                                                  tooling_sha256=sealed.sha(bundle), sender_boot=sender_boot)
+            plan = transport.preview()
+            plan_sha = plan['plan_sha256']
+            receipt = transport._summary(state='verified', upload_confirmed=(stage != 'rewrap'))
+            guest = carrier_root / plan['receiver_capsule']
+            guest.mkdir(mode=0o700)
+            received = guest / 'packet.sealed'
+            received.write_bytes(packet)
+            received.chmod(0o600)
+
+            def apply_file(result, digest=plan_sha):
+                return recipient.run_received(plan, digest, result, writer, observer, apps,
+                                              carrier_root=carrier_root, directory=directory, authorize=approve)
+
+            reject(lambda: apply_file(receipt, '0' * 64), sealed.InputRejected)
+            reject(lambda: apply_file({**receipt, 'state': 'interrupted'}), sealed.InputRejected)
+            received.write_bytes(packet[:-1] + bytes([packet[-1] ^ 1]))
+            reject(lambda: apply_file(receipt), sealed.InputRejected)
+            unchanged(baseline)
+            received.write_bytes(packet)
+            result = apply_file(receipt)
+            reject(lambda: apply_file(receipt), sealed.InputRejected)
             return result
 
         def unchanged(baseline):
@@ -442,6 +471,7 @@ def run(root):
         print('Verified sealed input delivery to both database steps, including wrong recipient and replay rejection')
         print('Verified exact-object Blob transport to both database steps with ambiguous upload and tamper checks')
         print('Verified sealed SAS delivery to distinct sender and receiver boots before both database steps')
+        print('Verified receiver files fed both PostgreSQL steps and changed files or plans failed before writes')
         print('Verified transactional rewrap, late rollback, unchanged Terraform bytes and exact JSONB numbers')
     finally:
         connections.close_all()

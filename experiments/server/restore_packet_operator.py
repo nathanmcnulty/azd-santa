@@ -1,6 +1,7 @@
 """Plan and deliver one sealed Santa recovery packet to the selected recovery VM."""
 
 import argparse
+from contextlib import ExitStack
 import json
 from pathlib import Path
 
@@ -14,10 +15,36 @@ from restore_input_sas import RestoreInputSasIssuer
 from restore_quarantine_journal import is_digest
 from restore_sealed_inputs import MAX_PACKET, sha
 from restore_tooling_bundle import MAX_BUNDLE
+from retained_image_delivery import read_at
 from retained_image_operator import journal_read, journal_root, read_bytes, selected_store
 from retained_image_sas import sync_directory, write_record
 
 SCOPE = 'santa-restore-packet-operation-v1'
+CARRIER_ROOT = Path('/run/azd-santa-recovery-carrier')
+
+
+def received_packet(job, plan, plan_sha256, receipt, *, root=CARRIER_ROOT):
+    """Open only the verified ciphertext for the approved receiver capsule."""
+    blob.need(type(job) is Job and type(plan) is dict and is_digest(plan_sha256)
+              and plan.get('plan_sha256') == plan_sha256 and plan.get('submits_run_command') is False)
+    body = {name: value for name, value in plan.items() if name not in ('plan_sha256', 'submits_run_command')}
+    blob.need(sha(blob.encoded(body)) == plan_sha256 and plan['scope'] == SCOPE)
+    expected = dict(tenant=job.selection.tenant, subscription=job.selection.subscription,
+                    receiver=job.selection.vm_instance_id, receiver_boot=job.verified_boot_id,
+                    archive_sha256=job.archive_sha256, generation=job.generation)
+    blob.need(all(plan[name] == value for name, value in expected.items()))
+    capsule, digest, length = (plan[name] for name in ('receiver_capsule', 'packet_sha256', 'packet_bytes'))
+    blob.need(is_digest(capsule) and is_digest(digest) and type(length) is int and 0 < length <= MAX_PACKET)
+    blob.need(type(receipt) is dict and type(receipt.get('upload_confirmed')) is bool
+              and receipt.get('database_applied') is False
+              and receipt == dict(scope=SCOPE, state='verified', plan_sha256=plan_sha256,
+                                  receiver_capsule=capsule, packet_sha256=digest, packet_bytes=length,
+                                  upload_confirmed=receipt['upload_confirmed'], database_applied=False))
+    with ExitStack() as stack:
+        directory, name = blob.parent(Path(root) / capsule / 'packet.sealed', stack)
+        packet = read_at(directory, name, length)
+    blob.need(len(packet) == length and sha(packet) == digest)
+    return packet
 
 
 class Operation:

@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cold_backup import recipient_key
 from retained_image_handoff import b64, decode
 from retained_image_parts import checked_document
+import restore_authority_transaction as authority
 import restore_census as census
 import restore_census_review as review
 from restore_guest_job import Job
@@ -116,6 +117,20 @@ class Recipient:
         now = int(time.time())
         self.offer = review.encode({**self._expected, 'key': b64(public), 'created': now, 'expires': now + 600})
         self._lock = threading.Lock()
+
+    def run_received(self, plan, plan_sha256, receipt, writer, observer, registry, *,
+                     directory, authorize, carrier_root=None):
+        """Verify the approved transfer and local ciphertext before consuming this offer."""
+        from restore_packet_operator import CARRIER_ROOT, received_packet
+
+        try:
+            require(authority.read_target(observer) == self._job.target)
+            root = CARRIER_ROOT if carrier_root is None else carrier_root
+            packet = received_packet(self._job, plan, plan_sha256, receipt, root=root)
+        except Exception:
+            raise InputRejected('Verified restore packet did not match the approved delivery') from None
+        return self.run(packet, plan['packet_sha256'], writer, observer, registry,
+                        directory=directory, authorize=authorize)
 
     def run(self, packet, packet_sha256, writer, observer, registry, *, directory, authorize):
         """Consume pinned ciphertext and call the existing isolated database job."""
