@@ -335,10 +335,22 @@ validated against a private test certificate. The app trusted the exact
 fixture origin. It rejected a foreign origin and a missing CSRF token,
 accepted the reset, and rejected replay in a fresh client. The recovered
 administrator enrolled TOTP and could open the profile only after verification.
-The temporary service and database shut down cleanly. Browser rendering,
-public certificate lifecycle, simultaneous service activation, native-device
-recovery, and repeatable azd activation remain open.
+The temporary service and database shut down cleanly.
 [Recovered HTTPS sign-in](https://github.com/nathanmcnulty/azd-santa/issues/53#issuecomment-7201591941)
+
+A controlled repeat on the 4 GiB Azure VM gracefully stopped the original
+seven-service lab stack and kept its startup configuration enabled. The
+recovered HTTPS service, event workers and Celery ran concurrently with
+restored PostgreSQL and Elasticsearch and fresh Redis and RabbitMQ. The drill
+verified the administrator reset and MFA over loopback HTTPS, indexed one new
+event alongside 26 restored documents, drained the event queues, and read the
+result of one private-queue Celery task from restored PostgreSQL. The lowest
+sampled available memory was 1,416,468 KiB (about 1.35 GiB). The retained
+snapshot stayed intact. Workspace cleanup and Azure deallocation completed.
+[Concurrent recovery drill](https://github.com/nathanmcnulty/azd-santa/issues/53#issuecomment-7202850496)
+
+Sustained load, failure handling, human browser validation, public certificate
+lifecycle, native-device recovery and repeatable azd activation remain open.
 
 Recovery tooling bundle v5 includes the private census review handoff. The
 reviewer exports the complete dispositions and keyed census fingerprint,
