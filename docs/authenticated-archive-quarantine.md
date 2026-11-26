@@ -129,3 +129,23 @@ all 232 Pester tests passed. The focused quarantine suite executed 12 tests and
 explicitly skipped its two Linux-only cases on Windows; all eight unchanged
 authenticate/discard tests passed. Linux containment and filesystem fault
 acceptance are still required before treating this primitive as qualified there.
+
+## Extraction of the retained pilot archive
+
+The independent Linux verifier reauthenticated the retained 80,159,434-byte
+pilot ciphertext before invoking the strict parser. The lab harness used the
+original Windows recipient for a boot-bound handoff of the archive's content
+key. It staged the authenticated tar in anonymous memory-backed storage and
+used the maintained parser and descriptor-relative writer for extraction.
+
+The parser accepted 2,295 archive members, including 2,293 payload entries
+and two archive metadata records. The resulting tree held 76,600,634 bytes
+in regular files. All five data roots were present, including the native
+Elasticsearch repository. The verifier checked entry paths, sizes, ownership,
+and private modes and removed the volatile quarantine. Azure confirmed VM
+deallocation. The receipt SHA-256 is
+`3495b598f39b1b4afd5be15f804354fd174706577a548e1445ecdb479405525e`.
+
+This run exercises the parser and writer on the actual pilot bytes. Durable
+quarantine through the public `extract()` entry point, application startup,
+restored data verification, and current authority need separate evidence.
