@@ -53,28 +53,13 @@ class IssuedBatch:
             return tokens
 
 
-class ImageSasIssuer(arm.CachedStoreObservation):
-    """One selected operation and role, with fresh store observations before POST."""
-
-    def __init__(self, selection, manifest, completion, permission, *, manifest_sha256,
-                 completion_sha256, operation, seconds=180, cli=arm.cached_cli, transport=arm.https):
-        super().__init__(selection, seconds=seconds, cli=cli, transport=transport)
-        self._pins = dict(manifest_sha256=manifest_sha256, completion_sha256=completion_sha256, operation=operation)
-        manifest = parts.checked_manifest(manifest, completion, **self._pins)
-        self._target = selection.source if permission == 'c' else selection.verifier
-        arm.require(selection.store.blob.operation == operation and permission in ('c', 'r')
-                    and self._target is not None)
-        if permission == 'r':
-            arm.require(self._target.vm_id.casefold() != selection.source.vm_id.casefold()
-                        and self._target.instance_id != selection.source.instance_id)
-        self._permission = permission
-        account = selection.store.blob.account
-        self._objects = tuple((part, f"/blob/{account}/native-captures/{part['object']}") for part in manifest['parts'])
+class ExactBlobSasIssuer(arm.CachedStoreObservation):
+    """Reserve and issue one reviewed set of exact objects for a single role."""
 
     def issue(self, journal_root=None, *, apply=False):
         arm.require(type(apply) is bool)
         if not apply:
-            return {'scope': 'santa-image-sas-plan-v1', 'permission': self._permission,
+            return {'scope': self._plan_scope, 'permission': self._permission,
                     'objects': [path for _, path in self._objects], 'requests_sent': 0}
         arm.require(self._busy.acquire(blocking=False))
         try:
@@ -91,7 +76,7 @@ class ImageSasIssuer(arm.CachedStoreObservation):
             if os.name != 'nt':
                 info = root.stat()
                 arm.require(info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o700)
-            journal = root / (self._pins['operation'] + '-' + self._permission)
+            journal = root / self._journal_name
             journal.mkdir(mode=0o700)
             sync_directory(root)
             write_record(journal / 'intent.json', {**self._pins, 'permission': self._permission,
@@ -124,9 +109,31 @@ class ImageSasIssuer(arm.CachedStoreObservation):
             arm.require(blob.encoded(self._context()) == blob.encoded(self._context_initial))
             write_record(journal / 'issued.json', {'state': 'issued', 'objects': len(tokens)})
             sync_directory(journal)
-            return IssuedBatch(self._target, self._permission, self._pins['manifest_sha256'], tokens,
+            return IssuedBatch(self._target, self._permission, self._digest, tokens,
                                account_id=self._selection.store.blob.account_id)
         except Exception:
             # A journal with intent but no completion needs inspection, even
             # when only some responses were received. Nothing can be replayed.
             raise arm.ArmRejected() from None
+
+
+class ImageSasIssuer(ExactBlobSasIssuer):
+    """One selected image operation and role."""
+
+    def __init__(self, selection, manifest, completion, permission, *, manifest_sha256,
+                 completion_sha256, operation, seconds=180, cli=arm.cached_cli, transport=arm.https):
+        super().__init__(selection, seconds=seconds, cli=cli, transport=transport)
+        self._pins = dict(manifest_sha256=manifest_sha256, completion_sha256=completion_sha256, operation=operation)
+        manifest = parts.checked_manifest(manifest, completion, **self._pins)
+        self._target = selection.source if permission == 'c' else selection.verifier
+        arm.require(selection.store.blob.operation == operation and permission in ('c', 'r')
+                    and self._target is not None)
+        if permission == 'r':
+            arm.require(self._target.vm_id.casefold() != selection.source.vm_id.casefold()
+                        and self._target.instance_id != selection.source.instance_id)
+        self._permission = permission
+        account = selection.store.blob.account
+        self._objects = tuple((part, f"/blob/{account}/native-captures/{part['object']}") for part in manifest['parts'])
+        self._plan_scope = 'santa-image-sas-plan-v1'
+        self._journal_name = operation + '-' + permission
+        self._digest = manifest_sha256

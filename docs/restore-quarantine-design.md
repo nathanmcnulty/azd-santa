@@ -309,10 +309,17 @@ verifies the independently supplied digest and length before decryption.
 An ambiguous upload can be reconciled by readback. The sender does not
 resubmit the PUT. [Azure Blob conditional requests](https://learn.microsoft.com/en-us/rest/api/storageservices/specifying-conditional-headers-for-blob-service-operations)
 
-The operator workflow still needs to obtain both capabilities and pass the
-guest offer and receipt through the authenticated control channel. Live
-network reachability, object cleanup, service-generation binding and
-replacement identity enrollment remain open.
+Recovery tooling bundle v11 issues the two capabilities using the selected
+cached Azure user and fresh readbacks of the owned store and both lab VMs.
+Use a separate reservation for each role. The sender receives create-only
+access and the recovery VM receives read-only access to the same exact packet.
+The issuer keeps the SAS values in memory. The reservation records the target
+and object so an unknown issuance can be inspected. [Azure List Service SAS](https://learn.microsoft.com/rest/api/storagerp/storage-accounts/list-service-sas?view=rest-storagerp-2025-06-01)
+
+The operator workflow still needs to deliver each capability to its intended
+VM and pass the guest offer and receipt through the authenticated control
+channel. Live network reachability, object cleanup, service-generation
+binding and replacement identity enrollment remain open.
 
 The database adapters bind the target to the Linux boot ID and postmaster
 start time. A Unix-socket connection is required, and PostgreSQL must have no
