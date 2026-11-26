@@ -74,10 +74,10 @@ def run(job, observer, registry, *, directory, fingerprint_key, username, email,
         result = {**approval, 'state': 'previewed', 'activation_allowed': False}
         if not applying:
             return result
-        journal.require(hmac.compare_digest(plan, approved_plan_sha256) and authorize(approval) is True)
+        journal.require(hmac.compare_digest(plan, approved_plan_sha256) and authorize(approval.copy()) is True)
         journal.write_record(fd, INTENT, binding, key, plan=plan)
         try:
-            artifact = create(username, email, plan, recipient_sha256)
+            artifact = create(username, email, approval.copy())
         except Exception:
             raise journal.JournalRejected('Administrator reissue outcome requires private inspection') from None
         journal.require(journal.is_digest(artifact))

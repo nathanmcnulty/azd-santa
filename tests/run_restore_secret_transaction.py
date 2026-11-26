@@ -214,6 +214,9 @@ def transfer_packet(root, job, packet, stage):
 def run(root):
     fixture.DATABASE = DATABASE
     fixture.MODELS.update(MODELS)
+    fixture.MODELS['accounts'] = fixture.MODELS['accounts'].replace('class User(AbstractUser):\n    pass',
+        'class User(AbstractUser):\n    is_remote = models.BooleanField(default=False)\n'
+        '    is_service_account = models.BooleanField(default=False)')
     fixture.configure(root)
     from django.apps import apps
     from django.conf import settings
@@ -674,6 +677,7 @@ def run(root):
             with writer.cursor() as cursor:
                 cursor.execute("UPDATE stores_store SET description='description'")
         assert job().reissue_admin(observer, apps, **reissue_options) == reissue
+        check_fresh_administrator(job(), writer, observer, apps, directory, reissue_options, user)
         deny(lambda: guided('quarantine', subsequent, plan_digest=quarantine['plan_digest'], authorize=calls.append))
         assert not calls
         with journal.locked(directory):
@@ -697,6 +701,71 @@ def run(root):
         print('Verified transactional rewrap, late rollback, unchanged Terraform bytes and exact JSONB numbers')
     finally:
         connections.close_all()
+
+
+def check_fresh_administrator(job, writer, observer, apps, directory, options, archived):
+    from types import ModuleType, SimpleNamespace
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding, rsa
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from django.conf import settings
+    from django.contrib.auth.tokens import default_token_generator
+    import restore_admin_account as account
+    import sealed_setup
+
+    setup_origin = 'https://santa.example.invalid'
+    artifact_directory = directory / 'setup'
+    artifact_directory.mkdir(mode=0o700)
+    recipient = rsa.generate_private_key(public_exponent=65537, key_size=3072)
+    der = recipient.public_key().public_bytes(serialization.Encoding.DER,
+                                              serialization.PublicFormat.SubjectPublicKeyInfo)
+    pin = hashlib.sha256(der).hexdigest()
+    setup_options = {**options, 'recipient_sha256': pin}
+    plan = job.reissue_admin(observer, apps, **setup_options)
+
+    def url(user):
+        pk = base64.urlsafe_b64encode(str(user.pk).encode()).decode().rstrip('=')
+        return f'{setup_origin}/accounts/reset/{pk}/{default_token_generator.make_token(user)}/'
+
+    reset = ModuleType('accounts.password_reset')
+    reset.handler = SimpleNamespace(generate_password_reset_url=url)
+    expected = {name: value for name, value in plan.items() if name not in ('state', 'activation_allowed')}
+    apply_options = dict(artifact_directory=artifact_directory, approved_plan_sha256=plan['plan_sha256'],
+                         recipient_public_key=base64.b64encode(der).decode(), setup_origin=setup_origin,
+                         authorize=lambda approval: approval == expected)
+    with patch.dict(sys.modules, {'accounts.password_reset': reset}), patch.object(settings, 'PASSWORD_RESET_TIMEOUT', 600):
+        reject(lambda: account.apply(job, writer, observer, apps, **{**setup_options, 'recipient_sha256': '0' * 64},
+                                     **apply_options), journal.JournalRejected)
+        result = account.apply(job, writer, observer, apps, **setup_options, **apply_options)
+        assert result['state'] == 'committed' and not result['activation_allowed']
+        reject(lambda: account.apply(job, writer, observer, apps, **setup_options, **apply_options),
+               journal.JournalRejected)
+        read_options = dict(directory=directory, artifact_directory=artifact_directory, fingerprint_key=KEY,
+                            plan_sha256=plan['plan_sha256'])
+        raw = account.read_artifact(job, **read_options)
+        assert account.read_artifact(job, **read_options) == raw
+        assert hashlib.sha256(raw).hexdigest() == result['artifact_sha256'] and b'/accounts/reset/' not in raw
+        envelope = json.loads(raw)
+        wrapping = padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
+        key = recipient.decrypt(base64.b64decode(envelope['wrapped_key_base64']), wrapping)
+        aad = sealed_setup.aad('bootstrap', pin, plan['plan_sha256'],
+                               sealed_setup.target_digest(options['username'], options['email']))
+        payload = json.loads(AESGCM(key).decrypt(base64.b64decode(envelope['nonce_base64']),
+                                                  base64.b64decode(envelope['ciphertext_base64']), aad))
+        users = apps.get_model('accounts', 'User').objects
+        new = users.get(pk=payload['target_pk'])
+        assert new.pk != archived.pk and new.is_superuser and new.is_active
+        assert new.username == options['username'] and new.email == options['email']
+        assert not new.is_remote and not new.is_service_account and not new.is_staff
+        assert list(users.filter(is_active=True).values_list('pk', flat=True)) == [new.pk]
+        token = urlsplit(payload['setup_url']).path.rstrip('/').rsplit('/', 1)[-1]
+        assert default_token_generator.check_token(new, token)
+        assert not default_token_generator.check_token(archived, token)
+        archived.refresh_from_db()
+        assert not archived.is_active and not archived.has_usable_password()
+        (artifact_directory / account.artifact_name(plan['plan_sha256'])).write_bytes(raw + b' ')
+        reject(lambda: account.read_artifact(job, **read_options), journal.JournalRejected)
+    print('Verified fresh administrator creation and committed sealed setup readback on restored PostgreSQL')
 
 
 if __name__ == '__main__':

@@ -270,8 +270,16 @@ recovery job, new administrator identity, fresh runtime, and setup recipient.
 It records intent before calling the trusted administrator creator. When
 the creator returns a confirmed sealed artifact digest, the guard records
 completion. Inspect the original attempt if the result is uncertain. Service
-activation stays closed. The fresh-runtime verifier, administrator creator,
-and setup delivery still need integration and live qualification.
+activation stays closed.
+
+Restore tooling bundle v24 adds the administrator creator. It rechecks the
+committed census under a database lock on the isolated PostgreSQL instance,
+requires all archived users to be inactive, and creates a fresh local account
+with no inherited roles or factors. It seals the existing ten-minute
+administrator setup link to the approved recipient. The transport can read
+the original ciphertext after the account commit and journal completion.
+The fresh-runtime verifier, external approval transport, browser delivery,
+and service activation still need integration and live qualification.
 
 Recovery tooling bundle v5 includes the private census review handoff. The
 reviewer exports the complete dispositions and keyed census fingerprint,

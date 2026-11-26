@@ -204,3 +204,11 @@ class BundleTests(unittest.TestCase):
         path = bundle.SERVER + 'restore_admin_reissue.py'
         self.assertEqual(set(files) - set(bundle.WORKER_TRANSPORT_PATHS), {path})
         compile(files[path], path, 'exec')
+
+    def test_admin_account_bundles_the_existing_sealed_setup(self):
+        raw = bundle.build(ROOT, self.commit, version=24)
+        files = bundle.verify(raw, commit=self.commit, bundle_sha256=bundle.sha(raw))
+        expected = {bundle.SERVER + name for name in ('restore_admin_account.py', 'sealed_setup.py')}
+        self.assertEqual(set(files) - set(bundle.ADMIN_REISSUE_PATHS), expected)
+        for path in expected:
+            compile(files[path], path, 'exec')
