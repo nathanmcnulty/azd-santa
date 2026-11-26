@@ -87,7 +87,7 @@ class AdminReissueTests(unittest.TestCase):
         result = self.run_guard(**config)
         expected_approval = {key: value for key, value in plan.items() if key not in ('state', 'activation_allowed')}
         allow.assert_called_once_with(expected_approval)
-        create.assert_called_once_with('new-admin', 'new-admin@example.invalid', plan['plan_sha256'], '1' * 64)
+        create.assert_called_once_with('new-admin', 'new-admin@example.invalid', expected_approval)
         self.assertEqual(result['state'], 'committed')
         self.assertEqual(result['artifact_sha256'], '2' * 64)
         self.assertFalse(result['activation_allowed'])
