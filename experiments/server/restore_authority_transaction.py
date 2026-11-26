@@ -34,6 +34,7 @@ class Target:
     database_oid: int
     system_identifier: int
     postmaster_started: str
+    boot_id: str
 
 
 def require(condition):
@@ -52,16 +53,19 @@ def connection_ready(connection):
 def binding(connection, cursor):
     host = connection.settings_dict['HOST']
     require(type(host) is str and Path(host).is_absolute() and str(Path(host).resolve(strict=True)) == host)
+    boot_id = Path('/proc/sys/kernel/random/boot_id').read_text(encoding='ascii').strip()
+    require(re.fullmatch(r'[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}', boot_id))
     cursor.execute("""SELECT pg_catalog.current_database(), current_user, session_user, pg_catalog.inet_server_addr(),
         d.oid::bigint, c.system_identifier, pg_catalog.pg_postmaster_start_time() AT TIME ZONE 'UTC',
-        pg_catalog.pg_backend_pid(), pg_catalog.pg_is_in_recovery(), pg_catalog.current_setting('server_version_num')
+        pg_catalog.pg_backend_pid(), pg_catalog.pg_is_in_recovery(), pg_catalog.current_setting('server_version_num'),
+        pg_catalog.current_setting('listen_addresses')
         FROM pg_catalog.pg_database d CROSS JOIN pg_catalog.pg_control_system() c
         WHERE d.datname=pg_catalog.current_database()""")
-    database, role, session, address, oid, cluster, started, pid, recovery, version = cursor.fetchone()
+    database, role, session, address, oid, cluster, started, pid, recovery, version, listen = cursor.fetchone()
     require(re.fullmatch(r'azd_recovery_[a-f0-9]{24}', database) and role == session and address is None
             and database == connection.settings_dict['NAME'] and role == connection.settings_dict['USER']
-            and recovery is False and int(version) // 10000 == 18)
-    return Target(database, role, host, oid, cluster, started.isoformat()), pid
+            and recovery is False and int(version) // 10000 == 18 and listen == '')
+    return Target(database, role, host, oid, cluster, started.isoformat(), boot_id), pid
 
 
 def read_target(connection):
@@ -103,10 +107,12 @@ def checked_tables(expected, *, tables=TABLES, exact_columns=None):
     return counts
 
 
-def only_clients(cursor, target, writer_pid, observer_pid):
+def only_clients(cursor, writer_pid, observer_pid):
     cursor.execute('SELECT pg_catalog.pg_stat_clear_snapshot()')
-    cursor.execute("""SELECT pid FROM pg_catalog.pg_stat_activity WHERE datid=%s
-                      AND backend_type='client backend'""", (target.database_oid,))
+    # A session on another database can still change roles and other shared
+    # catalog state. The restore uses a dedicated, socket-only postmaster.
+    cursor.execute("""SELECT pid FROM pg_catalog.pg_stat_activity
+                      WHERE backend_type='client backend' OR backend_type IS NULL""")
     require({row[0] for row in cursor.fetchall()} == {writer_pid, observer_pid})
 
 
@@ -168,7 +174,7 @@ def run(writer, observer, registry, *, target, expected, dispositions, cutoff, f
             cursor.execute('SELECT pg_catalog.set_config(%s,%s,true)', (option, value))
         actual_target, writer_pid = binding(writer, cursor)
         require(actual_target == target and writer_pid != observer_pid)
-        only_clients(cursor, target, writer_pid, observer_pid)
+        only_clients(cursor, writer_pid, observer_pid)
         locked = ', '.join('ONLY ' + census.relation_key('public', table) for table, _ in sorted(TABLES.values()))
         cursor.execute(f'LOCK TABLE {locked} IN SHARE ROW EXCLUSIVE MODE NOWAIT')
         observed = census.collect(observer, registry, fingerprint_key=fingerprint_key, limits=limits)
@@ -200,7 +206,7 @@ def run(writer, observer, registry, *, target, expected, dispositions, cutoff, f
                 original[change['pk']].update(fields)
                 updated += 1
         require(projections(cursor, counts, deadline) == rows)
-        only_clients(cursor, target, writer_pid, observer_pid)
+        only_clients(cursor, writer_pid, observer_pid)
         require(time.monotonic() < deadline)
         committing = True
         cursor.execute('COMMIT')
