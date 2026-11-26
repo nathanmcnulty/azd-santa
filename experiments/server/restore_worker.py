@@ -17,7 +17,7 @@ from restore_guest_readback import SCOPE as GUEST_SCOPE
 from restore_packet_operator import CARRIER_ROOT, delivery_binding
 from restore_quarantine_journal import is_digest
 from restore_sealed_inputs import RECIPIENT_ROOT, check_offer, operation, sha
-from restore_tooling_bundle import DATABASE_WORKER_SCOPE, IMAGE_KEY_SCOPE, MAX_BUNDLE, stage
+from restore_tooling_bundle import MAX_BUNDLE, WORKER_SCOPES, stage
 from retained_image_delivery import read_at, write_at
 from retained_image_handoff import boot, decode
 from retained_image_load import RecoveryDocker
@@ -114,8 +114,7 @@ def launch(raw, *, workspace, tooling, commit, tooling_sha256, image, config_sha
            _boot=boot, _docker=subprocess.run, _recipient_root=RECIPIENT_ROOT, _carrier_root=CARRIER_ROOT):
     request, job, host = database.parse_request(raw)
     blob.need(re.fullmatch(r'sha256:[a-f0-9]{64}', image) is not None)
-    blob.need(checked_document(tooling, tooling_sha256, MAX_BUNDLE)['scope']
-              in (DATABASE_WORKER_SCOPE, IMAGE_KEY_SCOPE))
+    blob.need(checked_document(tooling, tooling_sha256, MAX_BUNDLE)['scope'] in WORKER_SCOPES)
     workspace = private_directory(Path(workspace))
     blob.need(_boot(host) == job.verified_boot_id
               and blob.resource_id(host.vm_id) == blob.resource_id(job.selection.vm_id)

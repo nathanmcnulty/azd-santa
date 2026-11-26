@@ -326,6 +326,22 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "principal": "Explicit selected cached Azure operator",
+      "phase": "runtime",
+      "feature": "restore-worker-transport",
+      "defaultEnabled": false,
+      "scope": "One selected recovery VM, boot, reviewed workspace and worker request",
+      "rationale": "An explicitly confirmed transport plan uses existing Run Command rights for the selected VM and journals the exact request before dispatch. The guest verifies the boot and tooling and invokes the isolated worker. The transport adds no grants or service activation.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/server/restore_worker_transport.py", "sha256": "c545a29ec62becf26d83c70d5680e9e7b09a4d7c9a2590eac2fcffdd8fe37ac9" },
+        { "path": "experiments/server/restore_worker.py", "sha256": "5aab72e561f5d12fe01ffd8c28d85867007f3a453c53790901e5efb26059138f" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
       "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/publicIPAddresses/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/networkSecurityGroups/read",
       "principal": "Explicit selected cached Azure CLI endpoint observer (existing rights only)",
       "phase": "deployment",
