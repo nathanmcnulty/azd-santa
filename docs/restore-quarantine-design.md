@@ -435,6 +435,13 @@ the socket directory read-only. The worker has no network, no Linux
 capabilities, and no application data mount. It receives only the reviewed
 tooling, fresh host receipt, private recipient state, and the specific
 configuration, carrier and journal needed for apply.
+For preview and apply, the launcher copies the exact image's application
+tree from a disposable, unstarted container into its private workspace and
+mounts it read-only at `/zentral`. This gives the capability-free worker
+access to the code when the image's original application directory is
+private to its runtime user. The launcher removes the staging container
+before preview or apply and removes the copied tree at worker exit.
+
 Use `--docker-socket` to select the dedicated local daemon used for image
 import. The launcher checks that the same socket is present throughout the
 worker invocation. Keep that daemon's storage and socket separate from the

@@ -336,7 +336,7 @@
       "evidenceState": "code",
       "evidence": [
         { "path": "experiments/server/restore_worker_transport.py", "sha256": "c545a29ec62becf26d83c70d5680e9e7b09a4d7c9a2590eac2fcffdd8fe37ac9" },
-        { "path": "experiments/server/restore_worker.py", "sha256": "dc153e324bd07d9fb55b0aa1052e48e912e81c85e1a5bc416d95933363f20273" }
+        { "path": "experiments/server/restore_worker.py", "sha256": "4b1d77edfc652a27bf07155ec3982c7baf3d1c62c91e01fcf71d154693856eac" }
       ]
     },
     {
