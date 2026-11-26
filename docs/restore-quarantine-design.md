@@ -405,8 +405,11 @@ steps. It accepts a bounded canonical request on standard input and emits
 one receipt. The worker supplies the journal directory, Django settings,
 and database credentials locally. The command requires both Django
 connections to select the verified Unix socket and configures the observer
-as read-only. Keep the restored PostgreSQL instance and worker isolated
-while using this command. An applied stage reports whether database rows
+as read-only. For a network-isolated worker, the trusted host supplies
+the current VM readback as a canonical JSON file in a private, read-only mount. The command checks
+that receipt against the worker's current Linux boot and selected VM.
+Keep the restored PostgreSQL instance and worker isolated while using
+this command. An applied stage reports whether database rows
 changed and leaves application activation closed.
 
 Azure delivery of signed database requests, live database execution,

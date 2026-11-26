@@ -11,8 +11,10 @@ import blob_retention as blob
 from restore_arm_authorization import Selection
 from restore_authority_transaction import Target
 from restore_guest_job import Job
+from restore_guest_readback import SCOPE as GUEST_SCOPE
 from restore_quarantine_journal import STAGES
 from restore_sealed_inputs import BootRecipient, RECIPIENT_ROOT, sha
+from retained_image_delivery import read_at
 from retained_image_handoff import b64, boot, decode
 from retained_image_parts import checked_document
 
@@ -21,6 +23,26 @@ MAX_REQUEST = 12 * 1024
 COMMITTED = {'rewrap': 'rewrap_committed', 'quarantine': 'authority_updates_committed'}
 COMMON = {'scope', 'action', 'job', 'host', 'step'}
 APPLY = {'offer_sha256', 'plan', 'plan_sha256', 'receipt', 'approval', 'public_key'}
+BOOT_ID = Path('/proc/sys/kernel/random/boot_id')
+
+
+def host_receipt(path, *, boot_path=BOOT_ID):
+    """Use a boot receipt staged by the trusted host for a network-isolated worker."""
+    with ExitStack() as guards:
+        parent, name = blob.parent(path, guards)
+        raw = read_at(parent, name, 4096)
+    receipt = checked_document(raw, sha(raw), 4096)
+    blob.need(set(receipt) == {'scope', 'vm_id', 'vm_instance_id', 'boot_id'}
+              and receipt['scope'] == GUEST_SCOPE)
+
+    def observed(target):
+        current = boot_path.read_text(encoding='ascii').strip()
+        blob.need(re.fullmatch(blob.GUID, current) and receipt['boot_id'] == current
+                  and blob.resource_id(receipt['vm_id']) == blob.resource_id(target.vm_id)
+                  and receipt['vm_instance_id'] == target.instance_id)
+        return current
+
+    return observed
 
 
 @contextmanager
@@ -99,11 +121,13 @@ def dispatch(raw, *, directory=None, recipient_root=RECIPIENT_ROOT, carrier_root
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--journal-directory', type=Path)
+    parser.add_argument('--host-receipt', type=Path)
     args = parser.parse_args()
     try:
         raw = sys.stdin.buffer.read(MAX_REQUEST + 1)
         with open(os.devnull, 'w') as sink, redirect_stdout(sink), redirect_stderr(sink):
-            result = dispatch(raw, directory=args.journal_directory)
+            get_boot = boot if args.host_receipt is None else host_receipt(args.host_receipt)
+            result = dispatch(raw, directory=args.journal_directory, _boot=get_boot)
         sys.stdout.buffer.write(blob.encoded(result) + b'\n')
     except Exception:
         parser.exit(1, 'Santa database recovery command rejected or interrupted. Preserve the private journal.\n')

@@ -264,6 +264,10 @@ def run(root):
                                  vm_id, '33333333-3333-4333-8333-333333333333', 'westus2')
         guest_receipt = dict(scope=guest.SCOPE, vm_id=vm_id, vm_instance_id=selected.vm_instance_id,
                              boot_id=target.boot_id)
+        receipt_path = root / 'recovery-host.json'
+        receipt_path.write_bytes(blob.encoded(guest_receipt))
+        receipt_path.chmod(0o600)
+        worker_boot = database_command.host_receipt(receipt_path)
         bound = dict(archive_sha256='a' * 64, generation='b' * 64)
         secret_options = dict(expected_contexts=CONTEXTS, old_material=OLD, new_material=NEW, targets=TARGETS)
         repo = Path(__file__).resolve().parents[1]
@@ -316,8 +320,10 @@ def run(root):
             public_key = signer.public_key().public_bytes_raw()
             public_pin = sealed.sha(public_key)
             host = receiver_target(selected_job)
+            reject(lambda: worker_boot(replace(host, instance_id='55555555-5555-4555-8555-555555555555')),
+                   blob.RetentionRejected)
             bound_stage = dict(binding=selected_job.binding(KEY), **selection)
-            state = dict(root=recipient_root, _boot=lambda _: selected_job.verified_boot_id)
+            state = dict(root=recipient_root, _boot=worker_boot)
             job_input = dict(selection=asdict(selected_job.selection), target=asdict(selected_job.target),
                              boot_id=selected_job.verified_boot_id, **bound)
             frame = dict(scope=database_command.SCOPE, job=job_input, host=asdict(host), step=bound_stage)
