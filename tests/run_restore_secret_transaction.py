@@ -99,7 +99,7 @@ def reject(call, error_type=transaction.TransactionRejected):
 def transfer_packet(root, job, packet, stage):
     selected = job.selection
     source_id = selected.vm_id.split('/providers/')[0]
-    subnet = source_id + '/providers/Microsoft.Network/virtualNetworks/santa/subnets/host'
+    subnet = source_id + '/providers/Microsoft.Network/virtualNetworks/vnet-santa-lab/subnets/host'
     account = (f'/subscriptions/{selected.subscription}/resourceGroups/rg-fixture-store'
                '/providers/Microsoft.Storage/storageAccounts/santafixture')
     target = blob.SelectedTarget(selected.vm_id, selected.vm_instance_id, subnet, selected.region)
