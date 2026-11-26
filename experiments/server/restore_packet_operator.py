@@ -3,6 +3,7 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
+from dataclasses import replace
 import json
 from pathlib import Path
 
@@ -11,25 +12,32 @@ from restore_arm_authorization import Selection as Operator
 from restore_authority_transaction import Target
 from restore_carrier_command import Command, PACKET_PART_BYTES
 from restore_guest_job import Job
+from restore_guest_readback import readback
 from restore_input_blob import PacketTransfer
 from restore_input_sas import RestoreInputSasIssuer
 from restore_quarantine_journal import is_digest
 from restore_sealed_inputs import MAX_PACKET, sha
-from restore_tooling_bundle import MAX_BUNDLE
+from restore_tooling_bundle import MAX_BUNDLE, verify
 from retained_image_delivery import read_at
 from retained_image_operator import journal_read, journal_root, read_bytes, selected_store
 from retained_image_sas import sync_directory, write_record
 
 SCOPE = 'santa-restore-packet-operation-v1'
+READBACK_SCOPE = 'santa-restore-packet-readback-v1'
 CARRIER_ROOT = Path('/run/azd-santa-recovery-carrier')
+
+
+def check_plan(plan, plan_sha256):
+    blob.need(type(plan) is dict and is_digest(plan_sha256)
+              and plan.get('plan_sha256') == plan_sha256 and plan.get('submits_run_command') is False)
+    body = {name: value for name, value in plan.items() if name not in ('plan_sha256', 'submits_run_command')}
+    blob.need(sha(blob.encoded(body)) == plan_sha256 and plan['scope'] == SCOPE)
 
 
 def delivery_binding(job, plan, plan_sha256, receipt):
     """Verify the approved transport plan and its corresponding receipt."""
-    blob.need(type(job) is Job and type(plan) is dict and is_digest(plan_sha256)
-              and plan.get('plan_sha256') == plan_sha256 and plan.get('submits_run_command') is False)
-    body = {name: value for name, value in plan.items() if name not in ('plan_sha256', 'submits_run_command')}
-    blob.need(sha(blob.encoded(body)) == plan_sha256 and plan['scope'] == SCOPE)
+    check_plan(plan, plan_sha256)
+    blob.need(type(job) is Job)
     expected = dict(tenant=job.selection.tenant, subscription=job.selection.subscription,
                     receiver=job.selection.vm_instance_id, receiver_boot=job.verified_boot_id,
                     archive_sha256=job.archive_sha256, generation=job.generation)
@@ -52,6 +60,31 @@ def received_packet(job, plan, plan_sha256, receipt, *, root=CARRIER_ROOT):
         packet = read_at(directory, name, length)
     blob.need(len(packet) == length and sha(packet) == digest)
     return packet
+
+
+def packet_status(packet_sha256, packet_bytes, state):
+    return dict(state=state, packet_sha256=packet_sha256, packet_bytes=packet_bytes)
+
+
+def phase_evidence(directory, digest, length):
+    phases = {'upload-attempt': 'attempted', 'upload-unconfirmed': 'unconfirmed',
+              'uploaded': 'uploaded', 'read-attempt': 'attempted', 'verified': 'verified'}
+    found = {}
+    for name, state in phases.items():
+        path = directory / (name + '.json')
+        found[name] = path.exists()
+        if found[name]:
+            blob.need(journal_read(path) == packet_status(digest, length, state))
+    blob.need(not found['verified'] or found['read-attempt'])
+    blob.need(not found['read-attempt'] or found['uploaded'] or found['upload-unconfirmed'])
+    blob.need(not (found['uploaded'] and found['upload-unconfirmed']))
+    blob.need(not any(found[name] for name in phases if name != 'upload-attempt') or found['upload-attempt'])
+    return found
+
+
+def record(directory, name, data):
+    write_record(directory / (name + '.json'), data)
+    sync_directory(directory)
 
 
 class Operation:
@@ -83,12 +116,8 @@ class Operation:
         blob.need(plan_sha256 == self.plan_sha256 == sha(blob.encoded(self.plan)))
         return journal_root(root) / (self.transfer.packet_sha256 + '-restore-packet')
 
-    def _record(self, directory, name, data):
-        write_record(directory / (name + '.json'), data)
-        sync_directory(directory)
-
     def _reply(self, state):
-        return dict(state=state, packet_sha256=self.transfer.packet_sha256, packet_bytes=self.transfer.packet_bytes)
+        return packet_status(self.transfer.packet_sha256, self.transfer.packet_bytes, state)
 
     def _summary(self, *, state, upload_confirmed=False):
         return dict(scope=SCOPE, plan_sha256=self.plan_sha256, **self._reply(state),
@@ -106,26 +135,26 @@ class Operation:
         directory = self._directory(root, plan_sha256)
         directory.mkdir(mode=0o700)
         sync_directory(directory.parent)
-        self._record(directory, 'intent', self.preview())
+        record(directory, 'intent', self.preview())
         sender, receiver = self._commands['c'], self._commands['r']
         with ThreadPoolExecutor(max_workers=2) as guests:
             create_offer, read_offer = guests.map(self._prepare, ('c', 'r'))
         create = RestoreInputSasIssuer(self._selection, self.transfer, 'c').issue(directory, apply=True)
-        self._record(directory, 'upload-attempt', self._reply('attempted'))
+        record(directory, 'upload-attempt', self._reply('attempted'))
         try:
             reply = sender.transfer(create_offer, sha(create_offer), create)
         except Exception:
             # A lost upload acknowledgement can be reconciled by exact readback.
             # Never reissue the create credential or repeat the PUT.
-            self._record(directory, 'upload-unconfirmed', self._reply('unconfirmed'))
+            record(directory, 'upload-unconfirmed', self._reply('unconfirmed'))
         else:
             blob.need(reply == self._reply('uploaded'))
-            self._record(directory, 'uploaded', reply)
+            record(directory, 'uploaded', reply)
         read = RestoreInputSasIssuer(self._selection, self.transfer, 'r').issue(directory, apply=True)
-        self._record(directory, 'read-attempt', self._reply('attempted'))
+        record(directory, 'read-attempt', self._reply('attempted'))
         received = receiver.transfer(read_offer, sha(read_offer), read)
         blob.need(received == self._reply('verified'))
-        self._record(directory, 'verified', received)
+        record(directory, 'verified', received)
         return self.observe(root, plan_sha256)
 
     def observe(self, root, plan_sha256):
@@ -134,23 +163,59 @@ class Operation:
         if not directory.exists():
             return self._summary(state='not-attempted')
         blob.need(journal_read(directory / 'intent.json') == self.preview())
-        phases = {'upload-attempt': 'attempted', 'upload-unconfirmed': 'unconfirmed',
-                  'uploaded': 'uploaded', 'read-attempt': 'attempted', 'verified': 'verified'}
-        found = {}
-        for name, state in phases.items():
-            path = directory / (name + '.json')
-            found[name] = path.exists()
-            if found[name]:
-                blob.need(journal_read(path) == self._reply(state))
-        blob.need(not found['verified'] or found['read-attempt'])
-        blob.need(not found['read-attempt'] or found['uploaded'] or found['upload-unconfirmed'])
-        blob.need(not (found['uploaded'] and found['upload-unconfirmed']))
-        blob.need(not any(found[name] for name in phases if name != 'upload-attempt') or found['upload-attempt'])
+        found = phase_evidence(directory, self.transfer.packet_sha256, self.transfer.packet_bytes)
         state = 'verified' if found['verified'] else 'interrupted'
         return self._summary(state=state, upload_confirmed=found['uploaded'])
 
 
-def build_operation(selection_bytes, job_bytes, packet, tooling, *, operation, commit, tooling_sha256):
+def readback_retry(selection, job, tooling, *, root, packet_sha256, plan_sha256, commit, tooling_sha256, sender_boot):
+    """Read an interrupted transfer's exact object on a fresh receiver boot."""
+    blob.need(is_digest(packet_sha256))
+    directory = journal_root(root) / (packet_sha256 + '-restore-packet')
+    plan = journal_read(directory / 'intent.json')
+    check_plan(plan, plan_sha256)
+    receiver = selection.verifier
+    expected = dict(tenant=selection.tenant, subscription=selection.subscription,
+                    account_id=selection.store.blob.account_id, operation=selection.store.blob.operation,
+                    sender=selection.source.instance_id, receiver=receiver.instance_id,
+                    sender_boot=sender_boot, receiver_boot=job.verified_boot_id,
+                    archive_sha256=job.archive_sha256, generation=job.generation, packet_sha256=packet_sha256,
+                    tooling_commit=commit, tooling_sha256=tooling_sha256)
+    blob.need(all(plan[name] == value for name, value in expected.items()))
+    length = plan['packet_bytes']
+    PacketTransfer(job, selection.store, receiver, packet_sha256, length)
+    phases = phase_evidence(directory, packet_sha256, length)
+    blob.need(phases['upload-attempt'] and not phases['verified'])
+    verify(tooling, commit=commit, bundle_sha256=tooling_sha256)
+
+    current = readback(job.selection)
+    current_boot = current['boot_id']
+    blob.need(current_boot != job.verified_boot_id)
+    target = replace(job.target, boot_id=current_boot)
+    fresh = Job.from_readback(job.selection, target, guest_receipt=current,
+                              archive_sha256=job.archive_sha256, generation=job.generation)
+    transfer = PacketTransfer(fresh, selection.store, receiver, packet_sha256, length)
+    command = Command(selection, transfer, 'r', tooling, commit=commit, tooling_sha256=tooling_sha256,
+                      boot_id=current_boot)
+    attempt = directory / (current_boot + '-readback')
+    attempt.mkdir(mode=0o700)
+    sync_directory(directory)
+    proof = dict(scope=READBACK_SCOPE, plan_sha256=plan_sha256, receiver=receiver.instance_id,
+                 receiver_boot=current_boot, receiver_capsule=command.capsule, upload_confirmed=phases['uploaded'],
+                 upload_repeated=False, database_applied=False)
+    record(attempt, 'intent', {**proof, **packet_status(packet_sha256, length, 'planned')})
+    command.install()
+    offer = command.offer()
+    batch = RestoreInputSasIssuer(selection, transfer, 'r').issue(attempt, apply=True)
+    record(attempt, 'read-attempt', packet_status(packet_sha256, length, 'attempted'))
+    received = command.transfer(offer, sha(offer), batch)
+    blob.need(received == packet_status(packet_sha256, length, 'verified'))
+    result = {**proof, **received}
+    record(attempt, 'verified', result)
+    return result
+
+
+def selected_job(selection_bytes, job_bytes, operation):
     blob.need(all(type(raw) is bytes and 0 < len(raw) <= 8192 for raw in (selection_bytes, job_bytes)))
     selection = selected_store(json.loads(selection_bytes, object_pairs_hook=blob.unique), operation)
     meta = json.loads(job_bytes, object_pairs_hook=blob.unique)
@@ -162,23 +227,39 @@ def build_operation(selection_bytes, job_bytes, packet, tooling, *, operation, c
                         receiver.vm_id, receiver.instance_id, receiver.region)
     job = Job.from_readback(identity, Target(**meta['target']), guest_receipt=meta['receiver'],
                             archive_sha256=meta['archive_sha256'], generation=meta['generation'])
+    return selection, job, meta['sender_boot']
+
+
+def build_operation(selection_bytes, job_bytes, packet, tooling, *, operation, commit, tooling_sha256):
+    selection, job, sender_boot = selected_job(selection_bytes, job_bytes, operation)
     return Operation(selection, job, packet, tooling, commit=commit, tooling_sha256=tooling_sha256,
-                     sender_boot=meta['sender_boot'])
+                     sender_boot=sender_boot)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('plan', 'apply', 'observe'))
-    for name in ('selection', 'job', 'packet', 'tooling', 'operation', 'commit', 'tooling-sha256'):
+    parser.add_argument('action', choices=('plan', 'apply', 'observe', 'readback'))
+    for name in ('selection', 'job', 'tooling', 'operation', 'commit', 'tooling-sha256'):
         parser.add_argument('--' + name, required=True)
+    packet_input = parser.add_mutually_exclusive_group(required=True)
+    packet_input.add_argument('--packet')
+    packet_input.add_argument('--packet-sha256')
     parser.add_argument('--plan-sha256')
     parser.add_argument('--journal-root', type=Path)
     options = parser.parse_args()
     try:
-        operation = build_operation(read_bytes(options.selection, 8192), read_bytes(options.job, 8192),
-                                    read_bytes(options.packet, MAX_PACKET), read_bytes(options.tooling, MAX_BUNDLE),
-                                    operation=options.operation, commit=options.commit,
-                                    tooling_sha256=options.tooling_sha256)
+        selection_bytes, job_bytes = read_bytes(options.selection, 8192), read_bytes(options.job, 8192)
+        tooling = read_bytes(options.tooling, MAX_BUNDLE)
+        pins = dict(commit=options.commit, tooling_sha256=options.tooling_sha256)
+        if options.action == 'readback':
+            selection, job, sender_boot = selected_job(selection_bytes, job_bytes, options.operation)
+            result = readback_retry(selection, job, tooling, root=options.journal_root,
+                                   packet_sha256=options.packet_sha256, plan_sha256=options.plan_sha256,
+                                   sender_boot=sender_boot, **pins)
+            print(json.dumps(result, sort_keys=True))
+            return
+        operation = build_operation(selection_bytes, job_bytes, read_bytes(options.packet, MAX_PACKET), tooling,
+                                    operation=options.operation, **pins)
         if options.action == 'plan':
             result = operation.preview()
         else:

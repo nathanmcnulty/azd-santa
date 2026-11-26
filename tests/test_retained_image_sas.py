@@ -11,7 +11,7 @@ import sys
 from tempfile import TemporaryDirectory
 from threading import Barrier
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlencode
 
 import test_private_arm_adapter as native
@@ -367,3 +367,77 @@ class ImageSasTests(unittest.TestCase):
                         operation.apply(root, pin)
                     self.assertEqual(calls.count('transfer-c'), 1)
                     self.assertEqual(calls.count('transfer-r'), 1)
+
+    def test_readback_retry_reads_only_the_interrupted_object_on_a_fresh_boot(self):
+        transfer = self.restore_transfer()
+        job = transfer.job
+        packet = bytes(range(256)) * 3
+        boot = '66666666-6666-4666-8666-666666666666'
+        pins = dict(commit='a' * 40, tooling_sha256='b' * 64, sender_boot='77777777-7777-4777-8777-777777777777')
+        vm = job.selection
+        receipt = dict(scope=GUEST_SCOPE, vm_id=vm.vm_id, vm_instance_id=vm.vm_instance_id, boot_id=boot)
+        with patch.object(workflow, 'Command', return_value=Mock(capsule='c' * 64)):
+            operation = workflow.Operation(self.selection, job, packet, b'fixture', **pins)
+        plan = operation.preview()
+        digest, length, plan_pin = plan['packet_sha256'], plan['packet_bytes'], plan['plan_sha256']
+        for mode in ('confirmed', 'unknown', 'missing', 'changed-boot', 'changed-instance', 'no-upload'):
+            with self.subTest(mode=mode):
+                root = self.root / mode
+                folder = root / (digest + '-restore-packet')
+                root.mkdir(mode=0o700)
+                folder.mkdir(mode=0o700)
+                workflow.record(folder, 'intent', plan)
+                if mode != 'no-upload':
+                    workflow.record(folder, 'upload-attempt', workflow.packet_status(digest, length, 'attempted'))
+                if mode == 'confirmed':
+                    workflow.record(folder, 'uploaded', workflow.packet_status(digest, length, 'uploaded'))
+                original = {path.name: path.read_bytes() for path in folder.iterdir()}
+                report = receipt.copy()
+                if mode == 'changed-boot':
+                    report['boot_id'] = job.verified_boot_id
+                if mode == 'changed-instance':
+                    report['vm_instance_id'] = '88888888-8888-4888-8888-888888888888'
+                guest = Mock(capsule='d' * 64)
+                guest.offer.return_value = b'read-only offer'
+                guest.transfer.return_value = workflow.packet_status(digest, length, 'verified')
+                if mode == 'missing':
+                    guest.transfer.side_effect = native.retention.RetentionRejected('missing blob')
+                issuer = Mock()
+                batch = issuer.issue.return_value
+                args = dict(root=root, packet_sha256=digest, plan_sha256=plan_pin, **pins)
+                with patch.object(workflow, 'Command', return_value=guest) as command, \
+                     patch.object(workflow, 'RestoreInputSasIssuer', return_value=issuer) as issue, \
+                     patch.object(workflow, 'readback', return_value=report) as probe, patch.object(workflow, 'verify'):
+                    for changes in ({'plan_sha256': '0' * 64}, {'tooling_sha256': '1' * 64}):
+                        with self.assertRaises(native.retention.RetentionRejected):
+                            workflow.readback_retry(self.selection, job, b'fixture', **{**args, **changes})
+                    probe.assert_not_called()
+                    if mode == 'missing' or mode == 'no-upload':
+                        with self.assertRaises(native.retention.RetentionRejected):
+                            workflow.readback_retry(self.selection, job, b'fixture', **args)
+                    elif mode in ('changed-boot', 'changed-instance'):
+                        with self.assertRaises(ValueError):
+                            workflow.readback_retry(self.selection, job, b'fixture', **args)
+                    else:
+                        result = workflow.readback_retry(self.selection, job, b'fixture', **args)
+                        self.assertEqual(result['scope'], workflow.READBACK_SCOPE)
+                        self.assertEqual(result['receiver_boot'], boot)
+                        self.assertEqual(result['upload_confirmed'], mode == 'confirmed')
+                        self.assertFalse(result['upload_repeated'] or result['database_applied'])
+                        with self.assertRaises(native.retention.RetentionRejected):
+                            workflow.delivery_binding(job, plan, plan_pin, result)
+                        self.assertEqual(result, workflow.journal_read(folder / (boot + '-readback') / 'verified.json'))
+                        with self.assertRaises(FileExistsError):
+                            workflow.readback_retry(self.selection, job, b'fixture', **args)
+                    if mode in ('confirmed', 'unknown', 'missing'):
+                        retry = folder / (boot + '-readback')
+                        issue.assert_called_once_with(self.selection, command.call_args.args[1], 'r')
+                        self.assertEqual(command.call_args.args[2], 'r')
+                        issuer.issue.assert_called_once_with(retry, apply=True)
+                        guest.transfer.assert_called_once_with(b'read-only offer', sha(b'read-only offer'), batch)
+                        self.assertTrue((retry / 'read-attempt.json').is_file())
+                        self.assertEqual((retry / 'verified.json').exists(), mode != 'missing')
+                    else:
+                        command.assert_not_called()
+                        issue.assert_not_called()
+                self.assertEqual(original, {path.name: path.read_bytes() for path in folder.iterdir() if path.is_file()})
