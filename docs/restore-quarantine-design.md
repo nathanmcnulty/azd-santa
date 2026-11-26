@@ -247,9 +247,21 @@ a shortcut to this workflow.
    enrollments. New identities have new PKs; restored roles do not confer new
    privileges. Monitor mode remains mandatory.
 
-The customer goal is a guided command with explicit selected backup and current
-authorization, not hand-built administrator JSON or a chain of manual SQL
-commands. The design does not yet supply that command or its crash protocol.
+The opt-in recovery tooling bundle v4 includes a Python journal for the two
+database steps. The trusted caller selects one persistent owner-only directory
+for the exact restored database, archive hash and recovery generation. Each
+step has its own preview digest. Apply records and flushes the intent before
+writes and adds a committed record after the transaction returns and a
+post-commit census succeeds. The following step requires an independent review
+of the exact census fingerprint recorded by the previous step. A database
+restart changes the target binding and requires inspection.
+
+Journal status reports `pending`, `committed`, or `inspect` for each step. An
+intent without a valid committed record requires private inspection of the
+isolated database, even when an adapter reported an error. Keep the journal
+and original archive during inspection. The journal never enables activation.
+The guided operator command, external authorization, service-generation
+binding and replacement identity enrollment still require implementation.
 
 ## Required negative, preservation and fault tests
 
