@@ -152,3 +152,8 @@ docker exec "$restored_container" createdb --host /fixture-socket --username pos
   azd_recovery_aaaaaaaaaaaaaaaaaaaaaaaa
 env -i HOME="$fixture_root" PATH="$PATH" LC_ALL=C.UTF-8 \
   "$fixture_python" tests/run_restore_authority_transaction.py "$fixture_root"
+
+docker exec "$restored_container" createdb --host /fixture-socket --username postgres \
+  azd_recovery_bbbbbbbbbbbbbbbbbbbbbbbb
+env -i HOME="$fixture_root" PATH="$PATH" LC_ALL=C.UTF-8 \
+  "$fixture_python" tests/run_restore_secret_transaction.py "$fixture_root"

@@ -34,8 +34,11 @@ AUTHORITY_PATHS = tuple(sorted((*PATHS, 'docs/restore-quarantine-design.md',
                                SERVER + 'Export-SantaRecoveryRecipient.ps1',
                                SERVER + 'restore_authority_plan.py',
                                SERVER + 'restore_authority_transaction.py')))
-INVENTORIES = {SCOPE: PATHS, AUTHORITY_SCOPE: AUTHORITY_PATHS}
-VERSIONS = {1: SCOPE, 2: AUTHORITY_SCOPE}
+REWRAP_SCOPE = 'azd-santa-restore-tooling-bundle-v3'
+REWRAP_PATHS = tuple(sorted((*AUTHORITY_PATHS, 'docs/offline-secret-rewrap.md',
+                            SERVER + 'restore_secret_transaction.py')))
+INVENTORIES = {SCOPE: PATHS, AUTHORITY_SCOPE: AUTHORITY_PATHS, REWRAP_SCOPE: REWRAP_PATHS}
+VERSIONS = {1: SCOPE, 2: AUTHORITY_SCOPE, 3: REWRAP_SCOPE}
 MAX_FILE = 256 * 1024
 MAX_BUNDLE = 2 * 1024**2
 COMMIT = r'[0-9a-f]{40}'
