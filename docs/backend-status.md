@@ -12,7 +12,7 @@ Administrators should not assemble containers, receipt JSON or remote scripts.
 
 ## Evidence and remaining work
 
-The evidence below includes the November 25 native pilot follow-up.
+The evidence below includes the native pilot follow-up and the isolated Zentral image recovery trial.
 
 | Gate | Current evidence | Still required |
 | --- | --- | --- |
@@ -21,7 +21,8 @@ The evidence below includes the November 25 native pilot follow-up.
 | Credential rotation | Earlier selected private server passed all76 observations | Repeat on the new candidate; supported admin lifecycle and Intune/native delivery |
 | Admission and proxy | Hosted Redis passed37 fenced Lua families; host cap accepted16/rejected4 connections; fresh private TLS passed24 synthetic sync requests, capacity429, Redis503/recovery200 and body413/header431 cases | Sustained-load containment, held-work/dependency fault matrix, native retries and broader application ingress qualification |
 | Worker shutdown | Actual standalone Linux TERM/forkserver idle, held and forced-deadline cases passed | Real Kombu/broker callback and acknowledgement behavior in the selected image |
-| Backup | A private stack completed a native encrypted capture and resumed its original runtime. A separate VM downloaded the capture from Azure Blob Storage and authenticated all 80,159,434 bytes against the pinned digest using the original Windows recipient. | Durable key custody, retained image verification and failure qualification |
+| Backup | A private stack completed a native encrypted capture and resumed its original runtime. A separate VM downloaded the capture from Azure Blob Storage and authenticated all 80,159,434 bytes against the pinned digest using the original Windows recipient. | Durable key custody and failure qualification |
+| Retained images | A separate Azure VM loaded the exact pinned Zentral image from the authenticated encrypted archive. A network-isolated startup check passed. [Recovery evidence](https://github.com/nathanmcnulty/azd-santa/issues/97#issuecomment-7186596155) | Independent retention and recovery of the full pinned dependency set |
 | Restore | The retained pilot archive passed strict extraction. Two censuses of the isolated PostgreSQL 18.6 copy matched across 227 data relations and 236 Django migrations. A fresh Elasticsearch 9.2.1 node restored the native snapshot and read 26 documents. | Durable quarantine, comparison against an independently reviewed baseline, integrated application restore, current-authority reconciliation and fault testing |
 | Recovery state | The retained Redis AOF and RabbitMQ files stayed intact in quarantine. Fresh Redis rejected the archived identity. Fresh RabbitMQ authenticated its new user and reported zero queues. | Current-authority reissue |
 | Integrated dependency check | A non-serving process from the exact Zentral image read restored PostgreSQL and Elasticsearch data, initialized a fresh Redis generation, and acknowledged a synthetic RabbitMQ message in one isolated run. | HTTP and worker activation after authority reissue, plus native device acceptance |
