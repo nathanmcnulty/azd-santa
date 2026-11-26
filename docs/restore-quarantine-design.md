@@ -327,9 +327,18 @@ process on the same 4 GiB VM. At a 384 MiB memory limit and concurrency one,
 Celery consumed one synthetic JSON task on a dedicated queue in fresh RabbitMQ.
 The exact successful task result was read from restored PostgreSQL. The queue
 drained, Celery shut down with exit zero, and the receiver was deallocated.
-HTTPS sign-in, simultaneous service activation, native-device recovery,
-and repeatable azd activation remain open.
 [Live restored Celery task](https://github.com/nathanmcnulty/azd-santa/issues/53#issuecomment-7200272734)
+
+An isolated HTTPS drill brought up the recovered Gunicorn service, served a
+compiled stylesheet, and used the sealed one-time setup link over a socket
+validated against a private test certificate. The app trusted the exact
+fixture origin. It rejected a foreign origin and a missing CSRF token,
+accepted the reset, and rejected replay in a fresh client. The recovered
+administrator enrolled TOTP and could open the profile only after verification.
+The temporary service and database shut down cleanly. Browser rendering,
+public certificate lifecycle, simultaneous service activation, native-device
+recovery, and repeatable azd activation remain open.
+[Recovered HTTPS sign-in](https://github.com/nathanmcnulty/azd-santa/issues/53#issuecomment-7201591941)
 
 Recovery tooling bundle v5 includes the private census review handoff. The
 reviewer exports the complete dispositions and keyed census fingerprint,
