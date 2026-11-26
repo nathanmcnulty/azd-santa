@@ -366,6 +366,18 @@ The receiver needs no Azure credentials for this check. Key provisioning
 and approval delivery over the authenticated guest channel still need
 integration and live validation.
 
+Recovery tooling bundle v18 preserves an offer between authenticated guest
+commands. The guest verifies the selected Azure VM instance and Linux boot
+before producing or reopening the offer. It stores the recipient key in
+an owner-only directory under `/run/azd-santa-recovery-recipients`, with
+the operator key digest fixed at creation. Invalid approvals or mismatched
+carrier files are rejected before key consumption. A successful check
+writes an exclusive consumption record and removes the private key before
+decryption. An interrupted attempt that reaches consumption requires
+inspection of the database journal and a new offer. An unused offer
+expires after ten minutes. Its private key stays local to the boot unless
+the guest launcher cleans up the offer earlier.
+
 The guided VM entry point for the database job, live transfer and database
 execution, object cleanup, service-generation binding and replacement
 identity enrollment remain open.

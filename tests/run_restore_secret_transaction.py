@@ -102,16 +102,21 @@ def reject(call, error_type=transaction.TransactionRejected):
     raise AssertionError('Expected rewrap to reject the attempt')
 
 
-def transfer_packet(root, job, packet, stage):
+def receiver_target(job):
     selected = job.selection
     source_id = selected.vm_id.split('/providers/')[0]
     subnet = source_id + '/providers/Microsoft.Network/virtualNetworks/vnet-santa-lab/subnets/host'
+    return blob.SelectedTarget(selected.vm_id, selected.vm_instance_id, subnet, selected.region)
+
+
+def transfer_packet(root, job, packet, stage):
+    selected = job.selection
+    target = receiver_target(job)
     account = (f'/subscriptions/{selected.subscription}/resourceGroups/rg-fixture-store'
                '/providers/Microsoft.Storage/storageAccounts/santafixture')
-    target = blob.SelectedTarget(selected.vm_id, selected.vm_instance_id, subnet, selected.region)
     sender = blob.SelectedTarget(selected.vm_id.replace('-fixture/', '-sender/'),
-        '44444444-4444-4444-8444-444444444444', subnet.replace('-fixture/', '-sender/'), selected.region)
-    store = blob.Store(blob.Blob(account, 'e' * 32), selected.region, (sender.subnet_id, subnet), selected.tenant)
+        '44444444-4444-4444-8444-444444444444', target.subnet_id.replace('-fixture/', '-sender/'), selected.region)
+    store = blob.Store(blob.Blob(account, 'e' * 32), selected.region, (sender.subnet_id, target.subnet_id), selected.tenant)
     transfer = PacketTransfer(job, store, target, sealed.sha(packet), len(packet))
     placement = cached_arm.Selection(selected.tenant, selected.subscription, store, sender, target)
     uploads = root / ('upload-' + stage)
@@ -261,9 +266,10 @@ def run(root):
         secret_options = dict(expected_contexts=CONTEXTS, old_material=OLD, new_material=NEW, targets=TARGETS)
         repo = Path(__file__).resolve().parents[1]
         commit = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
-        bundle = tooling.build(repo, commit, version=17)
+        bundle = tooling.build(repo, commit, version=18)
         carrier_root = root / 'carrier'
         carrier_root.mkdir(mode=0o700)
+        recipient_root = root / 'recipients'
 
         def observe():
             return census.collect(observer, apps, fingerprint_key=KEY)
@@ -304,12 +310,22 @@ def run(root):
             options = secret_options if stage == 'rewrap' else dict(cutoff=cutoff)
             inputs = published(stage, baseline)
             selection = dict(stage=stage, plan_digest=preview['plan_digest'], review_sha256=inputs['review_sha256'])
-            recipient = sealed.Recipient(selected_job, binding=selected_job.binding(KEY), **selection)
-            pin = sealed.sha(recipient.offer)
-            reject(lambda: sealed.seal(selected_job, recipient.offer, pin, stage=stage, **inputs,
+            signer = Ed25519PrivateKey.generate()
+            public_key = signer.public_key().public_bytes_raw()
+            public_pin = sealed.sha(public_key)
+            host = receiver_target(selected_job)
+            bound_stage = dict(binding=selected_job.binding(KEY), **selection)
+            state = dict(root=recipient_root, _boot=lambda _: selected_job.verified_boot_id)
+            offer = sealed.BootRecipient.prepare(selected_job, host, public_pin, **bound_stage, **state)
+            pin = sealed.sha(offer)
+            recipient_key = recipient_root / pin / 'recipient.der'
+            assert recipient_key.stat().st_mode & 0o777 == 0o600
+            reject(lambda: sealed.BootRecipient(selected_job, host, pin, **bound_stage, root=recipient_root,
+                           _boot=lambda _: '55555555-5555-4555-8555-555555555555'), sealed.InputRejected)
+            reject(lambda: sealed.seal(selected_job, offer, pin, stage=stage, **inputs,
                                        plan_digest='0' * 64, fingerprint_key=KEY, options=options),
                    sealed.InputRejected)
-            packet = sealed.seal(selected_job, recipient.offer, pin, **selection, review_bytes=inputs['review_bytes'],
+            packet = sealed.seal(selected_job, offer, pin, **selection, review_bytes=inputs['review_bytes'],
                                  fingerprint_key=KEY, options=options)
             assert KEY not in packet and inputs['review_bytes'] not in packet
             if stage == 'rewrap':
@@ -320,8 +336,8 @@ def run(root):
             def receive(current, data, digest):
                 return current.run(data, digest, writer, observer, apps, directory=directory, authorize=approve)
 
-            reject(lambda: receive(recipient, packet, '0' * 64), sealed.InputRejected)
             other = sealed.Recipient(selected_job, binding=selected_job.binding(KEY), **selection)
+            reject(lambda: receive(other, packet, '0' * 64), sealed.InputRejected)
             reject(lambda: receive(other, packet, sealed.sha(packet)), sealed.InputRejected)
             if stage == 'rewrap':
                 tamper = sealed.Recipient(selected_job, binding=selected_job.binding(KEY), **selection)
@@ -340,12 +356,8 @@ def run(root):
             received.write_bytes(packet)
             received.chmod(0o600)
 
-            signer = Ed25519PrivateKey.generate()
-            public_key = signer.public_key().public_bytes_raw()
-            public_pin = sealed.sha(public_key)
-
-            def sign(digest):
-                return operator_approval.issue(signer, selected_job, KEY, recipient.offer,
+            def sign(digest, key=signer):
+                return operator_approval.issue(key, selected_job, KEY, offer,
                                                plan, plan_sha, receipt, approved_plan_digest=digest)
 
             with patch.object(guest_job.Job, 'confirm', return_value=approve) as confirm:
@@ -353,13 +365,17 @@ def run(root):
                 confirm.assert_not_called()
                 approval = sign(selection['plan_digest'])
                 confirm.assert_called_once_with(fingerprint_key=KEY, **selection)
+                other_signer = Ed25519PrivateKey.generate()
+                other_approval = sign(selection['plan_digest'], other_signer)
 
-            def apply_file(result, digest=plan_sha, key_pin=public_pin, signed=approval):
-                return recipient.run_approved(plan, digest, result, signed, public_key, key_pin,
-                                              writer, observer, apps, carrier_root=carrier_root, directory=directory)
+            def apply_file(result, digest=plan_sha, key=public_key, signed=approval):
+                recipient = sealed.BootRecipient(selected_job, host, pin, **bound_stage, **state)
+                return recipient.apply(plan, digest, result, signed, key, writer, observer, apps,
+                                       carrier_root=carrier_root, directory=directory)
 
             reject(lambda: apply_file(receipt, '0' * 64), operator_approval.ApprovalRejected)
-            reject(lambda: apply_file(receipt, key_pin='0' * 64), operator_approval.ApprovalRejected)
+            reject(lambda: apply_file(receipt, key=other_signer.public_key().public_bytes_raw(),
+                                      signed=other_approval), operator_approval.ApprovalRejected)
             reject(lambda: apply_file({**receipt, 'upload_confirmed': not receipt['upload_confirmed']}),
                    operator_approval.ApprovalRejected)
             approval_body = json.loads(approval)['body']
@@ -367,7 +383,7 @@ def run(root):
                                         signature=base64.b64encode(bytes(64)).decode()))
             reject(lambda: apply_file(receipt, signed=forged), operator_approval.ApprovalRejected)
             verifier = operator_approval.Verify(public_key, public_pin, approval, selected_job,
-                                               recipient.offer, plan, plan_sha, receipt)
+                                               offer, plan, plan_sha, receipt)
             request = approval_body['request']
             with patch.object(operator_approval.time, 'time', return_value=approval_body['expires']):
                 reject(lambda: verifier(request), operator_approval.ApprovalRejected)
@@ -375,9 +391,11 @@ def run(root):
             reject(lambda: verifier(request), operator_approval.ApprovalRejected)
             received.write_bytes(packet[:-1] + bytes([packet[-1] ^ 1]))
             reject(lambda: apply_file(receipt), sealed.InputRejected)
+            assert recipient_key.exists()
             unchanged(baseline)
             received.write_bytes(packet)
             result = apply_file(receipt)
+            assert not recipient_key.exists() and (recipient_key.parent / 'consumed.json').is_file()
             reject(lambda: apply_file(receipt), sealed.InputRejected)
             return result
 
@@ -503,6 +521,7 @@ def run(root):
         print('Verified sealed SAS delivery to distinct sender and receiver boots before both database steps')
         print('Verified receiver files fed both PostgreSQL steps and changed files or plans failed before writes')
         print('Verified signed operator approval before both isolated PostgreSQL writes')
+        print('Reopened and consumed boot-local recipients for both PostgreSQL writes')
         print('Verified transactional rewrap, late rollback, unchanged Terraform bytes and exact JSONB numbers')
     finally:
         connections.close_all()
