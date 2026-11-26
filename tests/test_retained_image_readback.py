@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import socket
 import sys
 from tempfile import TemporaryDirectory
 import unittest
@@ -122,3 +123,14 @@ class ReadbackTests(unittest.TestCase):
                     loader.verify_or_load(self.source, raw, self.key, self.home, **pins)
                 daemon.run.assert_called_once()
                 daemon.confirm_image.assert_not_called()
+
+    def test_recovery_daemon_rejects_socket_replacement(self):
+        path = self.home / 'docker.sock'
+        with socket.socket(socket.AF_UNIX) as original, socket.socket(socket.AF_UNIX) as replacement:
+            original.bind(str(path))
+            daemon = loader.RecoveryDocker(path)
+            daemon.assert_current()
+            path.rename(self.home / 'original.sock')
+            replacement.bind(str(path))
+            with self.assertRaises(readback.ReadbackRejected):
+                daemon.assert_current()

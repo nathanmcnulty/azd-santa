@@ -275,7 +275,7 @@ def run(root):
         secret_options = dict(expected_contexts=CONTEXTS, old_material=OLD, new_material=NEW, targets=TARGETS)
         repo = Path(__file__).resolve().parents[1]
         commit = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
-        bundle = tooling.build(repo, commit, version=20)
+        bundle = tooling.build(repo, commit, version=21)
         carrier_root = root / 'carrier'
         carrier_root.mkdir(mode=0o700)
         recipient_root = root / 'recipients'
@@ -297,14 +297,19 @@ def run(root):
             os.chown(socket_path, -1, 65534)
         worker_journal = workspace / 'journal'
         worker_journal.mkdir(mode=0o700)
+        recovery_socket = workspace / 'docker.sock'
+        with socket.socket(socket.AF_UNIX) as endpoint:
+            endpoint.bind(str(recovery_socket))
 
         def run_worker(request):
             raw = blob.encoded(request)
             is_apply = request['action'] == 'apply'
             image = 'sha256:' + 'f' * 64
+            selected_socket = recovery_socket if request['step']['stage'] == 'quarantine' else None
 
             def docker(args, **options):
-                assert tuple(args[:3]) == worker.DOCKER
+                expected_docker = (*worker.DOCKER[:2], 'unix://' + str(selected_socket)) if selected_socket else worker.DOCKER
+                assert tuple(args[:3]) == expected_docker
                 if args[3:5] == ['image', 'inspect']:
                     return subprocess.CompletedProcess(args, 0, (image + ' linux amd64 null').encode())
                 assert args[3] == 'run' and args[args.index('--network') + 1] == 'none'
@@ -328,7 +333,8 @@ def run(root):
                 return worker.launch(raw, workspace=workspace, tooling=bundle, commit=commit,
                     tooling_sha256=sealed.sha(bundle), image=image,
                     config_sha256=sealed.sha(config_path.read_bytes()) if is_apply else None,
-                    _boot=worker_boot, _docker=docker, _recipient_root=recipient_root, _carrier_root=carrier_root)
+                    docker_socket=selected_socket, _boot=worker_boot, _docker=docker,
+                    _recipient_root=recipient_root, _carrier_root=carrier_root)
 
         def observe():
             return census.collect(observer, apps, fingerprint_key=KEY)
