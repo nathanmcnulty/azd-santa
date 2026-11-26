@@ -2,6 +2,7 @@
 
 import argparse
 from contextlib import ExitStack
+import json
 import os
 from pathlib import Path
 import re
@@ -88,6 +89,17 @@ def arguments(name, image, tools, recipient, workspace, request, job, config_sha
     return result + ['--entrypoint', 'python', image, '-B', *command]
 
 
+def check_worker_image(raw, image):
+    blob.need(0 < len(raw) <= 1024 * 1024)
+    results = json.loads(raw, object_pairs_hook=blob.unique)
+    blob.need(type(results) is list and len(results) == 1 and type(results[0]) is dict)
+    inspected = results[0]
+    config = inspected.get('Config')
+    blob.need(inspected.get('Id') == image and inspected.get('Os') == 'linux'
+              and inspected.get('Architecture') == 'amd64' and type(config) is dict
+              and config.get('Volumes') in (None, {}))
+
+
 def checked_reply(raw_reply, raw, request, job):
     blob.need(0 < len(raw_reply) <= MAX_OUTPUT and raw_reply.endswith(b'\n'))
     reply = checked_document(raw_reply[:-1], sha(raw_reply[:-1]), MAX_OUTPUT)
@@ -140,11 +152,8 @@ def launch(raw, *, workspace, tooling, commit, tooling_sha256, image, config_sha
                 daemon.assert_current()
             return _docker([*docker, *command], env=environment, stderr=subprocess.DEVNULL, **options)
 
-        output_format = '{{.Id}} {{.Os}} {{.Architecture}} {{json .Config.Volumes}}'
-        inspected = call(['image', 'inspect', '--format', output_format, image],
-                         stdout=subprocess.PIPE, check=True, timeout=15)
-        fields = inspected.stdout.decode('ascii').split()
-        blob.need(fields in ([image, 'linux', 'amd64', 'null'], [image, 'linux', 'amd64', '{}']))
+        inspected = call(['image', 'inspect', image], stdout=subprocess.PIPE, check=True, timeout=15)
+        check_worker_image(inspected.stdout, image)
         try:
             completed = call(args, input=raw, stdout=subprocess.PIPE, check=True, timeout=TIMEOUT)
         except subprocess.TimeoutExpired:

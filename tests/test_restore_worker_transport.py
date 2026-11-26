@@ -12,9 +12,29 @@ import test_restore_operator_approval as signing_fixture
 import blob_retention as blob
 from restore_database_command import SCOPE as WORKER_SCOPE
 from restore_tooling_bundle import WORKER_TRANSPORT_SCOPE
+from restore_worker import check_worker_image
 import restore_worker_transport as transport
 from retained_image_handoff import sha
 from retained_image_run_command import DONE, RECEIPT
+
+
+class WorkerImageTests(unittest.TestCase):
+    image = 'sha256:' + 'f' * 64
+
+    def test_inspection_accepts_omitted_or_empty_volume_declarations(self):
+        record = dict(Id=self.image, Os='linux', Architecture='amd64')
+        for config in ({}, {'Volumes': None}, {'Volumes': {}}):
+            with self.subTest(config=config):
+                check_worker_image(blob.encoded([dict(record, Config=config)]), self.image)
+
+    def test_inspection_rejects_unsafe_or_unexpected_image_metadata(self):
+        record = dict(Id=self.image, Os='linux', Architecture='amd64', Config={})
+        for results in ([], [record, record], [dict(record, Id='sha256:' + '1' * 64)],
+                        [dict(record, Os='windows')], [dict(record, Architecture='arm64')],
+                        [dict(record, Config=None)], [dict(record, Config={'Volumes': []})],
+                        [dict(record, Config={'Volumes': {'/data': {}}})]):
+            with self.subTest(results=results), self.assertRaises(blob.RetentionRejected):
+                check_worker_image(blob.encoded(results), self.image)
 
 
 class TransportTests(unittest.TestCase):

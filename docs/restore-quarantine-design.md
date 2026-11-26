@@ -460,6 +460,14 @@ The workstation `observe` action reads its local journal. For an uncertain
 submission, preserve both journals and inspect the guest's durable
 `transport-<request SHA-256>` directory before continuing recovery.
 
+On the recovery VM, a diagnostic run confirmed that Docker's Go-template
+image inspection failed for the retained Zentral image. Docker's default
+JSON inspection verified the same image ID, Linux amd64 platform and absence
+of volume declarations. The isolated worker then returned a boot-bound
+offer. Guest and workstation outcomes matched, and the isolated services
+stopped before Azure deallocation. This offer test opened no database
+connection. [Live offer evidence](https://github.com/nathanmcnulty/azd-santa/issues/53#issuecomment-7191558146)
+
 Live signed request execution, workspace provisioning, object cleanup,
 service-generation binding and replacement identity enrollment remain open.
 [Live packet transport evidence](https://github.com/nathanmcnulty/azd-santa/issues/190)
