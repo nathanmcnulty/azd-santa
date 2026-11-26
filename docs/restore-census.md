@@ -211,5 +211,24 @@ volatile copies, and verified Azure VM deallocation. The receipt SHA-256 is
 `04ba6c70d32e3094b0f8b8ab684badba82f03ebbea4fb5d5a7b4ea4e7a0d49f7`.
 
 The archived database can start in isolation and return catalog and migration
-records. Full schema and row comparison, application services, native
-Elasticsearch restore, and current-authority reconciliation remain open.
+records. Full schema and row comparison, application services and
+current-authority reconciliation remain open.
+
+## Elasticsearch restore from the retained pilot archive
+
+The independent verifier matched the authenticated compatibility record to
+the pinned Elasticsearch 9.2.1 image and verified the captured snapshot UUID,
+index selection, and shard inventory. It verified that a fresh node had no
+indices, mounted a copy of the repository read-only and restored the captured
+index with global and feature state excluded. The container used loopback
+inside a network-disabled namespace. [Elasticsearch snapshot restore API](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-snapshot-restore)
+
+The restore returned one successful primary shard and zero failures. The
+restored index returned 26 documents. The verifier checked that cluster
+settings and repository bytes were unchanged, removed the temporary container
+and memory-backed files, and verified VM deallocation. The receipt SHA-256 is
+`6063b6c4f1d3f23c7ad93b751190b15fb123fea5921385702dbb2835aff509ec`.
+
+The capture recorded index and shard inventory. Comparison of individual
+documents against an independently captured baseline and integration with the
+restored application remain open.
