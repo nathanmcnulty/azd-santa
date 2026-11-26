@@ -5,6 +5,7 @@ backup state. Callers must obtain the expected digest from a trusted external
 receipt and enforce an outer process deadline for blocking filesystem I/O.
 """
 import base64
+from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -39,6 +40,66 @@ def decode(value, length):
     return raw
 
 
+@dataclass(frozen=True, repr=False)
+class Header:
+    aad: bytes
+    raw: bytes
+    recipient_sha256: str
+    nonce: bytes
+    wrapped: bytes
+
+    @property
+    def sha256(self):
+        return hashlib.sha256(self.raw).hexdigest()
+
+
+@dataclass(frozen=True, repr=False)
+class ContentKey:
+    """One data key, valid only for the pinned ciphertext and envelope header."""
+
+    value: bytes
+    ciphertext_sha256: str
+    header_sha256: str
+    recipient_sha256: str
+
+
+def read_header(stream, size):
+    stream.seek(0)
+    prefix = stream.read(len(MAGIC)+4)
+    need(len(prefix) == len(MAGIC)+4 and prefix.startswith(MAGIC))
+    length = struct.unpack('>I', prefix[-4:])[0]
+    need(1 <= length <= 2048 and len(prefix)+length+16 < size)
+    raw = stream.read(length)
+    need(len(raw) == length)
+    value = json.loads(raw, object_pairs_hook=unique)
+    need(type(value) is dict and set(value) == {'algorithm','recipient_sha256','nonce','wrapped_key'}
+         and value['algorithm'] == 'RSA-OAEP-256+A256GCM'
+         and re.fullmatch('[a-f0-9]{64}', value['recipient_sha256'])
+         and json.dumps(value, sort_keys=True, separators=(',', ':')).encode() == raw)
+    return Header(prefix + raw, raw, value['recipient_sha256'],
+                  decode(value['nonce'], 12), decode(value['wrapped_key'], 384))
+
+
+def unwrap(header, key, ciphertext_sha256):
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding, rsa
+
+    if type(key) is ContentKey:
+        need(key.ciphertext_sha256 == ciphertext_sha256 and key.header_sha256 == header.sha256
+             and key.recipient_sha256 == header.recipient_sha256)
+        secret = key.value
+    else:
+        need(isinstance(key, rsa.RSAPrivateKey) and key.key_size == 3072
+             and key.public_key().public_numbers().e == 65537)
+        public = key.public_key().public_bytes(serialization.Encoding.DER,
+                                              serialization.PublicFormat.SubjectPublicKeyInfo)
+        need(hashlib.sha256(public).hexdigest() == header.recipient_sha256)
+        secret = key.decrypt(header.wrapped, padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),
+                             algorithm=hashes.SHA256(), label=MAGIC))
+    need(type(secret) is bytes and len(secret) == 32)
+    return secret
+
+
 def authenticate(stream, size, expected_sha256, private_key, *, maximum=32*1024**3, seconds=1800):
     """Stream-discard decrypted bytes; return only after digest AND GCM verify."""
     result, _ = _authenticate(stream, size, expected_sha256, private_key, maximum, seconds, 0)
@@ -52,38 +113,19 @@ def authenticate_prefix(stream, size, expected_sha256, private_key, *, prefix_li
 
 
 def _authenticate(stream, size, expected_sha256, private_key, maximum, seconds, prefix_limit):
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import padding, rsa
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     need(type(maximum) is int and CHUNK <= maximum <= 32*1024**3
          and type(size) is int and len(MAGIC)+4+16 < size <= maximum
          and type(seconds) is int and 1 <= seconds <= 7200)
     need(type(expected_sha256) is str and re.fullmatch('[a-f0-9]{64}', expected_sha256))
-    need(isinstance(private_key, rsa.RSAPrivateKey) and private_key.key_size == 3072
-         and private_key.public_key().public_numbers().e == 65537)
     deadline = time.monotonic() + seconds
-    stream.seek(0)
-    prefix = stream.read(len(MAGIC)+4)
-    need(len(prefix) == len(MAGIC)+4 and prefix.startswith(MAGIC))
-    length = struct.unpack('>I', prefix[-4:])[0]
-    need(1 <= length <= 2048 and len(prefix)+length+16 < size)
-    header = stream.read(length)
-    need(len(header) == length)
-    document = json.loads(header, object_pairs_hook=unique)
-    need(type(document) is dict and set(document) == {'algorithm','recipient_sha256','nonce','wrapped_key'}
-         and document['algorithm'] == 'RSA-OAEP-256+A256GCM'
-         and json.dumps(document, sort_keys=True, separators=(',', ':')).encode() == header)
-    public = private_key.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
-    recipient = hashlib.sha256(public).hexdigest()
-    need(document['recipient_sha256'] == recipient)
-    nonce = decode(document['nonce'], 12)
-    wrapped = decode(document['wrapped_key'], 384)
-    key = private_key.decrypt(wrapped, padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=MAGIC))
-    need(len(key) == 32 and time.monotonic() < deadline)
-    offset = len(prefix)+length
+    header = read_header(stream, size)
+    key = unwrap(header, private_key, expected_sha256)
+    need(time.monotonic() < deadline)
+    offset = len(header.aad)
     stream.seek(size-16); tag = stream.read(16); need(len(tag) == 16)
-    decryptor = Cipher(algorithms.AES256(key), modes.GCM(nonce, tag)).decryptor()
-    aad = prefix+header
+    decryptor = Cipher(algorithms.AES256(key), modes.GCM(header.nonce, tag)).decryptor()
+    aad = header.aad
     decryptor.authenticate_additional_data(aad)
     hasher = hashlib.sha256(aad)
     stream.seek(offset)
@@ -107,8 +149,8 @@ def _authenticate(stream, size, expected_sha256, private_key, maximum, seconds, 
     retained.extend(tail[:prefix_limit - len(retained)])
     need(hasher.hexdigest() == expected_sha256 and time.monotonic() < deadline)
     return dict(scope='sealed-backup-ciphertext-authentication-v1', ciphertext_sha256=expected_sha256,
-                ciphertext_bytes=size, plaintext_bytes=plaintext_bytes, recipient_sha256=recipient,
-                header_sha256=hashlib.sha256(header).hexdigest(), plaintext_released=prefix_limit > 0,
+                ciphertext_bytes=size, plaintext_bytes=plaintext_bytes, recipient_sha256=header.recipient_sha256,
+                header_sha256=header.sha256, plaintext_released=prefix_limit > 0,
                 limitation='No archive/extraction, compatibility, current authority or application restore proof'), bytes(retained)
 
 

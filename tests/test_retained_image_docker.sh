@@ -28,6 +28,8 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 sys.path.insert(0, 'experiments/server')
 from retained_image_export import encoded, export_image
+from blob_retention import SelectedTarget, RetentionRejected
+from retained_image_key_handoff import Handoff
 from retained_image_parts import assemble, plan
 from restore_recipient_key import pack
 
@@ -103,6 +105,62 @@ assert json.loads(intent)['state'] == 'load-uncertain'
 assert subprocess.run([*command, *load_args], timeout=20, capture_output=True).returncode != 0
 assert (attempt / 'intent.json').read_bytes() == intent
 assert set(readback.iterdir()) == {copy, portable, completion_path, attempt}
+
+# Exercise delegation separately on the same authenticated fixture. The
+# recovery side receives only the encrypted single-image data key.
+subprocess.run(['docker', 'image', 'rm', image], timeout=20, check=True, stdout=subprocess.DEVNULL)
+boot_id = '33333333-3333-4333-8333-333333333333'
+host = SelectedTarget('/subscriptions/fixture/virtualMachines/receiver',
+                      '44444444-4444-4444-8444-444444444444', '/fixture/socket', 'westus2')
+handoff = Handoff(host, completion, completion_sha256=completion_sha256, inventory_sha256=inventory_sha256,
+                  recipient_sha256=hashlib.sha256(public).hexdigest(), image_name='core', image_id=image,
+                  boot_id=boot_id)
+offers = readback / 'offers'
+offers.mkdir(mode=0o700)
+get_boot = lambda selected: boot_id
+offer = handoff.offer(copy, offers, _boot=get_boot)
+offer_sha = hashlib.sha256(offer).hexdigest()
+envelope = handoff.seal(offer, offer_sha, key)
+digest = hashlib.sha256(envelope).hexdigest()
+delegated_attempt = readback / 'delegated-attempt'
+pins = dict(socket=Path('/var/run/docker.sock').resolve(strict=True), staging=readback, attempt=delegated_attempt)
+try:
+    handoff.load(copy, offers, offer_sha, envelope, digest, **pins, _boot=lambda _: host.instance_id)
+except RetentionRejected:
+    pass
+else:
+    raise AssertionError('A different boot accepted the delegated image')
+assert not delegated_attempt.exists()
+delegated = handoff.load(copy, offers, offer_sha, envelope, digest, **pins, _boot=get_boot)
+assert delegated['state'] == 'loaded' and delegated['image_id'] == image
+assert not delegated['container_started'] and not delegated['restore_accepted']
+try:
+    handoff.load(copy, offers, offer_sha, envelope, digest, **pins, _boot=get_boot)
+except RetentionRejected:
+    pass
+else:
+    raise AssertionError('The consumed image offer was reused')
+assert json.loads((delegated_attempt / 'outcome.json').read_bytes()) == delegated
+bad_offers = readback / 'bad-offers'
+bad_offers.mkdir(mode=0o700)
+new_offer = handoff.offer(copy, bad_offers, _boot=get_boot)
+new_sha = hashlib.sha256(new_offer).hexdigest()
+try:
+    handoff.seal(new_offer, new_sha, rsa.generate_private_key(public_exponent=65537, key_size=3072))
+except RetentionRejected:
+    pass
+else:
+    raise AssertionError('The wrong backup private key delegated the image')
+bad_attempt = readback / 'bad-attempt'
+try:
+    handoff.load(copy, bad_offers, new_sha, envelope, digest,
+                 **{**pins, 'attempt': bad_attempt}, _boot=get_boot)
+except RetentionRejected:
+    pass
+else:
+    raise AssertionError('An envelope for another offer reached Docker')
+assert not bad_attempt.exists()
+print('Delegated image key loaded the exact image and rejected wrong boots, keys, envelopes and replay.')
 PY
 [[ "$(docker image inspect --format '{{.Id}} {{.Os}}/{{.Architecture}}' "$id")" == "$id linux/amd64" ]]
 echo 'Authenticated encrypted export loaded with the exact Linux amd64 image ID; no container was started.'

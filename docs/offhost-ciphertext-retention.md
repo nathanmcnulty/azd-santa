@@ -592,6 +592,18 @@ container or accepts application restore. Configure the daemon for isolated
 recovery and apply a host-level deadline and disk limit to the Docker process
 and its data directory.
 
+Recovery tooling bundle v21 includes `retained_image_key_handoff.py` for
+an operator workstation that already holds the original backup private key.
+The selected recovery guest checks the entire independently downloaded
+ciphertext hash before creating a boot-bound offer. The operator validates
+the exact offer and completion pins, unwraps the archive's data key locally,
+and seals that single key to the guest's temporary recipient. The original
+private key stays on the workstation. Keep offers in an owner-private
+boot-local directory and preserve the separate durable load attempt if its
+result is unknown. The loader still verifies GCM, the archive digest and
+the exact image ID before confirming import. The guest transport and
+Azure load of the retained Zentral image remain live qualification gates.
+
 [action-run-command]: https://learn.microsoft.com/en-us/azure/virtual-machines/linux/run-command
 [docker-image-inspect]: https://docs.docker.com/reference/cli/docker/image/inspect/
 
