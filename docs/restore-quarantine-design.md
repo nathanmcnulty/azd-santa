@@ -400,10 +400,22 @@ inspection of the database journal and a new offer. An unused offer
 expires after ten minutes. Its private key stays local to the boot unless
 the guest launcher cleans up the offer earlier.
 
-The guided VM entry point for the database job, live transfer and database
-execution, object cleanup, service-generation binding and replacement
+Recovery tooling bundle v19 adds a guest command for the offer and apply
+steps. It accepts a bounded canonical request on standard input and emits
+one receipt. The worker supplies the journal directory, Django settings,
+and database credentials locally. The command requires both Django
+connections to select the verified Unix socket and configures the observer
+as read-only. For a network-isolated worker, the trusted host supplies
+the current VM readback as a canonical JSON file in a private, read-only mount. The command checks
+that receipt against the worker's current Linux boot and selected VM.
+Keep the restored PostgreSQL instance and worker isolated while using
+this command. An applied stage reports whether database rows
+changed and leaves application activation closed.
+
+Azure delivery of signed database requests, live database execution,
+object cleanup, service-generation binding and replacement
 identity enrollment remain open.
-[Live VM startup investigation](https://github.com/nathanmcnulty/azd-santa/issues/190)
+[Live packet transport evidence](https://github.com/nathanmcnulty/azd-santa/issues/190)
 
 The database adapters bind the target to the Linux boot ID and postmaster
 start time. A Unix-socket connection is required, and PostgreSQL must have no
