@@ -351,6 +351,25 @@ The two selected guests stage their tooling and obtain offers concurrently.
 Both must complete before any SAS is issued. The sender upload and
 independent receiver readback still run in order.
 
+After an interrupted transfer with a durable upload attempt, start only
+the original receiver on a new boot. Use the original store selection,
+job metadata and pinned tooling with the recorded plan and packet digests.
+The retry needs neither the sender VM nor a local copy of the packet.
+
+```powershell
+python ./experiments/server/restore_packet_operator.py readback `
+  --selection $selectionPath --job $jobPath --tooling $toolingPath `
+  --operation $operation --commit $commit --tooling-sha256 $toolingSha256 `
+  --packet-sha256 $packetSha256 --plan-sha256 $planSha256 --journal-root $journalRoot
+```
+
+The retry issues a read-only SAS and stores its intent and result in a
+separate directory named for the new boot. Preserve that directory if
+the guest returns no verified result. The original journal stays intact,
+and no create SAS or second upload is attempted. The readback receipt
+proves object integrity. Applying a database step on the new boot
+requires a fresh review, recipient offer and sealed packet.
+
 Recovery tooling bundle v16 connects the approved delivery to the existing
 isolated database job. The receiver requires the trusted plan digest and a
 matching verified transfer receipt. It opens the exact owner-private file
