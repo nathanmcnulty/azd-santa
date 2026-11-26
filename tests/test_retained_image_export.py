@@ -1,6 +1,7 @@
 """Linux export filesystem, failure and independent ciphertext checks."""
 from contextlib import contextmanager
 import hashlib
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -18,6 +19,37 @@ import retained_image_export_job as jobs
 import retained_image_parts as parts
 from test_retained_image_blob import target
 from restore_cipher import authenticate
+
+
+class DockerSaveSelectionTests(unittest.TestCase):
+    image_id = 'sha256:' + 'a' * 64
+
+    def command(self, descriptor, *, observed_id=None, architecture='amd64'):
+        line = f'{observed_id or self.image_id} linux {architecture} {json.dumps(descriptor)}'.encode()
+        with patch.object(export.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, line)) as run:
+            command = export.docker_save_args(self.image_id, time.monotonic() + 10)
+            self.assertEqual(run.call_args.args[0][-1], self.image_id)
+            self.assertLessEqual(run.call_args.kwargs['timeout'], 10)
+            return command
+
+    def test_preserves_exact_index_and_filters_other_images(self):
+        for media_type in export.IMAGE_INDEX_TYPES:
+            index = {'digest': self.image_id, 'mediaType': media_type}
+            self.assertEqual(self.command(index)[-3:], ['image', 'save', self.image_id])
+        leaf = {'digest': self.image_id, 'mediaType': export.IMAGE_MANIFEST_TYPES[0]}
+        for descriptor in (None, leaf):
+            self.assertEqual(self.command(descriptor)[-3:], ['--platform', 'linux/amd64', self.image_id])
+
+    def test_rejects_other_local_images_platforms_or_unrecognized_descriptors(self):
+        other_id = 'sha256:' + 'b' * 64
+        for descriptor, options in (
+            (None, {'observed_id': other_id}),
+            (None, {'architecture': 'arm64'}),
+            ({'digest': other_id, 'mediaType': export.IMAGE_INDEX_TYPES[0]}, {}),
+            ({'digest': self.image_id, 'mediaType': 'application/json'}, {}),
+        ):
+            with self.subTest(descriptor=descriptor, options=options), self.assertRaises(export.ExportRejected):
+                self.command(descriptor, **options)
 
 
 @unittest.skipUnless(sys.platform == 'linux', 'Linux Docker export filesystem contract')
@@ -96,7 +128,8 @@ class ExportTests(unittest.TestCase):
             processes.append(process)
             return process
 
-        with patch.object(export.subprocess, 'Popen', launch), self.assertRaises(export.ExportRejected):
+        with (patch.object(export, 'docker_save_args', return_value=['synthetic']),
+              patch.object(export.subprocess, 'Popen', launch), self.assertRaises(export.ExportRejected)):
             with export.docker_archive(self.image_id, time.monotonic() + 0.2) as chunks:
                 list(chunks)
         self.assertIsNotNone(processes[0].poll())

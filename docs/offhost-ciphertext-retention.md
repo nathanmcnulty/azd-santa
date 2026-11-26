@@ -297,17 +297,23 @@ It caps each image archive at 16 GiB, streams the complete byte check, and rejec
 wrong platforms, tagged or multiple images, missing layers, and conflicting OCI
 metadata. It reads the image configuration and archive metadata without extracting
 layers. Classic Docker identifies images by the configuration digest, while the
-containerd image store can identify a single-platform image by its OCI manifest
-digest. The verifier checks the selected identity against the corresponding
-hashed bytes and binds both to the same configuration. A multi-platform index
-as the selected ID requires separate qualification. Use an outer wall-clock
-deadline to bound blocking disk I/O.
+containerd image store can identify an image by its OCI manifest or index
+digest. For a pinned platform index, the verifier checks the original index
+bytes and the descriptor for exactly one Linux amd64 manifest. It verifies
+that manifest and matches it to the configuration and layers in the Docker
+archive. Other architectures can remain absent from the platform-specific
+export. Use an outer wall-clock deadline to bound blocking disk I/O.
 
 `experiments/server/retained_image_export.py` streams a single selected image by
-exact ID and platform from the local Linux Docker socket. It needs Docker API
-1.48 or later for platform selection. The caller pins the previously verified
-inventory and the recipient's RSA public key. The exporter creates a fresh
-private directory, records its intent first, and writes only encrypted output.
+exact ID from the local Linux Docker socket. It checks the locally resolved
+Linux amd64 image before export and uses Docker API 1.48 or later for platform
+selection. For an image pinned by its index digest, it saves the index with the
+variants available in the local store. Docker's single-platform save can
+replace the index with a child manifest. The verifier and loader still require
+the pinned identity and the selected Linux amd64 platform. The caller pins the
+previously verified inventory and the recipient's RSA public key. The exporter
+creates a fresh private directory, records its intent first, and writes only
+encrypted output.
 Docker may use its own temporary storage internally, so the daemon also needs
 adequate private disk space and an external deadline. An interrupted or oversized
 export leaves its directory for inspection. A successful export publishes a
@@ -589,7 +595,7 @@ that the daemon has no containers. Keep the attempt after a timeout or
 unverified reply. Docker may have received the archive, so inspect the same
 isolated daemon before taking further action. When the loader observes a
 failure, `failure.json` records the last Docker step and a bounded reason.
-When the backup pins the OCI manifest ID, the loader requires a containerd
+When the backup pins the OCI manifest or index ID, the loader requires a containerd
 image store before sending the archive to Docker. Legacy stores register
 that archive under its configuration digest.
 Raw Docker diagnostics stay local to the process. The command never starts a
