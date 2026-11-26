@@ -2,6 +2,7 @@
 
 import argparse
 from contextlib import ExitStack
+import json
 import os
 from pathlib import Path
 import re
@@ -40,6 +41,10 @@ class DockerCommandRejected(ReadbackRejected):
         super().__init__('Docker rejected the retained image operation')
 
 
+class IncompatibleImageStore(ReadbackRejected):
+    pass
+
+
 class RecoveryDocker:
     def __init__(self, socket):
         path = Path(socket)
@@ -71,6 +76,12 @@ class RecoveryDocker:
     def require_idle(self, deadline):
         need(self.run(['container', 'ls', '--all', '--last', '1', '--quiet'], deadline) == b'')
 
+    def require_manifest_ids(self, deadline):
+        raw = self.run(['info', '--format', '{{json .DriverStatus}}'], deadline)
+        rows = json.loads(raw)
+        if not isinstance(rows, list) or ['driver-type', 'io.containerd.snapshotter.v1'] not in rows:
+            raise IncompatibleImageStore('This retained manifest ID requires the containerd image store')
+
     def confirm_image(self, image_id, platform, deadline):
         observed = self.run(['image', 'inspect', '--format', '{{.Id}} {{.Os}}/{{.Architecture}}', image_id],
                             deadline)
@@ -96,6 +107,9 @@ def verify_or_load(source, completion, key, staging, *, completion_sha256, inven
             phase = 'idle-before'
             try:
                 docker.require_idle(deadline)
+                if verified['config_id'] != image_id:
+                    phase = 'image-store'
+                    docker.require_manifest_ids(deadline)
                 phase = 'image-load'
                 docker.run(['image', 'load', '--quiet', '--platform', verified['platform']],
                            deadline, archive=archive)
@@ -110,7 +124,10 @@ def verify_or_load(source, completion, key, staging, *, completion_sha256, inven
                 journal.write('failure.json', dict(scope=SCOPE, phase=phase, reason=error.reason,
                                                   exit_code=error.returncode))
                 raise
-            except (ReadbackRejected, OSError):
+            except IncompatibleImageStore:
+                journal.write('failure.json', dict(scope=SCOPE, phase=phase, reason='containerd-image-store-required'))
+                raise
+            except (ValueError, OSError):
                 journal.write('failure.json', dict(scope=SCOPE, phase=phase, reason='verification-failed'))
                 raise
             result.update(state='loaded', image_loaded=True, container_started=False)
