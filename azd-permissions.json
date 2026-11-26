@@ -294,6 +294,21 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
+      "principal": "Explicit selected cached Azure operator",
+      "phase": "runtime",
+      "feature": "restore-packet-carrier-command",
+      "defaultEnabled": false,
+      "scope": "Exact selected sender or receiver lab VM, boot, reviewed tooling and encrypted packet",
+      "rationale": "The optional command stages reviewed source in guest-private temporary storage and passes only a public offer and encrypted SAS through Run Command. Blob capability issuance is separately scoped. It grants no permissions and does not connect to a restored database or activate services.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/server/restore_carrier_command.py", "sha256": "420938816cdbae479bc556c01cc0f4141167d23b5ce6b4a1510d97a153b008db" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
       "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Network/networkInterfaces/read; Microsoft.Network/publicIPAddresses/read; Microsoft.Network/virtualNetworks/subnets/read; Microsoft.Network/networkSecurityGroups/read",
       "principal": "Explicit selected cached Azure CLI endpoint observer (existing rights only)",
       "phase": "deployment",
