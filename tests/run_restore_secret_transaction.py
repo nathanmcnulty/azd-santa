@@ -145,8 +145,9 @@ def run(root):
         assert not preview['performs_mutation'] and not preview['rewrap_committed']
         assert invoke(baseline)['plan_digest'] == preview['plan_digest']
         failed = reject(lambda: invoke(baseline, apply=True, plan_digest=preview['plan_digest']))
-        assert isinstance(failed.__context__, writer.Database.errors.CheckViolation)
-        assert failed.__context__.diag.constraint_name == 'preserved_old_key'
+        constraint_failure = failed.__context__.__cause__
+        assert isinstance(constraint_failure, writer.Database.errors.CheckViolation)
+        assert constraint_failure.diag.constraint_name == 'preserved_old_key'
         unchanged(baseline)
 
         with writer.cursor() as cursor:
