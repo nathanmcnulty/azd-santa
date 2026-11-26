@@ -257,8 +257,24 @@ This qualifies off-host byte retention for the selected Azure pilot capture.
 On the original Windows workstation, the CurrentUser DPAPI-protected recipient
 key was recovered in memory and its public key fingerprint matched the native
 capture receipt. The check establishes access from that Windows user profile.
-Recipient-side envelope authentication, exact image retention, full stack
-restore, and current authority remain open.
+
+### Authentication of the retained pilot archive
+
+The original Windows key unwrapped the content key for the selected archive.
+The Windows process encrypted that content key to a short-lived key from the
+independent verifier. The handoff bound the archive digest and header to the
+verifier's Azure VM instance and boot. The original recipient key stayed on
+Windows, and the verifier kept the handoff key in memory-backed storage and
+removed it before processing the archive.
+
+The verifier reread all 80,159,434 bytes from its retained Blob download and
+verified both the AES-GCM tag and the SHA-256 pinned above. It discarded
+decrypted bytes in memory. The authentication receipt SHA-256 is
+`3ea210b67bf3415bc668f2ec3c5e368916da99a31849dc6e2739b60e7a676c1c`.
+The storage firewall kept its existing deny-by-default rules. Azure confirmed
+deallocation of the existing verifier at the end of the run. Durable key
+custody, independent image retention, quarantine and application restore,
+and current authority remain open for this capture.
 
 ### Exact image retention
 
