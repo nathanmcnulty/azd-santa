@@ -440,6 +440,16 @@ import. The launcher checks that the same socket is present throughout the
 worker invocation. Keep that daemon's storage and socket separate from the
 existing application daemon.
 
+The trusted recovery host can compute the reviewed plan digest with the
+worker's `--local-preview` mode. Build its private standard input with
+`restore_database_command.preview_request`, using the pinned review, census
+key and stage options. The preview uses the same socket, database
+configuration and journal as apply. It mounts the journal read-only and
+returns a plan digest without creating an offer or committing a step. Use
+that digest in the subsequent offer and approval. Keep the preview input
+local to the recovery host because it contains the private census key and
+stage options.
+
 The operator-side `restore_operator_approval.py` command in the reviewed
 v21 tooling assembles the worker's canonical apply request. Supply the
 selected store and job, the worker's offer reply, the packet transport plan

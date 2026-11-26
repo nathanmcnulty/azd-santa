@@ -302,7 +302,10 @@ def run(root):
             endpoint.bind(str(recovery_socket))
 
         def run_worker(request):
-            raw = blob.encoded(request)
+            local_preview = type(request) is bytes
+            raw = request if local_preview else blob.encoded(request)
+            if local_preview:
+                request, _, _, _ = database_command.parse_preview(raw)
             is_apply = request['action'] == 'apply'
             image = 'sha256:' + 'f' * 64
             selected_socket = recovery_socket if request['step']['stage'] == 'quarantine' else None
@@ -318,7 +321,12 @@ def run(root):
                 assert '--read-only' in args and args[args.index('--cap-drop') + 1] == 'ALL'
                 assert '--privileged' not in args and options['input'] == raw
                 mounts = [args[index + 1] for index, value in enumerate(args) if value == '--mount']
-                assert len(mounts) == (6 if is_apply else 2)
+                assert len(mounts) == (6 if is_apply else 4 if local_preview else 2)
+                if local_preview:
+                    assert '--local-preview' in args
+                    assert mounts[-1] == f'type=bind,source={worker_journal},target={worker.WORKER_JOURNAL},readonly'
+                    assert all(str(worker.RECIPIENT_ROOT) not in item and str(worker.CARRIER_ROOT) not in item
+                               for item in mounts)
                 assert all('/var/run/docker.sock' not in value for value in mounts)
                 if is_apply:
                     assert f'type=bind,source={socket_dir},target={target.socket_dir},readonly' in mounts
@@ -327,15 +335,18 @@ def run(root):
                     assert mounts[-2] == f'type=bind,source={worker_journal},target={worker.WORKER_JOURNAL}'
                 tools = Path(mounts[0].split(',')[1].removeprefix('source='))
                 read_boot = database_command.host_receipt(tools / 'host.json')
-                reply = database_command.dispatch(raw, directory=directory if is_apply else None,
-                    carrier_root=carrier_root, recipient_root=recipient_root, _boot=read_boot)
+                if local_preview:
+                    reply = database_command.preview(raw, directory=directory, _boot=read_boot)
+                else:
+                    reply = database_command.dispatch(raw, directory=directory if is_apply else None,
+                        carrier_root=carrier_root, recipient_root=recipient_root, _boot=read_boot)
                 return subprocess.CompletedProcess(args, 0, blob.encoded(reply) + b'\n')
 
             with patch.object(worker, 'WORKER_SOCKET', target.socket_dir):
                 return worker.launch(raw, workspace=workspace, tooling=bundle, commit=commit,
                     tooling_sha256=sealed.sha(bundle), image=image,
-                    config_sha256=sealed.sha(config_path.read_bytes()) if is_apply else None,
-                    docker_socket=selected_socket, _boot=worker_boot, _docker=docker,
+                    config_sha256=sealed.sha(config_path.read_bytes()) if is_apply or local_preview else None,
+                    local_preview=local_preview, docker_socket=selected_socket, _boot=worker_boot, _docker=docker,
                     _recipient_root=recipient_root, _carrier_root=carrier_root)
 
         def observe():
@@ -376,11 +387,23 @@ def run(root):
             selected_job = job()
             options = secret_options if stage == 'rewrap' else dict(cutoff=cutoff)
             inputs = published(stage, baseline)
-            selection = dict(stage=stage, plan_digest=preview['plan_digest'], review_sha256=inputs['review_sha256'])
+            host = receiver_target(selected_job)
+            preview_raw = database_command.preview_request(selected_job, host, stage=stage, fingerprint_key=KEY,
+                                                            options=options, **inputs)
+            reject(lambda: database_command.parse_request(preview_raw), ValueError)
+            before = set(directory.iterdir())
+            try:
+                reviewed_plan = run_worker(preview_raw)
+            finally:
+                writer.ensure_connection()
+                observer.ensure_connection()
+            assert reviewed_plan['plan_sha256'] == preview['plan_digest']
+            assert not reviewed_plan['activation_allowed'] and not reviewed_plan['current_authority_established']
+            assert before == set(directory.iterdir())
+            selection = dict(stage=stage, plan_digest=reviewed_plan['plan_sha256'], review_sha256=inputs['review_sha256'])
             signer = Ed25519PrivateKey.generate()
             public_key = signer.public_key().public_bytes_raw()
             public_pin = sealed.sha(public_key)
-            host = receiver_target(selected_job)
             reject(lambda: worker_boot(replace(host, instance_id='55555555-5555-4555-8555-555555555555')),
                    blob.RetentionRejected)
             bound_stage = dict(binding=selected_job.binding(KEY), **selection)
