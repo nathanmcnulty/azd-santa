@@ -10,14 +10,28 @@ not a public recovery endpoint or a way for a browser operator to bypass MFA.
 Recover only an independently verified owner; the command records a reason but
 does not pretend an OS process proves a particular human's identity.
 
-## One management command
+## Setup and recovery from the azd environment
 
-The following is a developer qualification invocation. The final `azd` setup
-and recovery flow must invoke it and privately deliver the short-lived link
-without asking an admin to locate files inside a remote container. That wrapper
-is still part of #53; this command alone does not complete customer setup.
+Use the [VM project command](../experiments/vm/README.md#set-up-the-first-administrator)
+after the private install has recorded its binding and the configured HTTPS route
+is reachable from the operator workstation. The command looks up the binding in
+the named local azd environment and uses the sealed Run Command transport to
+open the browser. The original link is short-lived and the browser completes
+password setup and MFA enrollment. The username is the value supplied to
+`-Username`. Keep that name for sign-in.
 
-Run through the selected deployment's existing authenticated management channel:
+Bootstrap reserves one local attempt per VM instance. Recovery requires an
+explicit lowercase `-RecoveryAttempt` label. For an unknown outcome, preserve the
+attempt marker and associated checkpoints under the selected VM project's
+`.azure/<environment>` directory. The command can make one readback with the same
+in-memory recipient if create is uncertain. Once the process exits, inspect the
+attempt before deciding whether to request a new recovery. A different recovery
+label makes a new request and can revoke working factors for the selected user.
+
+## Underlying management command
+
+The lab also exercises the management command directly through the deployment's
+existing authenticated host channel:
 
 ```sh
 docker compose -f /private/evaluation/compose.json exec -T web \

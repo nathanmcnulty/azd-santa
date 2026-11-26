@@ -432,4 +432,4 @@ function Send-SantaSetupRunCommand {
     finally { if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) } }
 }
 
-Export-ModuleMember -Function New-SantaSetupTransportRequest, Send-SantaSetupRunCommand, New-SantaOperatorDeploymentBinding, Complete-SantaBackendInstallation, Get-SantaPrivateVmDeploymentTarget
+Export-ModuleMember -Function Assert-SantaSetupBinding, New-SantaSetupTransportRequest, Send-SantaSetupRunCommand, New-SantaOperatorDeploymentBinding, Complete-SantaBackendInstallation, Get-SantaPrivateVmDeploymentTarget

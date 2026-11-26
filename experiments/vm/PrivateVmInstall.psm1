@@ -3,6 +3,7 @@
 Set-StrictMode -Version Latest
 $server = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../server'))
 Import-Module (Join-Path $server 'SetupTransport.psm1') -Force
+Import-Module (Join-Path $server 'SealedSetup.psm1') -Force
 Import-Module (Join-Path $server 'HttpsEndpoint.psm1') -Force
 $files = @('private_install.py', 'private_install_transport.py', 'bootstrap-host.sh', 'prepare_source.py',
     'prepare_core_build.py', 'prepare_operator_mfa.py', 'operator_mfa.py', 'prepare_operator_recovery.py',
@@ -44,6 +45,81 @@ function New-ProvisioningPublicKey {
 
 function Get-PrivateEnvironmentDirectory([string]$Name) {
     Join-Path $PSScriptRoot ".azure/$Name"
+}
+
+function Assert-PrivateProvisionedVmOutputs {
+    param([hashtable]$Values, [hashtable]$Target)
+    foreach ($pair in @(@('AZURE_SUBSCRIPTION_ID', 'SubscriptionId'), @('AZURE_RESOURCE_GROUP', 'ResourceGroup'),
+            @('SANTA_VM_NAME', 'VmName'), @('SANTA_VM_RESOURCE_ID', 'VmId'), @('SANTA_VM_INSTANCE_ID', 'VmInstanceId'))) {
+        if ($Values[$pair[0]] -isnot [string] -or $Values[$pair[0]] -ine $Target[$pair[1]]) {
+            throw 'Authoritative provisioned VM outputs missing/mismatched.'
+        }
+    }
+}
+
+function Invoke-PrivateVmOperatorSetup {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)][ValidatePattern('^[a-z0-9-]{2,32}$')][string]$EnvironmentName,
+        [Parameter(Mandatory)][ValidateSet('bootstrap', 'recover')][string]$Mode,
+        [Parameter(Mandatory)][string]$Username,
+        [Parameter(Mandatory)][string]$Email,
+        [Parameter(Mandatory)][string]$Reason,
+        [ValidatePattern('^[a-z0-9][a-z0-9-]{0,31}$')][string]$RecoveryAttempt
+    )
+    $Mode = $Mode.ToLowerInvariant()
+    if (($Mode -eq 'recover') -ne [bool]$RecoveryAttempt) {
+        throw 'Supply a recovery attempt label for recover only.'
+    }
+    if ($EnvironmentName -cnotmatch '^[a-z0-9-]{2,32}$' -or
+        ($RecoveryAttempt -and $RecoveryAttempt -cnotmatch '^[a-z0-9][a-z0-9-]{0,31}$')) {
+        throw 'Use lowercase environment and recovery attempt names.'
+    }
+    if ($Username.Length -gt 150 -or -not $Username.Trim() -or $Username -cne $Username.Trim() -or
+        $Email.Length -gt 254 -or -not $Email.Trim() -or $Email -cne $Email.Trim() -or
+        -not $Reason.Trim() -or $Reason.Length -gt 256 -or $Reason -match '[\x00-\x1f]') {
+        throw 'Bounded exact operator identity and reason required.'
+    }
+    $values = Invoke-PrivateAzd @('env', 'get-values', '--environment', $EnvironmentName, '--output', 'json') -Json
+    if ($values['AZURE_ENV_NAME'] -cne $EnvironmentName -or $values['SANTA_PRIVATE_BACKEND_INSTALL'] -cne 'true') {
+        throw 'Select an azd environment with the private backend installed.'
+    }
+    $directory = Get-PrivateEnvironmentDirectory $EnvironmentName
+    $bindingPath = $values['SANTA_OPERATOR_BINDING_PATH']
+    if ($bindingPath -isnot [string] -or -not [IO.Path]::IsPathFullyQualified($bindingPath) -or
+        [IO.Path]::GetFullPath($bindingPath) -cne $bindingPath -or
+        [IO.Path]::GetDirectoryName($bindingPath) -cne $directory -or
+        [IO.Path]::GetFileName($bindingPath) -cnotmatch '^operator-binding-[a-f0-9]{32}\.json$') {
+        throw 'The selected azd environment requires its machine-produced operator binding. Complete the private VM install first.'
+    }
+    $instance = $values['SANTA_VM_INSTANCE_ID']
+    if ($instance -isnot [string] -or $instance -cnotmatch '^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$') {
+        throw 'The selected azd environment has no canonical VM instance.'
+    }
+    $attempt = if ($Mode -eq 'bootstrap') { 'bootstrap' } else { "recover-$RecoveryAttempt" }
+    $checkpoints = Join-Path $directory "operator-$instance-$attempt"
+    $intent = "$checkpoints.intent"
+    if ((Test-Path -LiteralPath $intent) -or (Test-Path -LiteralPath $checkpoints)) {
+        throw "This setup attempt is already reserved. Inspect '$checkpoints' before a deliberate recovery."
+    }
+    Assert-SantaPrivateDestination $intent
+    $file = Get-Item -LiteralPath $bindingPath
+    if ($file -isnot [IO.FileInfo] -or $file.Length -gt 4096 -or
+        ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'The selected operator binding is not a bounded local file.'
+    }
+    $binding = Get-Content -LiteralPath $bindingPath -Raw | ConvertFrom-Json -AsHashtable
+    Assert-SantaSetupBinding $binding
+    if ($binding['EnvironmentName'] -cne $EnvironmentName) { throw 'The operator binding belongs to a different azd environment.' }
+    Assert-PrivateProvisionedVmOutputs $values $binding
+    if (-not $PSCmdlet.ShouldProcess($EnvironmentName, "Request Santa administrator $attempt and open the local browser")) { return }
+
+    $stream = [IO.FileStream]::new($intent, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try { $stream.Flush($true) } finally { $stream.Dispose() }
+    $null = [IO.Directory]::CreateDirectory($checkpoints)
+    Assert-SantaPrivateDestination (Join-Path $checkpoints 'local-check')
+    & (Join-Path $server 'Invoke-SantaOperatorSetup.ps1') -DeploymentBindingPath $bindingPath -Mode $Mode `
+        -Username $Username -Email $Email -Reason $Reason -CheckpointDirectory $checkpoints -OpenBrowser -ReadbackOnUnknown
 }
 
 function New-PrivateSourceBundle {
@@ -122,9 +198,7 @@ function Invoke-PrivateVmAzdHook {
         elseif ($values.SANTA_PRIVATE_BACKEND_INSTALL -cne 'false') { throw 'SANTA_PRIVATE_BACKEND_INSTALL must be true or false.' }
     }
     $target = Get-SantaPrivateVmDeploymentTarget -SubscriptionId $values.AZURE_SUBSCRIPTION_ID -EnvironmentName $environment
-    foreach ($pair in @(@('AZURE_RESOURCE_GROUP', 'ResourceGroup'), @('SANTA_VM_NAME', 'VmName'), @('SANTA_VM_RESOURCE_ID', 'VmId'), @('SANTA_VM_INSTANCE_ID', 'VmInstanceId'))) {
-        if (-not $values.ContainsKey($pair[0]) -or $values[$pair[0]] -ine $target[$pair[1]]) { throw 'Authoritative provisioned VM outputs missing/mismatched.' }
-    }
+    Assert-PrivateProvisionedVmOutputs $values $target
     $subscription = [regex]::Escape($target.SubscriptionId); $group = [regex]::Escape($target.ResourceGroup)
     if (-not $values.ContainsKey('SANTA_VM_DEPLOYMENT_ID') -or $values.SANTA_VM_DEPLOYMENT_ID -cnotmatch
         "^/subscriptions/$subscription/(?:resourceGroups/$group/)?providers/Microsoft\.Resources/deployments/[A-Za-z0-9_.()-]{1,64}$") {
@@ -195,4 +269,4 @@ function Invoke-PrivateVmAzdHook {
     Write-Host 'Private backend initialized and binding recorded. Native HTTPS/browser/MFA acceptance remains pending.'
 }
 
-Export-ModuleMember -Function Invoke-PrivateVmAzdHook
+Export-ModuleMember -Function Invoke-PrivateVmAzdHook, Invoke-PrivateVmOperatorSetup

@@ -60,8 +60,9 @@ user-supplied `SANTA_VM_SSH_PUBLIC_KEY` is preserved as an optional override.
 ```powershell
 Set-Location experiments/vm
 $subscription = '<explicit enabled subscription ID>'
+$environment = '<unique-environment>'
 az account show --subscription $subscription
-azd env new '<unique-environment>' --subscription $subscription --location westus2 --no-prompt
+azd env new $environment --subscription $subscription --location westus2 --no-prompt
 azd env set SANTA_PRIVATE_BACKEND_INSTALL true --no-prompt
 azd up --no-prompt
 ```
@@ -75,6 +76,29 @@ is not started until the runtime's admission checks pass. Machine finalization
 then verifies source/image/VM identities and initialized readiness, creates the
 receipt/binding and records `SANTA_OPERATOR_BINDING_PATH` in the selected azd
 environment. No image ID, remote script or JSON assembly is required from admins.
+
+### Set up the first administrator
+
+After installation, use an operator workstation that can reach the backend
+through its configured trusted HTTPS route. This command opens the current
+workstation's browser for password setup and MFA enrollment. The private
+loopback-only installation needs a separately established operator route.
+
+```powershell
+./Invoke-PrivateBackendOperatorSetup.ps1 -EnvironmentName $environment -Mode bootstrap `
+  -Username admin -Email admin@example.org -Reason 'Initial administrator'
+```
+
+Use the same environment name you passed to `azd env new`. Add `-WhatIf` to
+check the local selection without submitting a setup request. The command uses
+the machine-produced binding and existing Azure CLI authorization. Setup is
+explicit, so repeating `azd up` neither creates a new administrator nor issues
+another link. For lost factors, use `-Mode recover -RecoveryAttempt <label>` and
+the existing administrator's exact username and email. Keep the selected
+environment's local attempt and checkpoints if the outcome is uncertain.
+See [operator setup and recovery](../../docs/operator-recovery.md).
+
+### Installer lifecycle
 
 A two-hour UTC VM shutdown schedule is set after every nested VM deployment,
 including host-only runs with private-backend installation disabled. The
@@ -96,7 +120,6 @@ source SHA-256 values are checked in the guest. No package installation or
 GitHub access from the VM is needed. Python 3 is provided by the Ubuntu image.
 
 ```powershell
-$environment = '<same environment>'
 $group = "rg-azd-santa-vm-$environment"
 ./Test-VmLab.ps1 -SubscriptionId $subscription -EnvironmentName $environment -Initialize
 # Initialize is one-time and fails if receipt.db already exists.
