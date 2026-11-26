@@ -444,9 +444,24 @@ public key. Keep the local signing material in the operator process and the
 request in the trusted guest transport. The command leaves transmission and
 execution to the recovery workflow.
 
-Azure delivery of signed database requests, live database execution,
-object cleanup, service-generation binding and replacement
-identity enrollment remain open.
+Recovery tooling v22 adds `restore_worker_transport.py` for the operator.
+Its `plan` action binds the exact canonical offer or apply request, worker
+image, boot, tooling and workspace. Pass the reviewed plan digest and an
+owner-private workstation journal to `apply` for one bounded Run Command.
+The trusted guest launcher prepares the workspace under
+`/var/lib/azd-santa-qualification/restore-workspaces/<workspace>` with mode
+0700, a 32-character lowercase hexadecimal workspace ID, the verified
+`tooling.json` with mode 0600 and its dedicated `docker.sock`. Apply also
+requires the local configuration, socket and
+packet described above. The command verifies the cached Azure selection
+before dispatch and after readback. The guest checks the bundle and boot,
+then records an exclusive intent before invoking the isolated worker.
+The workstation `observe` action reads its local journal. For an uncertain
+submission, preserve both journals and inspect the guest's durable
+`transport-<request SHA-256>` directory before continuing recovery.
+
+Live signed request execution, workspace provisioning, object cleanup,
+service-generation binding and replacement identity enrollment remain open.
 [Live packet transport evidence](https://github.com/nathanmcnulty/azd-santa/issues/190)
 
 The database adapters bind the target to the Linux boot ID and postmaster

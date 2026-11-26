@@ -8,4 +8,8 @@ Describe 'Santa restore authority planning' {
         $result = & python -m unittest discover -s $PSScriptRoot -p test_restore_operator_approval.py 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
     }
+    It 'delivers the signed worker request once through the selected VM transport' {
+        $result = & python -m unittest discover -s $PSScriptRoot -p test_restore_worker_transport.py 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
+    }
 }
