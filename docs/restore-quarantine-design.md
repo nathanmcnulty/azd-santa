@@ -271,9 +271,18 @@ The document carries no database rows or credentials. A matching digest only
 establishes the integrity of the selected review. The launcher must obtain the
 expected digest and current authorization from outside the backup.
 
-The public guided operator command, live external authorization adapter,
-service-generation binding and replacement identity enrollment still require
-implementation.
+Recovery tooling bundle v6 includes the cached Azure operator readback for the
+trusted launcher. It binds one explicit confirmation to the step, review,
+plan digest and restored database binding. Before accepting it, the adapter
+uses Azure CLI to verify the configured user, tenant and subscription around
+a live read of the exact Santa pilot VM resource and instance ID. A mismatch,
+expired confirmation or failed read closes the attempt. The readback grants no
+permission and is insufficient to authorize VM execution on its own.
+
+The public guided command still needs to request confirmation, use the
+privileged VM execution transport, and verify the isolated database binding
+on that guest. Service-generation binding and replacement identity enrollment
+remain open.
 
 ## Required negative, preservation and fault tests
 
