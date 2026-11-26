@@ -71,10 +71,10 @@ def read_target(connection):
         return binding(connection, cursor)[0]
 
 
-def checked_tables(expected):
+def checked_tables(expected, *, tables=TABLES, exact_columns=None):
     catalog = expected.manifest['catalog']
     counts = {}
-    for model, (table, primary_key) in TABLES.items():
+    for model, (table, primary_key) in tables.items():
         relations = [relation for relation in catalog['relations']
                      if (relation['schema'], relation['name']) == ('public', table)]
         require(len(relations) == 1 and relations[0]['kind'] == 'r'
@@ -89,7 +89,13 @@ def checked_tables(expected):
                 and not matches[0]['proxy'] and not matches[0]['swapped'] and matches[0]['managed'])
         fields = {field['column'] for field in matches[0]['fields']
                   if field['local'] and field['concrete'] and field['column'] is not None}
-        require(fields >= (authority.PROJECTIONS[model][1].keys() | {primary_key}))
+        if exact_columns is None:
+            require(fields >= (authority.PROJECTIONS[model][1].keys() | {primary_key}))
+        else:
+            physical = {column['name'] for column in catalog['columns']
+                        if column['schema'] == 'public' and column['table'] == table
+                        and not column['dropped']}
+            require(fields == physical == exact_columns[model])
         require(any(item['schema'] == 'public' and item['table'] == table
                     and item['type'] == 'p' and item['columns'] == [primary_key]
                     for item in catalog['constraints']))

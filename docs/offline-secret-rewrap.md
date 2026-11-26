@@ -147,5 +147,25 @@ confirmed VM deallocation. The receipt SHA-256 is
 `17dadb54e4c1040c3a1e3b3302513c3f172b67b2d2a42535beb59e4689ca30c1`.
 [Pinned Zentral Fernet implementation](https://github.com/zentralopensource/zentral/blob/88e67b3ce49033aab028029937a6e14f7c489073/zentral/core/secret_engines/backends/fernet.py)
 
-Writing and verifying replacements on a restored database with populated secret
-fields remains open, along with independent review of coverage and provenance.
+## Transactional database adapter
+
+`experiments/server/restore_secret_transaction.py` applies the verified
+projection to an isolated recovery database. It uses two already-open private
+Unix-socket connections, an independently selected recovery target, and an
+independently reviewed census and secret context list. Keep all other writers
+stopped. The adapter validates the exact three table shapes and holds table
+locks while it compares the current census and verifies all replacements.
+
+The preview returns a keyed digest binding the target, census, contexts and
+old and new engine material. Applying requires that digest. PostgreSQL updates
+only the selected JSONB leaves and Terraform wrapping keys. The adapter
+re-reads the complete projections before commit. This preserves unrelated
+JSONB values at PostgreSQL precision and leaves Terraform history bytes intact.
+A failed write rolls back the transaction. An uncertain commit requires fresh
+inspection before another recovery action.
+
+The sealed PostgreSQL fixture exercises populated Store, Action and Terraform
+projections, verifies old and new material binding, and forces a late write
+failure to check rollback of earlier changes. A populated pilot archive,
+independent coverage and provenance review, and application activation remain
+separate qualification steps.

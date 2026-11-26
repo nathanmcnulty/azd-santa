@@ -63,7 +63,7 @@ class EnrollmentSecret(models.Model):
 
 
 def configure(root):
-    source = root / 'authority-apps'
+    source = root / (DATABASE + '-apps')
     source.mkdir(mode=0o700)
     sys.path.insert(0, str(source))
     for app in census.CONFIGURED:

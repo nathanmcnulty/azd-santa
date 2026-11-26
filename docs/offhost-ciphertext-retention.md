@@ -612,8 +612,9 @@ channel alongside the recovery inventory.
 
 Use `build --version 2` to include the Windows recipient exporter, restore
 authority planner and transaction adapter, and their reviewed design.
-New verification and staging commands accept the exact inventories for both
-versions. Historical bundles retain their original commit and digest pins.
+Use `build --version 3` to include the database secret rewrap transaction and
+its documentation. Verification and staging accept each version's exact
+inventory. Historical bundles retain their original commit and digest pins.
 
 On a separate recovery machine, run a trusted copy of the tool's `verify`
 command with the bundle path and those external pins. `stage` accepts the same

@@ -73,6 +73,24 @@ class BundleTests(unittest.TestCase):
             with self.assertRaises(bundle.ToolingRejected):
                 bundle.verify(changed, commit=self.commit, bundle_sha256=bundle.sha(changed))
 
+    def test_rewrap_version_extends_authority_inventory_and_stages_adapter(self):
+        previous = bundle.build(ROOT, self.commit, version=2)
+        raw = bundle.build(ROOT, self.commit, version=3)
+        pins = {'commit': self.commit, 'bundle_sha256': bundle.sha(raw)}
+        files = bundle.verify(raw, **pins)
+        self.assertEqual(set(files) - set(bundle.AUTHORITY_PATHS), {
+            'docs/offline-secret-rewrap.md', bundle.SERVER + 'restore_secret_transaction.py',
+        })
+        self.assertEqual({path: files[path] for path in bundle.AUTHORITY_PATHS},
+                         bundle.verify(previous, commit=self.commit, bundle_sha256=bundle.sha(previous)))
+        with tempfile.TemporaryDirectory() as folder:
+            destination = Path(folder) / 'toolset'
+            bundle.stage(raw, destination, **pins)
+            completed = subprocess.run([sys.executable, '-B', '-c', 'import restore_secret_transaction'],
+                                       cwd=destination / bundle.SERVER, check=False, timeout=10,
+                                       capture_output=True)
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+
     def test_rejects_missing_extra_or_mismatched_source_even_with_new_digest(self):
         for change in ('missing', 'extra', 'bytes'):
             with self.subTest(change=change):
