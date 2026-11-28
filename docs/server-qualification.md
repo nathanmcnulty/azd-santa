@@ -5,6 +5,9 @@ that a small organization's administrator can deploy and maintain without becomi
 a distributed-systems specialist. Both VM and Container Apps paths remain in scope,
 VM first. Synthetic host tests are prerequisites, not delivery of that end state.
 
+See the [hosting and cost review](hosting-cost-comparison.md) for the live
+Container Apps dependency evidence and the West US 2 reference estimates.
+
 ## Current decision: evaluate maintained software, do not adopt blindly
 
 | Candidate | Actual operating footprint | Current finding |
