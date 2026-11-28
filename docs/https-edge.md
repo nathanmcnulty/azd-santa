@@ -154,8 +154,11 @@ The command leaves VM power and the root Intune project under their existing
 lifecycle controls. Fixture tests cover the new command path. A detached West US
 2 NSG test against API `2024-05-01` verified that the current ETag allowed an
 update and a stale ETag returned HTTP 412 with the new tag retained. The test
-used no VM and the resource group was removed. The integrated command and
-certificate renewal still need live VM validation.
+used no VM and the resource group was removed. The maintained command passed
+the complete initial certificate trial on a fresh Azure VM. The trial verified
+trusted HTTP503, restored deny-all and stopped the listener. The retirement
+command removed the disposable group and its resources. Scheduled Azure renewal
+remains open. [Live command and retirement evidence](https://github.com/nathanmcnulty/azd-santa/issues/64#issuecomment-7236399029)
 
 ### Loopback renewal test
 
