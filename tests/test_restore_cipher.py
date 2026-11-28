@@ -4,9 +4,11 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import struct
 import sys
+import tempfile
 import time
 import unittest
 from unittest.mock import patch
@@ -128,6 +130,53 @@ class Authentication(unittest.TestCase):
         check.assert_not_called()
         self.assertEqual(stdout.getvalue(), '')
         self.assertNotIn('/private/recovery.der', stderr.getvalue())
+
+    @unittest.skipUnless(sys.platform == 'linux' and os.geteuid() == 0, 'requires a private Linux root directory')
+    def test_linux_command_authenticates_real_portable_inputs(self):
+        from cryptography.hazmat.primitives import serialization
+
+        raw = self.sealed()
+        digest = hashlib.sha256(raw).hexdigest()
+        passphrase = b'test-only Santa recovery passphrase'
+        key_der = self.key.private_bytes(serialization.Encoding.DER, serialization.PrivateFormat.PKCS8,
+                                         serialization.NoEncryption())
+        with tempfile.TemporaryDirectory(prefix='santa-recovery-test-', dir='/root') as folder:
+            private = Path(folder)
+            archive = private / 'backup.sealed'
+            original = private / 'original.der'
+            portable = private / 'portable.der'
+            archive.write_bytes(raw)
+            archive.chmod(0o600)
+            original.write_bytes(key_der)
+            original.chmod(0o600)
+            fingerprint = hashlib.sha256(self.public).hexdigest()
+            exported = verify_backup.restore_recipient_key.pack(original, portable, fingerprint, passphrase)
+            original.unlink()
+
+            def arguments(backup_digest, recipient_digest):
+                return ['--backup', str(archive), '--backup-sha256', backup_digest,
+                        '--portable-key', str(portable), '--portable-key-sha256', recipient_digest]
+
+            key_digest = exported['encrypted_key_sha256']
+            with patch.object(verify_backup.restore_recipient_key, 'passphrase', return_value=passphrase):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    verify_backup.main(arguments(digest, key_digest))
+                report = json.loads(output.getvalue())
+                self.assertEqual(report['ciphertext_sha256'], digest)
+                self.assertEqual(report['ciphertext_bytes'], len(raw))
+                self.assertEqual(report['recipient_sha256'], fingerprint)
+                self.assertFalse(report['plaintext_released'])
+
+                for backup_digest, recipient_digest in (('0' * 64, key_digest), (digest, '0' * 64)):
+                    with self.subTest(backup_digest=backup_digest, recipient_digest=recipient_digest):
+                        stdout, stderr = io.StringIO(), io.StringIO()
+                        with redirect_stdout(stdout), redirect_stderr(stderr), self.assertRaises(SystemExit) as failure:
+                            verify_backup.main(arguments(backup_digest, recipient_digest))
+                        self.assertEqual(failure.exception.code, 1)
+                        self.assertEqual(stdout.getvalue(), '')
+                        self.assertIn('Santa backup authentication failed', stderr.getvalue())
+            self.assertEqual(set(private.iterdir()), {archive, portable})
 
 
 if __name__=='__main__':unittest.main()
