@@ -80,10 +80,7 @@ function Assert-PrivateOperatorHttps {
     } finally { $client.Dispose() }
 }
 
-function Get-PrivateVmHeldHttpsReadiness {
-    [CmdletBinding()]
-    param([Parameter(Mandatory)][ValidatePattern('^[a-z0-9-]{2,32}$')][string]$EnvironmentName)
-
+function Get-PrivateHeldHttpsSelection([string]$EnvironmentName) {
     $values = Invoke-PrivateAzd @('env', 'get-values', '--environment', $EnvironmentName, '--output', 'json') -Json
     if ($values['AZURE_ENV_NAME'] -cne $EnvironmentName -or $values['SANTA_PRIVATE_BACKEND_INSTALL'] -cne 'true' -or
         $values['SANTA_PRIVATE_HTTPS_ORIGIN'] -cne 'true') { throw 'Select the azd environment with the fresh HTTPS service staged.' }
@@ -91,6 +88,15 @@ function Get-PrivateVmHeldHttpsReadiness {
     Assert-PrivateProvisionedVmOutputs $values $target
     $facts = Get-SantaHttpsEndpointFacts -TenantId $target.TenantId -SubscriptionId $target.SubscriptionId `
         -VmInstanceId $target.VmInstanceId -EnvironmentName $EnvironmentName
+    @{ Target = $target; Facts = $facts }
+}
+
+function Get-PrivateVmHeldHttpsReadiness {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][ValidatePattern('^[a-z0-9-]{2,32}$')][string]$EnvironmentName)
+    $selection = Get-PrivateHeldHttpsSelection $EnvironmentName
+    $target = $selection.Target
+    $facts = $selection.Facts
 
     $renderer = Join-Path $server 'held_https_readiness.py'
     $rendered = ($facts | ConvertTo-Json -Compress) | & python -I -B $renderer render
@@ -125,6 +131,20 @@ function Get-PrivateVmHeldHttpsReadiness {
         throw 'Guest readiness proof does not match the selected VM and staged service.'
     }
     [pscustomobject]$receipt
+}
+
+function Invoke-PrivateVmHeldCertificateTrial {
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
+    param([Parameter(Mandatory)][ValidatePattern('^[a-z0-9-]{2,32}$')][string]$EnvironmentName)
+    $selection = Get-PrivateHeldHttpsSelection $EnvironmentName
+    if (-not $PSCmdlet.ShouldProcess($selection.Facts.Fqdn, 'Temporarily allow TCP443 for one held HTTPS certificate trial')) { return }
+    $directory = Join-Path (Get-PrivateEnvironmentDirectory $EnvironmentName) ('certificate-' + [guid]::NewGuid().ToString('N'))
+    Assert-SantaPrivateDestination $directory
+    $null = [IO.Directory]::CreateDirectory($directory)
+    $PSNativeCommandUseErrorActionPreference = $false
+    $output = ($selection.Facts | ConvertTo-Json -Compress) | & python -I -B (Join-Path $server 'run_held_certificate_trial.py') $directory
+    if ($LASTEXITCODE -or -not $output) { throw "Certificate trial did not complete. Inspect the selected NSG and '$directory' before another action." }
+    [pscustomobject]@{ AttemptDirectory = $directory; Certificate = ($output -join "`n") | ConvertFrom-Json }
 }
 
 function Invoke-PrivateVmOperatorSetup {
@@ -344,4 +364,4 @@ function Invoke-PrivateVmAzdHook {
     Write-Host 'Private backend initialized and binding recorded. Native HTTPS/browser/MFA acceptance remains pending.'
 }
 
-Export-ModuleMember -Function Invoke-PrivateVmAzdHook, Invoke-PrivateVmOperatorSetup, Get-PrivateVmHeldHttpsReadiness
+Export-ModuleMember -Function Invoke-PrivateVmAzdHook, Invoke-PrivateVmOperatorSetup, Get-PrivateVmHeldHttpsReadiness, Invoke-PrivateVmHeldCertificateTrial

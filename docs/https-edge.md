@@ -126,6 +126,37 @@ caller prerequisites. No Azure call, grant, ingress change or certificate order
 occurs by rendering. A live trial must retain its original policy and reconcile
 an unknown write by reading that same target, without resubmitting it.
 
+`certificate_ingress.py` pairs that proposal with the selected NIC's private
+address. Its transaction saves the original and temporary policy before a
+single conditional opening, requires exact readback before running the TLS
+probe, and conditionally restores the original policy after the probe. An
+unrelated rule, attachment, or tag change stops restoration. If the opening
+outcome is unknown, observing the original policy alone cannot establish that
+the opening will never take effect. Keep the attempt and reconcile that outcome.
+The transaction requires a caller that checks the live held listener and
+firewall and supplies bounded Azure transport and durable attempt storage.
+
+Run the initial laboratory trial from `experiments/vm` with an existing,
+running VM and empty ACME state. The command reuses the selected nested `azd`
+environment and asks before any guest activation or Azure network write.
+
+```powershell
+./Invoke-SantaHeldCertificateTrial.ps1 -EnvironmentName $environment
+```
+
+`-WhatIf` checks the Azure selection without activating the guest service.
+The trial records receipts in the environment's `certificate-*` directory.
+It verifies the kernel TCP cap, starts only the five-minute held unit, checks
+the trusted HTTPS response, restores the original rules, and stops the unit.
+If the workstation exits during the window, the unit's five-minute limit still
+applies. Use the saved ingress intent to reconcile the same NSG before retrying.
+The command leaves VM power and the root Intune project under their existing
+lifecycle controls. Fixture tests cover the new command path. A detached West US
+2 NSG test against API `2024-05-01` verified that the current ETag allowed an
+update and a stale ETag returned HTTP 412 with the new tag retained. The test
+used no VM and the resource group was removed. The integrated command and
+certificate renewal still need live VM validation.
+
 On 2026-11-15, cold startup exposed a missing `/run/xtables.lock`: systemd rejected
 the firewall namespace before its helper executed. Installing the fixed tmpfiles
 entry restored the private service. Another Azure restart then verified the
