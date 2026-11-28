@@ -114,6 +114,14 @@ jobs:
         run: |
           python -m pip install --only-binary=:all: cryptography==50.0.0
 
+      - name: Authenticate a portable Santa backup on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          python_runtime="$(python -c 'import sys; print(sys.executable)')"
+          sudo --non-interactive -- "$python_runtime" -I -B -m unittest discover -s tests \
+            -p test_restore_cipher.py -k test_linux_command_authenticates_real_portable_inputs -v
+
       - name: Verify an exact retained Docker image before loading
         if: runner.os == 'Linux'
         shell: bash

@@ -1,10 +1,14 @@
 """Actual crypto with synthetic bytes; no application restore or guest actions."""
+from contextlib import redirect_stderr, redirect_stdout
 import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import struct
+import sys
+import tempfile
 import time
 import unittest
 from unittest.mock import patch
@@ -14,6 +18,8 @@ def module(name):
     spec = importlib.util.spec_from_file_location(name, ROOT/(name+'.py'))
     value = importlib.util.module_from_spec(spec);spec.loader.exec_module(value);return value
 backup=module('cold_backup');restore=module('restore_cipher')
+with patch.object(sys, 'path', [str(ROOT), *sys.path]):
+    verify_backup = module('verify_retained_backup')
 
 
 class Authentication(unittest.TestCase):
@@ -89,6 +95,88 @@ class Authentication(unittest.TestCase):
         with patch.object(restore.sys,'platform','win32'),patch.object(restore.os,'open') as opened:
             with self.assertRaises(ValueError):restore.verify_file('/not-a-restore-target','0'*64,self.key)
             opened.assert_not_called()
+
+    def test_command_authenticates_the_pinned_local_archive_using_the_pinned_key(self):
+        raw = self.sealed()
+        ciphertext_sha = hashlib.sha256(raw).hexdigest()
+        key_sha = 'b' * 64
+        arguments = ['--backup', '/private/backup.sealed', '--backup-sha256', ciphertext_sha,
+                     '--portable-key', '/private/recovery.der', '--portable-key-sha256', key_sha]
+        report = self.verify(raw)
+        output = io.StringIO()
+        with patch.object(verify_backup.sys, 'platform', 'linux'), \
+             patch.object(verify_backup.os, 'geteuid', return_value=0, create=True), \
+             patch.object(verify_backup.restore_recipient_key, 'load', return_value=self.key) as load, \
+             patch.object(verify_backup.restore_cipher, 'verify_file', return_value=report) as check, \
+             redirect_stdout(output):
+            verify_backup.main(arguments)
+        load.assert_called_once_with('/private/recovery.der', key_sha)
+        check.assert_called_once_with('/private/backup.sealed', ciphertext_sha, self.key)
+        self.assertEqual(json.loads(output.getvalue()), report)
+
+    def test_command_redacts_key_errors_and_emits_no_success_receipt(self):
+        arguments = ['--backup', '/private/backup.sealed', '--backup-sha256', 'a' * 64,
+                     '--portable-key', '/private/recovery.der', '--portable-key-sha256', 'b' * 64]
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with patch.object(verify_backup.sys, 'platform', 'linux'), \
+             patch.object(verify_backup.os, 'geteuid', return_value=0, create=True), \
+             patch.object(verify_backup.restore_recipient_key, 'load',
+                          side_effect=ValueError('/private/recovery.der')) as load, \
+             patch.object(verify_backup.restore_cipher, 'verify_file') as check, \
+             redirect_stdout(stdout), redirect_stderr(stderr), self.assertRaises(SystemExit) as exit_status:
+            verify_backup.main(arguments)
+        self.assertEqual(exit_status.exception.code, 1)
+        load.assert_called_once()
+        check.assert_not_called()
+        self.assertEqual(stdout.getvalue(), '')
+        self.assertNotIn('/private/recovery.der', stderr.getvalue())
+
+    @unittest.skipUnless(sys.platform == 'linux' and os.geteuid() == 0, 'requires a private Linux root directory')
+    def test_linux_command_authenticates_real_portable_inputs(self):
+        from cryptography.hazmat.primitives import serialization
+
+        raw = self.sealed()
+        digest = hashlib.sha256(raw).hexdigest()
+        passphrase = b'test-only Santa recovery passphrase'
+        key_der = self.key.private_bytes(serialization.Encoding.DER, serialization.PrivateFormat.PKCS8,
+                                         serialization.NoEncryption())
+        with tempfile.TemporaryDirectory(prefix='santa-recovery-test-', dir='/root') as folder:
+            private = Path(folder)
+            archive = private / 'backup.sealed'
+            original = private / 'original.der'
+            portable = private / 'portable.der'
+            archive.write_bytes(raw)
+            archive.chmod(0o600)
+            original.write_bytes(key_der)
+            original.chmod(0o600)
+            fingerprint = hashlib.sha256(self.public).hexdigest()
+            exported = verify_backup.restore_recipient_key.pack(original, portable, fingerprint, passphrase)
+            original.unlink()
+
+            def arguments(backup_digest, recipient_digest):
+                return ['--backup', str(archive), '--backup-sha256', backup_digest,
+                        '--portable-key', str(portable), '--portable-key-sha256', recipient_digest]
+
+            key_digest = exported['encrypted_key_sha256']
+            with patch.object(verify_backup.restore_recipient_key, 'passphrase', return_value=passphrase):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    verify_backup.main(arguments(digest, key_digest))
+                report = json.loads(output.getvalue())
+                self.assertEqual(report['ciphertext_sha256'], digest)
+                self.assertEqual(report['ciphertext_bytes'], len(raw))
+                self.assertEqual(report['recipient_sha256'], fingerprint)
+                self.assertFalse(report['plaintext_released'])
+
+                for backup_digest, recipient_digest in (('0' * 64, key_digest), (digest, '0' * 64)):
+                    with self.subTest(backup_digest=backup_digest, recipient_digest=recipient_digest):
+                        stdout, stderr = io.StringIO(), io.StringIO()
+                        with redirect_stdout(stdout), redirect_stderr(stderr), self.assertRaises(SystemExit) as failure:
+                            verify_backup.main(arguments(backup_digest, recipient_digest))
+                        self.assertEqual(failure.exception.code, 1)
+                        self.assertEqual(stdout.getvalue(), '')
+                        self.assertIn('Santa backup authentication failed', stderr.getvalue())
+            self.assertEqual(set(private.iterdir()), {archive, portable})
 
 
 if __name__=='__main__':unittest.main()
