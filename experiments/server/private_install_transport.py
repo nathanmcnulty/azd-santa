@@ -16,10 +16,12 @@ FILES = {'private_install.py', 'private_install_transport.py', 'bootstrap-host.s
     'prepare_database_roles.py', 'database_roles.py', 'prepare_zentral_eval.py', 'stage_runtime.py',
     'runtime_service.py', 'santa_admission.py', 'cold_backup.py', 'native_snapshot.py',
     'worker_lifecycle.py', 'prepare_worker_lifecycle.py', 'test_live_zentral.py',
-    'zentral-source.lock.json', 'dependency-images.lock.json'}
+    'zentral-source.lock.json', 'dependency-images.lock.json', 'prepare_held_https.py',
+    'https_edge.py', 'prepare_https_proxy.py', 'caddy.lock.json'}
 FAILURE_CODES = {
     '40': 'source-verification', '41': 'vm-identity', '42': 'fresh-state',
     '43': 'docker-prerequisites', '44': 'source-build', '45': 'runtime-initialization',
+    '46': 'held-https-staging',
 }
 
 
@@ -129,7 +131,8 @@ def status(bundle_sha):
 
 
 def run(value):
-    need(os.geteuid() == 0 and set(value) <= {'mode', 'bundle_sha256', 'archive_sha256', 'index', 'count', 'data', 'target', 'https_origin'})
+    need(os.geteuid() == 0 and set(value) <= {'mode', 'bundle_sha256', 'archive_sha256', 'index', 'count', 'data',
+                                           'target', 'https_origin', 'https_endpoint'})
     os.umask(0o077)
     digest = value['bundle_sha256']; need(re.fullmatch('[a-f0-9]{64}', digest))
     ROOT.mkdir(mode=0o700, exist_ok=True); secure(ROOT)
@@ -138,7 +141,9 @@ def run(value):
         secure(ACTIVE); old = json.loads(ACTIVE.read_bytes())
         need(old['bundle_sha256'] == digest)
         if mode == 'submit':
-            need(old['target'] == value['target'] and old.get('https_origin') == value.get('https_origin')); return status(digest)
+            need(old['target'] == value['target'] and old.get('https_origin') == value.get('https_origin')
+                 and old.get('https_endpoint') == value.get('https_endpoint'))
+            return status(digest)
         if mode == 'observe': return status(digest)
     else:
         need(not Path('/etc/systemd/system/azd-santa-runtime.service').exists())
@@ -182,10 +187,13 @@ def run(value):
         need(not command(['docker', '--host', 'unix:///var/run/docker.sock', 'ps', '--all', '--quiet']).strip())
         need(not command(['docker', '--host', 'unix:///var/run/docker.sock', 'volume', 'ls', '--quiet']).strip())
     context = dict(scope='private-azd-install-v1', bundle_sha256=digest, target=value['target'])
+    need(('https_origin' in value) == ('https_endpoint' in value))
     if 'https_origin' in value:
         need(type(value['https_origin']) is str and re.fullmatch(
             r'https://santa-[a-f0-9]{16}-[a-z0-9-]{2,32}-vm\.[a-z0-9]{2,32}\.cloudapp\.azure\.com', value['https_origin']))
+        need(type(value['https_endpoint']) is dict)
         context['https_origin'] = value['https_origin']
+        context['https_endpoint'] = value['https_endpoint']
     context_raw = json.dumps(context, sort_keys=True).encode()
     exclusive(selected / 'context.json', context_raw)
     # Cross-process exclusive durable reservation precedes systemd submission.

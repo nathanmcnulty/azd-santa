@@ -10,9 +10,9 @@ Old immutable bundles and their contexts remain historical.
 The hook obtains the origin from `Get-SantaHttpsEndpointFacts`, using the selected
 tenant, subscription, immutable VM instance and azd environment. The existing
 cached ARM producer verifies the owned VM/NIC/PIP/DNS graph twice; there is no
-administrator-authored URL or JSON. The selected `https_origin` is bound into the
-exclusive installer context/ACTIVE reservation. A repeated submission cannot
-change it. Before any package/runtime operation, the guest verifies its existing
+administrator-authored URL or JSON. The origin and ARM endpoint facts are bound
+into the exclusive installer context/ACTIVE reservation. A repeated submission
+cannot change either. Before any package/runtime operation, the guest verifies its
 IMDS VM/subscription/tag bindings and derives the one canonical Azure hostname
 from the selected subscription/environment and IMDS region. Wrong-region,
 cross-target, path/query/port/userinfo and noncanonical origins reject.
@@ -37,10 +37,14 @@ retains the same fingerprint and deliberately shares the backend peer budget.
 
 The web listener stays published only at `127.0.0.1:8000`. Trusting the protocol
 header requires the separately reviewed host edge to replace client forwarding
-headers and forward only its own fixed HTTPS indication. This profile creates no
-Caddy service, listener, ingress rule, certificate or DNS allocation; existing
-endpoint facts must already be available. It does not release the held proxy.
-There is no existing-config migration or automatic upgrade path.
+headers and forward only its own fixed HTTPS indication. The installer stages
+the [held certificate service](https-edge.md#held-certificate-qualification)
+and its private state on the VM. It downloads and verifies the locked Caddy
+release on the guest and records `install-evidence/held-https.json` after checking
+that TCP443 remains unbound. The staged service files contain no application
+route. Staging leaves systemd activation, the NSG, and certificate issuance to a
+separate trial. A failure retains the original install job and private evidence.
+Existing runtime and HTTPS service files are never adopted or migrated.
 
 Stage propagation, completion `Origin` and client finalization all retain the
 selected origin. The host rejects completion for a different profile; guest
