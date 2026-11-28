@@ -233,7 +233,7 @@ function Invoke-PrivateVmAzdHook {
         if ($values.SANTA_PRIVATE_HTTPS_ORIGIN -ceq 'true') {
             if (-not $installBackend) { throw 'Fresh HTTPS origin requires SANTA_PRIVATE_BACKEND_INSTALL=true.' }
             $endpoint = Get-SantaHttpsEndpointFacts -TenantId $target.TenantId -SubscriptionId $target.SubscriptionId `
-                -VmInstanceId $target.VmInstanceId -EnvironmentName $environment
+                -VmInstanceId $target.VmInstanceId -EnvironmentName $environment -WaitForProvisioning
             $origin = 'https://' + $endpoint.Fqdn
         } elseif ($values.SANTA_PRIVATE_HTTPS_ORIGIN -cne 'false') { throw 'SANTA_PRIVATE_HTTPS_ORIGIN must be true or false.' }
     }

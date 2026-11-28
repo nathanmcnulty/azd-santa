@@ -105,7 +105,7 @@ function Test-SantaEndpointIpv4 {
         ($b[0] -eq 203 -and $b[1] -eq 0 -and $b[2] -eq 113))
 }
 
-function Get-SantaHttpsEndpointFacts {
+function Read-SantaHttpsEndpointFacts {
     [CmdletBinding()]
     param([Parameter(Mandatory)][guid]$TenantId,
         [Parameter(Mandatory)][guid]$SubscriptionId,
@@ -135,7 +135,12 @@ function Get-SantaHttpsEndpointFacts {
             Assert-SantaEndpoint ($row.tags['azd-solution'] -ceq 'azd-santa' -and
                 $row.tags.purpose -ceq 'synthetic-vm-lab' -and $row.tags['azd-env-name'] -ceq $EnvironmentName)
         }
-        if ($name -ne 'group') { Assert-SantaEndpoint ($row.properties.provisioningState -ceq 'Succeeded') }
+        if ($name -ne 'group') {
+            if ($row.properties.provisioningState -cin @('Creating','Updating')) {
+                throw "SantaEndpoint.Pending: Azure is still provisioning the selected $name."
+            }
+            Assert-SantaEndpoint ($row.properties.provisioningState -ceq 'Succeeded')
+        }
     }
     $vm=$observed.vm; $nic=$observed.nic; $pip=$observed.pip; $subnet=$observed.subnet; $nsg=$observed.nsg
     Assert-SantaEndpoint ($vm.properties.vmId -ieq $VmInstanceId.ToString())
@@ -143,20 +148,23 @@ function Get-SantaHttpsEndpointFacts {
     $interfaces = @($vm.properties.networkProfile.networkInterfaces)
     Assert-SantaEndpoint ($interfaces.Count -eq 1 -and $interfaces[0].id -ieq $nicId -and
         $interfaces[0].properties.primary -eq $true)
-    Assert-SantaEndpoint ($nic.properties.virtualMachine.id -ieq $vmId -and
-        -not $nic.properties.ContainsKey('networkSecurityGroup'))
+    Assert-SantaEndpoint (-not $nic.properties.ContainsKey('networkSecurityGroup'))
+    $nicVm = $nic.properties['virtualMachine']
+    $pipConfiguration = $pip.properties['ipConfiguration']
+    if ($nicVm) { Assert-SantaEndpoint ($nicVm['id'] -ieq $vmId) }
+    if ($pipConfiguration) { Assert-SantaEndpoint ($pipConfiguration['id'] -ieq $ipId) }
     $ips=@($nic.properties.ipConfigurations)
     Assert-SantaEndpoint ($ips.Count -eq 1 -and $ips[0].id -ieq $ipId -and $ips[0].name -ceq 'primary')
     Assert-SantaEndpoint ($ips[0].properties.publicIPAddress.id -ieq $pipId -and
-        $ips[0].properties.subnet.id -ieq $subnetId -and $pip.properties.ipConfiguration.id -ieq $ipId)
+        $ips[0].properties.subnet.id -ieq $subnetId)
     Assert-SantaEndpoint ($subnet.properties.networkSecurityGroup.id -ieq $nsgId -and
         $subnet.properties.defaultOutboundAccess -eq $false)
     Assert-SantaEndpoint ($pip.sku.name -ceq 'Standard' -and $pip.properties.publicIPAllocationMethod -ceq 'Static' -and
-        $pip.properties.publicIPAddressVersion -ceq 'IPv4' -and (Test-SantaEndpointIpv4 $pip.properties.ipAddress))
+        $pip.properties.publicIPAddressVersion -ceq 'IPv4')
     $label = 'santa-' + $sub.Replace('-','').Substring(0,16) + '-' + $EnvironmentName + '-vm'
     $fqdn = "$label.$($pip.location).cloudapp.azure.com"
     Assert-SantaEndpoint ($pip.location -cmatch '^[a-z0-9]+$' -and
-        $pip.properties.dnsSettings.domainNameLabel -ceq $label -and $pip.properties.dnsSettings.fqdn -ceq $fqdn -and
+        $pip.properties.dnsSettings.domainNameLabel -ceq $label -and
         -not $pip.properties.dnsSettings.ContainsKey('domainNameLabelScope'))
     $rules=@($nsg.properties.securityRules)
     Assert-SantaEndpoint ($rules.Count -eq 1 -and $rules[0].name -ceq 'deny-all-inbound')
@@ -166,18 +174,47 @@ function Get-SantaHttpsEndpointFacts {
     foreach ($key in @('sourcePortRange','destinationPortRange','sourceAddressPrefix','destinationAddressPrefix')) {
         Assert-SantaEndpoint ($rule[$key] -ceq '*')
     }
+    $publicAddress = $pip.properties['ipAddress']
+    $publicHostname = $pip.properties.dnsSettings['fqdn']
+    if ($publicAddress) { Assert-SantaEndpoint (Test-SantaEndpointIpv4 $publicAddress) }
+    if ($publicHostname) { Assert-SantaEndpoint ($publicHostname -ceq $fqdn) }
+    if (-not $nicVm -or -not $pipConfiguration -or -not $publicAddress -or -not $publicHostname) {
+        throw 'SantaEndpoint.Pending: Azure has not populated the selected endpoint details.'
+    }
     # Re-read every selected resource; reject concurrent control-plane changes.
     foreach ($name in $selection.Keys) {
         $version = if ($name -eq 'group') { '2025-04-01' } elseif ($name -eq 'vm') { '2024-11-01' } else { '2024-05-01' }
         $again = Invoke-SantaEndpointAzJson @('rest', '--method', 'get', '--url',
             "https://management.azure.com$($selection[$name])?api-version=$version", '--subscription', $sub)
-        Assert-SantaEndpoint (($again | ConvertTo-Json -Depth 48 -Compress) -ceq
-            ($observed[$name] | ConvertTo-Json -Depth 48 -Compress))
+        if (($again | ConvertTo-Json -Depth 48 -Compress) -cne
+            ($observed[$name] | ConvertTo-Json -Depth 48 -Compress)) {
+            throw "SantaEndpoint.Pending: The selected $name changed during readback."
+        }
     }
     [ordered]@{ scope='azd-santa-selected-arm-endpoint-v1'; TenantId=$tenant; SubscriptionId=$sub
         EnvironmentName=$EnvironmentName; VmId=$vmId; VmInstanceId=$VmInstanceId.ToString()
         NicId=$nicId; IpConfigurationId=$ipId; PublicIpId=$pipId
         PublicIpAddress=$pip.properties.ipAddress; Fqdn=$pip.properties.dnsSettings.fqdn }
+}
+
+function Get-SantaHttpsEndpointFacts {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][guid]$TenantId,
+        [Parameter(Mandatory)][guid]$SubscriptionId,
+        [Parameter(Mandatory)][guid]$VmInstanceId,
+        [Parameter(Mandatory)][ValidatePattern('^[a-z0-9-]{2,32}$')][string]$EnvironmentName,
+        [switch]$WaitForProvisioning)
+    $selection = @{TenantId=$TenantId; SubscriptionId=$SubscriptionId; VmInstanceId=$VmInstanceId; EnvironmentName=$EnvironmentName}
+    $delays = @(0)
+    if ($WaitForProvisioning) { $delays += 5,10 }
+    foreach ($delay in $delays) {
+        if ($delay) { Start-Sleep -Seconds $delay }
+        try { return Read-SantaHttpsEndpointFacts @selection }
+        catch {
+            if ($delay -eq $delays[-1] -or $_.Exception.Message -cnotlike 'SantaEndpoint.Pending:*') { throw }
+            Write-Host 'Fresh Azure endpoint is still settling. Rechecking the selected VM and network.'
+        }
+    }
 }
 
 Export-ModuleMember -Function Get-SantaHttpsEndpointFacts

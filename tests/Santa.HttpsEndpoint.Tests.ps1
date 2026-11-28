@@ -95,6 +95,37 @@ Describe 'Selected cached ARM endpoint producer' {
             $arguments=$script:fixture.arguments
             { Get-SantaHttpsEndpointFacts @arguments } | Should -Throw
         }
+        It 'retries bounded provisioning readback and rechecks the entire endpoint' {
+            Mock Start-Sleep {
+                $script:fixture.rows[$script:fixture.pip].properties.provisioningState='Succeeded'
+                $script:fixture.rows[$script:fixture.pip].properties.ipConfiguration=@{id="$($script:fixture.nic)/ipConfigurations/primary"}
+            }
+            $f=$script:fixture
+            $f.rows[$f.pip].properties.provisioningState='Updating'
+            $f.rows[$f.pip].properties.ipConfiguration=$null
+            $arguments=$f.arguments
+            (Get-SantaHttpsEndpointFacts @arguments -WaitForProvisioning).VmId | Should -BeExactly $f.vm
+            Should -Invoke Start-Sleep -Times 1 -Exactly -ParameterFilter { $Seconds -eq 5 }
+            $script:reads | Should -Be 16
+        }
+        It 'rejects an endpoint that remains incomplete after both waits' {
+            Mock Start-Sleep {}
+            $f=$script:fixture
+            $f.rows[$f.pip].properties.Remove('ipAddress')
+            $arguments=$f.arguments
+            { Get-SantaHttpsEndpointFacts @arguments -WaitForProvisioning } | Should -Throw '*SantaEndpoint.Pending:*'
+            Should -Invoke Start-Sleep -Times 2 -Exactly
+            $script:reads | Should -Be 18
+        }
+        It 'rejects open ingress immediately even while the public IP is incomplete' {
+            Mock Start-Sleep {}
+            $f=$script:fixture
+            $f.rows[$f.pip].properties.Remove('ipAddress')
+            $f.rows[$f.nsg].properties.securityRules[0].properties.access='Allow'
+            $arguments=$f.arguments
+            { Get-SantaHttpsEndpointFacts @arguments -WaitForProvisioning } | Should -Throw '*closed-ingress binding failed*'
+            Should -Invoke Start-Sleep -Times 0 -Exactly
+        }
         It 'rejects a different cached tenant before ARM resource reads' {
             Mock Invoke-SantaEndpointAzJson { @{id=$script:fixture.arguments.SubscriptionId;tenantId='44444444-4444-4444-8444-444444444444';state='Enabled';environmentName='AzureCloud'} }
             $arguments=$script:fixture.arguments
