@@ -1,14 +1,79 @@
 """Edge rendering/kernel command tests; not actual Linux/firewall/TLS proof."""
 import copy
+import hashlib
+import io
+import json
 from pathlib import Path
 import sys
+import tarfile
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'experiments/server'))
 import https_edge as edge
+import prepare_held_https as held
 from test_https_proxy import facts
+
+
+class HeldPackage(unittest.TestCase):
+    def make_release(self, directory, *, binary_type=tarfile.REGTYPE):
+        release = directory / 'release.tar.gz'
+        assets = {'caddy': (b'fixture binary', binary_type),
+                  'LICENSE': (b'fixture license', tarfile.REGTYPE),
+                  'README.md': (b'fixture readme', tarfile.REGTYPE)}
+        with tarfile.open(release, 'w:gz') as archive:
+            for name, (data, kind) in assets.items():
+                entry = tarfile.TarInfo(name)
+                entry.type = kind
+                entry.size = len(data) if entry.isfile() else 0
+                archive.addfile(entry, io.BytesIO(data))
+        lock = directory / 'caddy.lock.json'
+        lock.write_text(json.dumps({'linuxAmd64': {'archiveSha256': hashlib.sha256(
+            release.read_bytes()).hexdigest()}}), encoding='utf-8')
+        return release, lock
+
+    def test_package_only_contains_held_service_and_pinned_files(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            release, lock = self.make_release(directory)
+            destination = directory / 'edge.tar'
+            second = directory / 'edge-second.tar'
+            with patch.object(edge.candidate, 'LOCK', lock):
+                held.prepare(facts(), release, destination)
+                held.prepare(facts(), release, second)
+                with self.assertRaises(FileExistsError):
+                    held.prepare(facts(), release, destination)
+            self.assertEqual(destination.read_bytes(), second.read_bytes())
+            with tarfile.open(destination) as package:
+                entries = package.getmembers()
+                self.assertEqual(len(entries), 11)
+                for entry in entries:
+                    self.assertTrue(entry.isfile())
+                    self.assertEqual((entry.uid, entry.gid), (0, 0))
+                    self.assertFalse(entry.name.startswith('/'))
+                    self.assertEqual(entry.mode, 0o755 if entry.name.endswith('/caddy') else 0o644)
+                self.assertEqual(package.extractfile('opt/azd-santa-https/pilot/caddy').read(), b'fixture binary')
+                self.assertEqual(json.load(package.extractfile('etc/azd-santa-https/pilot/endpoint.json')), facts())
+                config = package.extractfile('etc/azd-santa-https/pilot/held.json').read()
+                self.assertNotIn(b'reverse_proxy', config)
+                self.assertEqual(json.loads(config), edge.held_configuration(facts(), held.STATE, phase='production'))
+                unit = package.extractfile('etc/systemd/system/azd-santa-pilot-https-held.service').read()
+                self.assertIn(b'RuntimeMaxSec=300\n', unit)
+                self.assertIn(b'Requires=azd-santa-https-firewall-443.service\n', unit)
+
+    def test_rejects_unpinned_archive_and_nonregular_member_before_output(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            release, lock = self.make_release(directory, binary_type=tarfile.SYMTYPE)
+            destination = directory / 'edge.tar'
+            with self.assertRaisesRegex(ValueError, 'does not match the pinned'):
+                held.prepare(facts(), release, destination)
+            with patch.object(edge.candidate, 'LOCK', lock):
+                with self.assertRaisesRegex(ValueError, 'Invalid file'):
+                    held.prepare(facts(), release, destination)
+            self.assertFalse(destination.exists())
 
 
 class Edge(unittest.TestCase):

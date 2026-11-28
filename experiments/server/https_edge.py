@@ -83,8 +83,10 @@ def held_configuration(facts, state, *, phase='staging'):
     return data
 
 
-def unit_text(binary, config, state, *, port=8443):
+def unit_text(binary, config, state, *, port=8443, runtime_max_seconds=None):
     rules(port)
+    need(runtime_max_seconds is None or
+         (type(runtime_max_seconds) is int and 1 <= runtime_max_seconds <= 1800))
     paths = [str(PurePosixPath(value)) for value in (binary, config, state)]
     for path, prefix in zip(paths, ('/opt/azd-santa-https/', '/etc/azd-santa-https/', '/var/lib/azd-santa-https/')):
         need(re.fullmatch(re.escape(prefix) + r'[A-Za-z0-9/_.-]+', path) and '..' not in PurePosixPath(path).parts)
@@ -97,7 +99,9 @@ def unit_text(binary, config, state, *, port=8443):
         'Environment=HOME=' + paths[2],
         'Environment=XDG_CONFIG_HOME=' + paths[2] + '/xdg-config',
         'Environment=XDG_DATA_HOME=' + paths[2] + '/xdg-data',
-        'Restart=no', 'TimeoutStopSec=15', 'KillMode=control-group', 'UMask=0077',
+        'Restart=no',
+        *(() if runtime_max_seconds is None else (f'RuntimeMaxSec={runtime_max_seconds}',)),
+        'TimeoutStopSec=15', 'KillMode=control-group', 'UMask=0077',
         'NoNewPrivileges=yes', 'PrivateTmp=yes', 'PrivateDevices=yes', 'ProtectHome=yes',
         'ProtectSystem=strict', 'ReadWritePaths=' + paths[2],
         'ProtectKernelTunables=yes', 'ProtectKernelModules=yes', 'ProtectControlGroups=yes',
