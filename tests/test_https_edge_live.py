@@ -15,6 +15,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from test_https_edge import edge, facts
+import probe_held_https as held_probe
 
 
 @unittest.skipUnless(os.environ.get('SANTA_CADDY_EXE'), 'Set SANTA_CADDY_EXE for pinned binary proof')
@@ -126,19 +127,20 @@ class ActualHeaders(unittest.TestCase):
                 deadline = time.monotonic() + 10
                 while True:
                     try:
-                        raw = socket.create_connection(('127.0.0.1', port), timeout=2)
+                        with socket.create_connection(('127.0.0.1', port), timeout=2):
+                            pass
                         break
                     except OSError:
                         if process.poll() is not None or time.monotonic() > deadline:
                             self.fail('Held loopback Caddy failed to start')
                         time.sleep(.05)
-                with ctx.wrap_socket(raw, server_hostname=host) as connection:
-                    connection.sendall(('GET / HTTP/1.1\r\nHost: ' + host + '\r\nConnection: close\r\n\r\n').encode())
-                    response = http.client.HTTPResponse(connection)
-                    response.begin()
-                    self.assertEqual(response.status, 503)
-                    self.assertEqual(response.getheader('Retry-After'), '60')
-                    self.assertEqual(response.read(1024), b'Application admission held closed.\n')
+                proof = held_probe.probe(host, '127.0.0.1', port, ctx)
+                self.assertEqual(proof['http_status'], 503)
+                self.assertEqual(proof['certificate_sha256'], cert.fingerprint(hashes.SHA256()).hex())
+                with self.assertRaises(ssl.SSLCertVerificationError):
+                    held_probe.probe(host, '127.0.0.1', port, ssl.create_default_context())
+                with self.assertRaises(ssl.SSLError):
+                    held_probe.probe('wrong-host.invalid', '127.0.0.1', port, ctx)
                 self.assertEqual(len(calls), 1)
             finally:
                 if process.poll() is None:

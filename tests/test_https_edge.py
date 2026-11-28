@@ -16,7 +16,36 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'experiments/server'))
 import https_edge as edge
 import prepare_held_https as held
+import probe_held_https as probe
 from test_https_proxy import facts
+
+
+class HeldObservation(unittest.TestCase):
+    def test_dns_sample_binds_direct_tls_target_and_receipt(self):
+        selected = dict(facts(), Fqdn='santa-1111111111114111-synthetic-vm.westus2.cloudapp.azure.com')
+        address = selected['PublicIpAddress']
+        expected = dict(certificate_sha256='b' * 64, http_status=503)
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / 'endpoint.json'
+            source.write_bytes(json.dumps(selected).encode())
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            with patch.object(probe.socket, 'getaddrinfo', return_value=[(None, None, None, '', (address, 443))]) as dns, \
+                 patch.object(probe, 'probe', return_value=expected) as direct:
+                receipt = probe.observe(source, digest)
+                self.assertEqual(receipt['facts_sha256'], digest)
+                self.assertEqual(receipt['vm_instance_id'], selected['VmInstanceId'])
+                self.assertEqual(receipt['certificate_sha256'], expected['certificate_sha256'])
+                self.assertEqual(dns.call_args.args[0], selected['Fqdn'] + '.')
+                self.assertEqual(direct.call_args.args[:3], (selected['Fqdn'], address, 443))
+                context = direct.call_args.args[3]
+                self.assertTrue(context.check_hostname)
+                self.assertEqual(context.verify_mode, probe.ssl.CERT_REQUIRED)
+                with self.assertRaisesRegex(ValueError, 'captured SHA-256'):
+                    probe.observe(source, 'a' * 64)
+                dns.return_value.append((None, None, None, '', ('1.1.1.1', 443)))
+                with self.assertRaisesRegex(ValueError, 'recorded IPv4 address'):
+                    probe.observe(source, digest)
+                self.assertEqual(direct.call_count, 1)
 
 
 class HeldPackage(unittest.TestCase):
