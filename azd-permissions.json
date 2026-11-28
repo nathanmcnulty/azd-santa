@@ -382,9 +382,9 @@
       "rationale": "Nested VM postprovision validates the selected account/group/VM outputs and schedules two-hour shutdown for that exact VM, including host-only mode. When SANTA_PRIVATE_BACKEND_INSTALL=true, it transports bounded pinned sources, submits one durable privileged fresh-install job and observes it before nonmutating finalization. SANTA_PRIVATE_HTTPS_ORIGIN=true additionally verifies the selected endpoint and stages the held certificate service and private state on the guest within that same job. A separate readiness command verifies that staged service using the same selected VM Run Command permission. The service stays stopped and the selected network policy stays closed. No root Intune hook, certificate order, tenant grant or operator reset is added. Cold deployment with integrated HTTPS staging remains unqualified.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "61e4102db9ed5303bcb9d934d788930081c8177877acd6407a91616c0ccbe900" },
+        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "86b15c2e2a7309fdf3c28846e7099f9ae872983bbe1c2d9dcf036838aa8a1b33" },
         { "path": "experiments/vm/Get-SantaHeldHttpsReadiness.ps1", "sha256": "1a26bff3ef546ced1eb315ca99731458532416c00e13ba38ff5623d2478c9d0a" },
-        { "path": "experiments/server/held_https_readiness.py", "sha256": "91216c52b09d3fc0705dae3503b6cc30981db398be0f18937a732bb47a1ba6e2" },
+        { "path": "experiments/server/held_https_readiness.py", "sha256": "0aac3c930f261efed7d4bfe24358ffb42e13c4ecee7fe1512cbc2724673da202" },
         { "path": "experiments/vm/Install-PrivateBackend.ps1", "sha256": "33c620439f5abadef688f4a6f0477e80e4676986beac0cb6d43b975c092320d5" },
         { "path": "experiments/server/private_install.py", "sha256": "9668f31e79765ac592f9d57a2cd56450d085a299fec13c8781df21739832da28" },
         { "path": "experiments/server/private_install_transport.py", "sha256": "04d3c6e2df4034983ab63308531c094e017faad6b4d6328dc8cfad90b40bc7af" },
@@ -403,11 +403,11 @@
       "feature": "optional-held-certificate-trial",
       "defaultEnabled": false,
       "scope": "Selected owned VM and its existing NSG on the single host subnet",
-      "rationale": "The explicit initial certificate trial verifies the staged held-only service and its TCP cap, then attempts one ETag-bound temporary TCP443 opening to the selected private address. It saves the attempt and restores the original policy only from the exact temporary state. The launcher does not grant rights or run through the Intune lifecycle.",
+      "rationale": "The explicit issuance or renewal trial verifies the staged held-only service and its TCP cap, then attempts one ETag-bound temporary TCP443 opening to the selected private address. It saves the attempt and restores the original policy only from the exact temporary state. The launcher does not grant rights or run through the Intune lifecycle.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/vm/Invoke-SantaHeldCertificateTrial.ps1", "sha256": "07fc773fac1d04c233897c3bfff04cd8af38ed46f8e5eb590d959de69037c25c" },
-        { "path": "experiments/server/run_held_certificate_trial.py", "sha256": "c5a3c9d414e85c0da4b8ee63e45709c29d3c2b72330f98159d3b4946c31b4a5f" },
+        { "path": "experiments/vm/Invoke-SantaHeldCertificateTrial.ps1", "sha256": "d8f6c0f834d60be9b18ae0aa8202f5f1eb844dae71ed76eb41517dd3ee570c50" },
+        { "path": "experiments/server/run_held_certificate_trial.py", "sha256": "3680b442d03d0bd148ca3b8039a9c446f358c2824988e9d37f85027d4ba00ec2" },
         { "path": "experiments/server/certificate_ingress.py", "sha256": "44d505927d7c0789fe2e405de0712d6c4f954ca77f1fe96b85709c1ae31921d7" }
       ]
     },

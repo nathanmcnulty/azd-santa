@@ -95,8 +95,16 @@ class CertificateWindow(unittest.TestCase):
         self.assertEqual(len(self.calls), 1)
 
     def test_controller_starts_probes_restores_and_stops_the_held_unit(self):
+        self.exercise_controller('issue')
+
+    def test_controller_compares_renewal_against_the_stored_certificate(self):
+        self.exercise_controller('renew')
+
+    def exercise_controller(self, mode):
         history = []
         selected = self.selected
+        previous = {'certificate_sha256': 'a' * 64, 'certificate_expires_utc': '2030-01-02T00:00:00+00:00'}
+        renewed = {'certificate_sha256': 'b' * 64, 'certificate_expires_utc': '2030-01-03T00:00:00+00:00'}
         def read(_method, url, *args):
             path = url.removeprefix('https://management.azure.com').split('?')[0]
             return copy.deepcopy(self.arm_views[path])
@@ -105,7 +113,10 @@ class CertificateWindow(unittest.TestCase):
             action = file.name.split('-')[0]
             history.append(action)
             nonce = re.search('SANTA_CERTIFICATE_GUEST_DONE:[a-f0-9]{32}', file.read_text()).group()
-            proof = json.dumps(dict(action=action, vm_instance_id=selected['VmInstanceId']))
+            evidence = dict(action=action, vm_instance_id=selected['VmInstanceId'])
+            if mode == 'renew' and action == 'start':
+                evidence['previous_certificate'] = previous
+            proof = json.dumps(evidence)
             return dict(value=[dict(code='ComponentStatus/StdOut/succeeded', message=f'SANTA_HELD_READY:{proof}\n{nonce}')])
         def write(request, **kwargs):
             body = json.loads(request.data)
@@ -114,16 +125,26 @@ class CertificateWindow(unittest.TestCase):
             return unittest.mock.MagicMock(**{'__enter__.return_value.status': 202})
         def observe(*args):
             history.append('probe')
-            return {'http_status': 503}
+            return {'http_status': 503} if mode == 'issue' else {'http_status': 503, **renewed}
         credentials = dict(tenant=selected['TenantId'], subscription=selected['SubscriptionId'], accessToken='fixture')
         with tempfile.TemporaryDirectory() as folder, patch.object(trial.arm, 'resolve_cli'), \
              patch.object(trial.arm, 'cached_cli', return_value=credentials), patch.object(trial.arm, 'https', side_effect=read), \
              patch.object(trial.arm, 'bounded_cli', side_effect=guest), patch.object(trial.probe, 'observe', side_effect=observe), \
              patch.object(ingress.time, 'sleep'), patch.object(trial.urllib.request, 'build_opener', return_value=SimpleNamespace(open=write)):
-            self.assertEqual(trial.run(selected, Path(folder)), {'http_status': 503})
+            result = trial.run(selected, Path(folder), mode)
+            expected = {'http_status': 503}
+            if mode == 'renew':
+                expected.update(renewed, renewal_observed=True, previous_certificate=previous)
+            self.assertEqual(result, expected)
             outcome = json.loads((Path(folder) / 'ingress-outcome.json').read_bytes())
             self.assertTrue(outcome['verified_closed'])
         self.assertEqual(history, ['start', 'open', 'probe', 'restore', 'stop'])
+
+    def test_renewal_requires_a_changed_fingerprint_and_later_expiration(self):
+        prior = dict(certificate_sha256='a' * 64, certificate_expires_utc='2030-01-02T00:00:00+00:00')
+        self.assertFalse(trial.renewal_observed(prior, prior))
+        with self.assertRaisesRegex(ValueError, 'does not extend'):
+            trial.renewal_observed(prior, dict(prior, certificate_sha256='b' * 64))
 
 
 class HeldObservation(unittest.TestCase):
@@ -239,6 +260,28 @@ class HeldPackage(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'override, or pending reload'):
                     readiness.unit_properties(unit)
 
+    @unittest.skipUnless(os.name == 'posix', 'certificate state permissions are POSIX')
+    def test_prior_certificate_observation_checks_companion_files_without_reading_the_key(self):
+        selected = facts()
+        host = selected['Fqdn']
+        with tempfile.TemporaryDirectory() as folder:
+            state = Path(folder).resolve()
+            asset = state / 'acme/certificates/acme-v02.api.letsencrypt.org-directory' / host / (host + '.crt')
+            asset.parent.mkdir(parents=True)
+            for path in (asset, asset.with_suffix('.key'), asset.with_suffix('.json')):
+                path.write_bytes(b'fixture')
+                path.chmod(0o600)
+            pwd = SimpleNamespace(getpwnam=lambda _name: SimpleNamespace(pw_uid=asset.stat().st_uid))
+            output = 'sha256 Fingerprint=' + ':'.join(['AB'] * 32) + '\nnotAfter=Jan  2 00:00:00 2030 GMT'
+            request = dict(facts=selected, state=str(state))
+            with patch.dict(sys.modules, pwd=pwd), patch.object(readiness, 'command', return_value=output) as openssl:
+                observed = readiness.stored_certificate(request)
+                self.assertEqual(observed, dict(certificate_sha256='ab' * 32, certificate_expires_utc='2030-01-02T00:00:00+00:00'))
+                openssl.assert_called_once_with('/usr/bin/openssl', 'x509', '-in', str(asset), '-noout', '-fingerprint', '-sha256', '-enddate')
+                asset.with_suffix('.key').unlink()
+                with self.assertRaises(FileNotFoundError):
+                    readiness.stored_certificate(request)
+
     @unittest.skipUnless(os.name == 'posix', 'guest staging uses Linux file ownership and modes')
     def test_guest_stages_only_verified_files_and_never_starts_a_service(self):
         import pwd
@@ -327,6 +370,7 @@ class Edge(unittest.TestCase):
         import json
         for phase in ('staging', 'production'):
             data = edge.held_configuration(facts(), Path('/private/state'), phase=phase)
+            self.assertEqual(data['apps']['tls']['automation']['renew_interval'], '30s')
             self.assertNotIn('reverse_proxy', json.dumps(data))
             server = data['apps']['http']['servers']['https']
             self.assertEqual(server['listen'], ['0.0.0.0:443'])

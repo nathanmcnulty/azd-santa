@@ -135,14 +135,15 @@ function Get-PrivateVmHeldHttpsReadiness {
 
 function Invoke-PrivateVmHeldCertificateTrial {
     [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
-    param([Parameter(Mandatory)][ValidatePattern('^[a-z0-9-]{2,32}$')][string]$EnvironmentName)
+    param([Parameter(Mandatory)][ValidatePattern('^[a-z0-9-]{2,32}$')][string]$EnvironmentName,
+        [ValidateSet('Issue', 'Renew')][string]$Mode = 'Issue')
     $selection = Get-PrivateHeldHttpsSelection $EnvironmentName
-    if (-not $PSCmdlet.ShouldProcess($selection.Facts.Fqdn, 'Temporarily allow TCP443 for one held HTTPS certificate trial')) { return }
+    if (-not $PSCmdlet.ShouldProcess($selection.Facts.Fqdn, "Temporarily allow TCP443 for one held HTTPS certificate $Mode trial")) { return }
     $directory = Join-Path (Get-PrivateEnvironmentDirectory $EnvironmentName) ('certificate-' + [guid]::NewGuid().ToString('N'))
     Assert-SantaPrivateDestination $directory
     $null = [IO.Directory]::CreateDirectory($directory)
     $PSNativeCommandUseErrorActionPreference = $false
-    $output = ($selection.Facts | ConvertTo-Json -Compress) | & python -I -B (Join-Path $server 'run_held_certificate_trial.py') $directory
+    $output = ($selection.Facts | ConvertTo-Json -Compress) | & python -I -B (Join-Path $server 'run_held_certificate_trial.py') $directory $Mode.ToLowerInvariant()
     if ($LASTEXITCODE -or -not $output) { throw "Certificate trial did not complete. Inspect the selected NSG and '$directory' before another action." }
     [pscustomobject]@{ AttemptDirectory = $directory; Certificate = ($output -join "`n") | ConvertFrom-Json }
 }
