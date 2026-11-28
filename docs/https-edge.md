@@ -78,6 +78,21 @@ uses the same file renderer after verifying the selected VM and endpoint. It
 stages the files and creates the private service state while leaving the service
 stopped. A certificate trial still requires an explicit activation step.
 
+Before a certificate trial, use the same checkout and nested `azd` environment
+that staged the service. With the selected VM running, run this from
+`experiments/vm`.
+
+```powershell
+./Get-SantaHeldHttpsReadiness.ps1 -EnvironmentName $environment
+```
+
+The check confirms the ARM endpoint still has closed ingress. On the guest it
+matches the VM identity, pinned binary, held configuration, and effective
+systemd unit definitions. It requires private state, a disabled held unit, and
+an unbound TCP443. It reports whether ACME storage is empty without reading the
+contents. Use this check before activation. Kernel firewall enforcement, trusted
+TLS, and certificate renewal require their own evidence.
+
 `held_configuration()` supports only staging/production issuers and removes the
 application proxy entirely. The selected hostname receives503 with Retry-After60;
 the wrong-host route retains421. Certificate challenges do not admit application

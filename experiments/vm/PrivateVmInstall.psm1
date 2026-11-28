@@ -80,6 +80,53 @@ function Assert-PrivateOperatorHttps {
     } finally { $client.Dispose() }
 }
 
+function Get-PrivateVmHeldHttpsReadiness {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][ValidatePattern('^[a-z0-9-]{2,32}$')][string]$EnvironmentName)
+
+    $values = Invoke-PrivateAzd @('env', 'get-values', '--environment', $EnvironmentName, '--output', 'json') -Json
+    if ($values['AZURE_ENV_NAME'] -cne $EnvironmentName -or $values['SANTA_PRIVATE_BACKEND_INSTALL'] -cne 'true' -or
+        $values['SANTA_PRIVATE_HTTPS_ORIGIN'] -cne 'true') { throw 'Select the azd environment with the fresh HTTPS service staged.' }
+    $target = Get-SantaPrivateVmDeploymentTarget -SubscriptionId $values['AZURE_SUBSCRIPTION_ID'] -EnvironmentName $EnvironmentName
+    Assert-PrivateProvisionedVmOutputs $values $target
+    $facts = Get-SantaHttpsEndpointFacts -TenantId $target.TenantId -SubscriptionId $target.SubscriptionId `
+        -VmInstanceId $target.VmInstanceId -EnvironmentName $EnvironmentName
+
+    $renderer = Join-Path $server 'held_https_readiness.py'
+    $rendered = ($facts | ConvertTo-Json -Compress) | & python -I -B $renderer render
+    if ($LASTEXITCODE -or -not $rendered) { throw 'Could not render the held HTTPS readiness check.' }
+    $marker = 'SANTA_HELD_READY:'
+    $nonce = 'SANTA_HELD_READBACK_DONE:' + [guid]::NewGuid().ToString('N')
+    $body = ($rendered -join "`n") + "`nprintf '%s\n' '$nonce'`n"
+    if ([Text.Encoding]::UTF8.GetByteCount($body) -gt 49152) { throw 'HTTPS readiness check exceeded transport bound.' }
+    $path = Join-Path ([IO.Path]::GetTempPath()) ('santa-held-readback-' + [guid]::NewGuid() + '.sh')
+    try {
+        $file = [IO.FileStream]::new($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        try { $file.Write([Text.Encoding]::UTF8.GetBytes($body)) } finally { $file.Dispose() }
+        $result = Invoke-PrivateAzure @('vm', 'run-command', 'invoke', '--subscription', $target.SubscriptionId,
+            '--resource-group', $target.ResourceGroup, '--name', $target.VmName, '--command-id', 'RunShellScript', '--scripts', "@$path")
+    } finally {
+        if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+    }
+    if (-not $result['value'] -or @($result['value'] | Where-Object { $_.code -cnotmatch '/succeeded$' }).Count) {
+        throw 'Guest readiness did not reach a successful terminal transport result.'
+    }
+    $lines = ($result['value'].message -join "`n") -split '\r?\n'
+    $proof = @($lines | Where-Object { $_.StartsWith($marker, [StringComparison]::Ordinal) })
+    $done = @($lines | Where-Object { $_ -ceq $nonce })
+    if ($proof.Count -ne 1 -or $done.Count -ne 1 -or $proof[0].Length -gt 4096 -or
+        [array]::IndexOf($lines, $done[0]) -le [array]::IndexOf($lines, $proof[0])) {
+        throw 'Guest readiness proof is missing or incomplete. Inspect the selected VM and staged HTTPS files.'
+    }
+    $receipt = $proof[0].Substring($marker.Length) | ConvertFrom-Json -AsHashtable
+    if ($receipt['scope'] -cne 'santa-held-https-readiness-v1' -or $receipt['vm_instance_id'] -cne $target.VmInstanceId -or
+        $receipt['fqdn'] -cne $facts.Fqdn -or $receipt['tcp443'] -cne 'unbound' -or $receipt['held_unit'] -cne 'disabled' -or
+        $receipt['binary_sha256'] -cnotmatch '^[a-f0-9]{64}$' -or $receipt['acme_empty'] -isnot [bool]) {
+        throw 'Guest readiness proof does not match the selected VM and staged service.'
+    }
+    [pscustomobject]$receipt
+}
+
 function Invoke-PrivateVmOperatorSetup {
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -297,4 +344,4 @@ function Invoke-PrivateVmAzdHook {
     Write-Host 'Private backend initialized and binding recorded. Native HTTPS/browser/MFA acceptance remains pending.'
 }
 
-Export-ModuleMember -Function Invoke-PrivateVmAzdHook, Invoke-PrivateVmOperatorSetup
+Export-ModuleMember -Function Invoke-PrivateVmAzdHook, Invoke-PrivateVmOperatorSetup, Get-PrivateVmHeldHttpsReadiness

@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'experiments/server'))
 import https_edge as edge
+import held_https_readiness as readiness
 import prepare_held_https as held
 import probe_held_https as probe
 from test_https_proxy import facts
@@ -105,6 +106,33 @@ class HeldPackage(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'Invalid file'):
                     held.prepare(facts(), release, destination)
             self.assertFalse(destination.exists())
+
+    def test_readiness_expected_bytes_match_the_held_package(self):
+        with tempfile.TemporaryDirectory() as folder:
+            release, lock = self.make_release(Path(folder))
+            files = held.package_files(facts(), release.read_bytes(), lock.read_bytes())
+        request = readiness.render_request(facts())
+        self.assertEqual(request['files'][request['binary']], readiness.LINUX_CADDY_SHA256)
+        for path, (data, _) in files.items():
+            expected = request['files'].get(str(path))
+            if expected and str(path) != request['binary']:
+                if path.suffix == '.py':
+                    data = data.replace(b'\r\n', b'\n')
+                self.assertEqual(expected, hashlib.sha256(data).hexdigest())
+
+    def test_readiness_rejects_systemd_overrides_and_pending_reload(self):
+        unit = readiness.HELD_UNIT
+        props = dict(LoadState='loaded', FragmentPath='/etc/systemd/system/' + unit,
+                     DropInPaths='', NeedDaemonReload='no')
+        def properties(overrides):
+            return '\n'.join(f'{key}={value}' for key, value in dict(props, **overrides).items())
+        with patch.object(readiness, 'command', return_value=properties({})) as query:
+            self.assertEqual(readiness.unit_properties(unit), props)
+            self.assertIn('--all', query.call_args.args)
+            for override in (dict(DropInPaths='/run/override.conf'), dict(NeedDaemonReload='yes')):
+                query.return_value = properties(override)
+                with self.assertRaisesRegex(ValueError, 'override, or pending reload'):
+                    readiness.unit_properties(unit)
 
     @unittest.skipUnless(os.name == 'posix', 'guest staging uses Linux file ownership and modes')
     def test_guest_stages_only_verified_files_and_never_starts_a_service(self):

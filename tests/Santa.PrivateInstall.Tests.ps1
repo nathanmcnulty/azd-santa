@@ -154,6 +154,30 @@ Describe 'Optional private VM azd installation' {
             }
             Should -Invoke Complete-SantaBackendInstallation -Times 1 -Exactly -ParameterFilter { $InstallationOutputs.Origin -ceq $script:origin }
         }
+        It 'validates the staged guest proof through the selected azd environment' {
+            $script:values.SANTA_PRIVATE_HTTPS_ORIGIN = 'true'
+            $root = '/subscriptions/11111111-1111-4111-8111-111111111111/resourceGroups/rg-azd-santa-vm-synthetic/providers'
+            $script:target.VmId = $script:values.SANTA_VM_RESOURCE_ID = "$root/Microsoft.Compute/virtualMachines/vm-santa-lab"
+            $nic = "$root/Microsoft.Network/networkInterfaces/nic-santa-lab"
+            $script:facts = @{ scope='azd-santa-selected-arm-endpoint-v1'; TenantId=$script:target.TenantId
+                SubscriptionId=$script:target.SubscriptionId; EnvironmentName='synthetic'; VmId=$script:target.VmId
+                VmInstanceId=$script:target.VmInstanceId; NicId=$nic; IpConfigurationId="$nic/ipConfigurations/primary"
+                PublicIpId="$root/Microsoft.Network/publicIPAddresses/pip-santa-lab-egress"; PublicIpAddress='8.8.8.8'
+                Fqdn='santa-1111111111114111-synthetic-vm.westus2.cloudapp.azure.com' }
+            Mock Get-SantaHttpsEndpointFacts { $script:facts }
+            Mock Invoke-PrivateAzure {
+                $Arguments[0..2] -join ' ' | Should -BeExactly 'vm run-command invoke'
+                $Arguments[4] | Should -BeExactly $script:target.SubscriptionId
+                $Arguments[6] | Should -BeExactly $script:target.ResourceGroup
+                $request = Get-Content -LiteralPath ($Arguments[-1].Substring(1)) -Raw
+                $nonce = [regex]::Match($request, 'SANTA_HELD_READBACK_DONE:[a-f0-9]{32}').Value
+                $proof = @{ scope='santa-held-https-readiness-v1'; vm_instance_id=$script:target.VmInstanceId; fqdn=$script:facts.Fqdn
+                    tcp443='unbound'; held_unit='disabled'; binary_sha256='b'*64; acme_empty=$true } | ConvertTo-Json -Compress
+                @{ value=@(@{ code='ComponentStatus/StdOut/succeeded'; message="SANTA_HELD_READY:$proof`n$nonce" }) }
+            }
+            (Get-PrivateVmHeldHttpsReadiness -EnvironmentName synthetic).acme_empty | Should -BeTrue
+            Should -Invoke Invoke-PrivateAzure -Times 1 -Exactly
+        }
         It 'rejects ambiguous origin opt-in before shutdown or installation' -ForEach @(@{value='https://evil.invalid'},@{value=$true}) {
             $script:values.SANTA_PRIVATE_HTTPS_ORIGIN = $value
             { Invoke-PrivateVmAzdHook postprovision } | Should -Throw '*must be true or false*'
