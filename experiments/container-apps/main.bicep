@@ -2,6 +2,9 @@ targetScope = 'resourceGroup'
 
 param location string = resourceGroup().location
 
+@description('Create the PostgreSQL job and its billable 100-GiB share after the kernel preflight.')
+param includePostgresStorageProbe bool = false
+
 // Deploy only into a fresh, dedicated lab resource group.
 var suffix = uniqueString(resourceGroup().id)
 var managedGroupName = '${resourceGroup().name}-managed'
@@ -46,7 +49,7 @@ resource integrationSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01
   }
 }
 
-resource account 'Microsoft.Storage/storageAccounts@2025-06-01' = {
+resource account 'Microsoft.Storage/storageAccounts@2025-06-01' = if (includePostgresStorageProbe) {
   name: 'santanfs${suffix}'
   location: location
   kind: 'FileStorage'
@@ -71,7 +74,7 @@ resource account 'Microsoft.Storage/storageAccounts@2025-06-01' = {
   }
 }
 
-resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2025-06-01' = {
+resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2025-06-01' = if (includePostgresStorageProbe) {
   parent: account
   name: 'default'
   properties: {
@@ -85,7 +88,7 @@ resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2025-06-01'
   }
 }
 
-resource share 'Microsoft.Storage/storageAccounts/fileServices/shares@2025-06-01' = {
+resource share 'Microsoft.Storage/storageAccounts/fileServices/shares@2025-06-01' = if (includePostgresStorageProbe) {
   parent: fileService
   name: 'probe'
   properties: {
@@ -118,19 +121,57 @@ resource environment 'Microsoft.App/managedEnvironments@2025-07-01' = {
   }
 }
 
-resource storage 'Microsoft.App/managedEnvironments/storages@2025-07-01' = {
+resource storage 'Microsoft.App/managedEnvironments/storages@2025-07-01' = if (includePostgresStorageProbe) {
   parent: environment
   name: mountName
   properties: {
     nfsAzureFile: {
-      server: split(replace(account.properties.primaryEndpoints.file, 'https://', ''), '/')[0]
+      server: split(replace(account!.properties.primaryEndpoints.file, 'https://', ''), '/')[0]
       shareName: '/${account.name}/${share.name}'
       accessMode: 'ReadWrite'
     }
   }
 }
 
-resource probe 'Microsoft.App/jobs@2025-07-01' = {
+resource kernelProbe 'Microsoft.App/jobs@2025-07-01' = {
+  name: 'santa-elasticsearch-kernel'
+  location: location
+  tags: tags
+  properties: {
+    environmentId: environment.id
+    workloadProfileName: 'Consumption'
+    configuration: {
+      triggerType: 'Manual'
+      replicaRetryLimit: 0
+      replicaTimeout: 300
+      manualTriggerConfig: {
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+    }
+    template: {
+      containers: [
+        {
+          name: 'probe'
+          image: images.elasticsearch
+          command: [
+            '/bin/bash'
+            '-c'
+          ]
+          args: [
+            loadTextContent('probe-elasticsearch-kernel.sh')
+          ]
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+        }
+      ]
+    }
+  }
+}
+
+resource probe 'Microsoft.App/jobs@2025-07-01' = if (includePostgresStorageProbe) {
   name: 'santa-postgres-nfs'
   location: location
   tags: tags
@@ -182,5 +223,6 @@ resource probe 'Microsoft.App/jobs@2025-07-01' = {
   }
 }
 
-output jobName string = probe.name
+output kernelJobName string = kernelProbe.name
+output postgresJobName string = includePostgresStorageProbe ? probe.name : ''
 output managedResourceGroupName string = managedGroupName
