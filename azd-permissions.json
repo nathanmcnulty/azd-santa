@@ -8,6 +8,42 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/deployments/write; Microsoft.Resources/deployments/read; Microsoft.Network/virtualNetworks/write; Microsoft.Network/virtualNetworks/subnets/write; Microsoft.Network/virtualNetworks/subnets/join/action; Microsoft.Network/virtualNetworks/subnets/joinViaServiceEndpoint/action; Microsoft.Storage/storageAccounts/write; Microsoft.Storage/storageAccounts/read; Microsoft.Storage/storageAccounts/fileServices/write; Microsoft.Storage/storageAccounts/fileServices/shares/write; Microsoft.App/managedEnvironments/write; Microsoft.App/managedEnvironments/join/action; Microsoft.App/managedEnvironments/storages/write; Microsoft.App/jobs/write",
+      "principal": "Explicit lab deployment operator with existing Azure rights",
+      "phase": "deployment",
+      "feature": "container-apps-dependency-probes",
+      "defaultEnabled": false,
+      "scope": "Disposable dedicated probe resource group and its own Container Apps subnet only",
+      "rationale": "Optional group-scoped Bicep for a manual Elasticsearch kernel probe. Storage account, share, and environment storage writes apply only with the separate PostgreSQL NFS probe enabled. Deployment declares no workload identity, credentials, access grants, or role assignments.",
+      "evidenceState": "code",
+      "evidence": [
+        {
+          "path": "experiments/container-apps/main.bicep",
+          "sha256": "c617c52bb05f7def47ed43e45b2fb988a38df2403222831d166920936bf96c0d"
+        }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
+      "permission": "Microsoft.App/jobs/read; Microsoft.App/jobs/start/action; Microsoft.App/jobs/executions/read; Microsoft.App/jobs/execution/read",
+      "principal": "Explicit probe operator with existing Azure rights",
+      "phase": "runtime",
+      "feature": "container-apps-dependency-probes",
+      "defaultEnabled": false,
+      "scope": "Exact lab jobs and their synthetic executions only",
+      "rationale": "Start each manual probe once and read its terminal status. The optional PostgreSQL job mount is authorized by the storage firewall and the dedicated subnet.",
+      "evidenceState": "documented",
+      "evidence": [
+        {
+          "path": "experiments/container-apps/README.md",
+          "sha256": "08a4d960ba98dd8a9e1f5694780c49ef9e56fba9216811d42a719db5d7cf1044"
+        }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
       "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
       "principal": "Explicit selected cached Azure CLI user (existing rights only)",
       "phase": "deployment",
@@ -787,6 +823,7 @@
     }
   ],
   "gaps": [
+    "Container Apps dependency probe authority is inventoried from code and documentation. Exact live provider, managed infrastructure creation, resource group provisioning, execution stop, and cleanup permissions are unverified.",
     "Pilot enrollment transport is source/offline only. Stored factor/last-login checks are not current human MFA proof. One local intent plus one Run Command submission does not prove device delivery, actual ORM creation or exactly-once distributed execution. Same-invocation Observe retains its ephemeral key only; after process exit, preserve uncertain state and reconcile rather than select a fresh output path or recreate enrollment. No new grant or MDM assignment is supplied. See docs/pilot-enrollment-transport.md.",
     "The HTTPS edge renderer creates configuration and units without cloud calls. Its explicit restrictive firewall command needs selected Linux root/CAP_NET_ADMIN authority. Fresh VM staging leaves the firewall and proxy services stopped and does not write NSG rules. Direct pilot admission shares the backend peer budget. See docs/https-edge.md for measured Linux behavior and remaining load and failure tests.",
     "The default-off fresh HTTPS origin profile reuses existing cached endpoint graph reads and binds one selected Azure hostname through context, guest IMDS-region validation, rendered configuration and completion. Fresh installation stages the held Caddy certificate service with no network activation or application route. Cold delivery of the integrated staging path, certificate renewal and general application ingress qualification remain open. See docs/fresh-https-origin.md.",
