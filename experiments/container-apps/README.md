@@ -61,12 +61,12 @@ subscription. Record the deployment and execution identity and terminal result
 outside Azure. Capture the execution status and error details before deleting
 the environment. This probe has no permanent logging workspace.
 
-On success, failure, timeout, or cancellation, retire the exact lab environment
-and its dedicated group during the same session. Deleting or stopping the job
-alone leaves provisioned storage behind. Allow the environment to remove its
-managed infrastructure, then independently verify that both group names are
-absent in the selected subscription. If the managed group persists, inventory
-its resources by ID and resolve the environment dependency before treating
-cleanup as complete. Include public IPs, load-balancer infrastructure, and
-storage in the final readback. Never delete a pre-existing group based on that
-name alone.
+On success, failure, timeout, or cancellation, delete the exact lab job,
+environment, and dedicated group during the same session. Delete the job
+first, then the environment, then the group containing the provisioned share.
+Allow the environment to remove its managed infrastructure and independently
+verify that both group names are absent in the selected subscription. If the
+managed group persists, inventory its resources by ID and resolve the
+environment dependency before treating cleanup as complete. Include public IPs,
+load-balancer infrastructure, and storage in the final readback. Never delete
+a pre-existing group based on that name alone.
