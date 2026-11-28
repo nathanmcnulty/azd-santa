@@ -84,6 +84,23 @@ the wrong-host route retains421. Certificate challenges do not admit application
 requests. The pinned-binary loopback test verifies503 and no additional backend
 call, using an explicit synthetic certificate without contacting ACME.
 
+During a certificate trial, an external workstation can check the held HTTPS
+response using the endpoint facts and digest captured before the trial. Reuse
+the `.arm-facts.json` and its `facts_sha256` from the corresponding
+`.arm-readback.json` produced by `New-SantaHttpsCandidate.ps1`.
+
+```powershell
+python -I ./experiments/server/probe_held_https.py `
+  --facts <arm-facts-file> --expected-facts-sha256 <captured-sha256>
+```
+
+The probe checks the IPv4 DNS mapping and connects directly to the selected
+address with the exact TLS server name and HTTP host. It uses the workstation's
+default trust and accepts only the held response. Its JSON receipt includes the
+certificate fingerprint and expiry. Compare fresh observations with the previous
+certificate when qualifying renewal. This client check depends on current DNS
+and workstation trust. Guest configuration and NSG state require separate proof.
+
 `certificate_ingress_candidate()` is a pure proposed NSG body, not a writer or
 deployment authorization. It requires the owned closed NSG, its single selected
 subnet and exactly the selected NIC IP configuration; unknown/extra assignments

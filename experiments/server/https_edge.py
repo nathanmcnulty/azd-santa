@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import prepare_https_proxy as candidate
 
 LIMIT = 16
+HELD_BODY = 'Application admission held closed.\n'
 COMMENT = 'azd-santa-https-edge-v1'
 IPTABLES = '/usr/sbin/iptables'
 
@@ -76,7 +77,7 @@ def held_configuration(facts, state, *, phase='staging'):
     # Remove the proxy entirely, rather than depending on handler fallthrough.
     routes[0]['handle'] = [{
         'handler': 'static_response', 'status_code': 503,
-        'body': 'Application admission held closed.\n',
+        'body': HELD_BODY,
         'headers': {'Retry-After': ['60'], 'Cache-Control': ['no-store']},
         'close': True}]
     need('reverse_proxy' not in json.dumps(data))
