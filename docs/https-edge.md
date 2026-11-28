@@ -66,6 +66,17 @@ application readiness or a native Mac result.
 
 ## Held certificate qualification
 
+`experiments/server/prepare_held_https.py` builds the held-service package from
+the verified ARM endpoint facts and the pinned Caddy Linux AMD64 release archive.
+It verifies the release SHA-256 before reading archive members and includes the
+upstream license and readme. The package contains the selected endpoint identity,
+held production config, five-minute service unit, firewall unit and boot lock
+configuration. It has no
+application service, proxy handler, enablement link or ACME state. Building it
+does not write to Azure or start a listener. The VM deployment still needs to
+install the package, prepare private service state and verify the selected VM
+before explicitly starting a certificate trial.
+
 `held_configuration()` supports only staging/production issuers and removes the
 application proxy entirely. The selected hostname receives503 with Retry-After60;
 the wrong-host route retains421. Certificate challenges do not admit application
