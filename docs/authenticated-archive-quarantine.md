@@ -15,6 +15,27 @@ administrator/device reissue remain separate unimplemented integration gates.
 Archived images/configuration/roles/markers are preserved evidence, never
 authorization to run their code, connect to their destinations or start services.
 
+## Authenticate a locally retained archive
+
+Once an authorized operator has the ciphertext and portable encrypted recipient
+key on a private Linux recovery host, use the existing key and ciphertext
+digests from independently retained records. Run as root with both inputs in
+private root-owned files, using the reviewed repository and its recovery
+dependencies on that same host.
+
+```bash
+python3 -B experiments/server/verify_retained_backup.py \
+  --backup /root/santa-recovery/backup.sealed --backup-sha256 "$BACKUP_SHA256" \
+  --portable-key /root/santa-recovery/recipient.der --portable-key-sha256 "$KEY_SHA256"
+```
+
+The command prompts for the key passphrase without echoing it. It authenticates
+the complete file, discards decrypted bytes, and prints a JSON receipt with
+the archive digest, byte count, and recipient fingerprint on success. This
+local check can run after losing the source VM. Acquisition from the backup
+store, portable key custody for the actual pilot, and application restoration
+still need their own evidence. See [lab retirement](https://github.com/nathanmcnulty/azd-santa/issues/246).
+
 ## Authentication and private containment
 
 The existing `restore_cipher.authenticate()` authenticate-and-discard API is
