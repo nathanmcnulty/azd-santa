@@ -73,6 +73,9 @@ def held_configuration(facts, state, *, phase='staging'):
     """Certificate qualification only: no route can reach the application."""
     need(phase in ('staging', 'production'))
     data = configuration(facts, state, phase=phase)
+    # The held unit runs for five minutes. Let Caddy check the normal renewal
+    # eligibility inside that window without changing the issuer's due date.
+    data['apps']['tls']['automation']['renew_interval'] = '30s'
     routes = data['apps']['http']['servers']['https']['routes']
     # Remove the proxy entirely, rather than depending on handler fallthrough.
     routes[0]['handle'] = [{

@@ -1,9 +1,12 @@
 """Original Unlicense. Check staged certificate service readiness without starting it."""
 import base64
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
+import ssl
 import stat
 import subprocess
 import sys
@@ -128,11 +131,38 @@ def observe(request):
                 acme_empty=not any((state / 'acme').iterdir()))
 
 
+def stored_certificate(request):
+    import pwd
+
+    host = request['facts']['Fqdn']
+    state = Path(request['state'])
+    path = state / 'acme/certificates/acme-v02.api.letsencrypt.org-directory' / host / (host + '.crt')
+    account = pwd.getpwnam('azd-santa-https')
+    for asset in (path, path.with_suffix('.key'), path.with_suffix('.json')):
+        info = asset.lstat()
+        require(asset == asset.resolve(strict=True) and stat.S_ISREG(info.st_mode) and info.st_uid == account.pw_uid
+                and not info.st_mode & 0o022 and 0 < info.st_size <= 65536, 'The selected certificate state is not protected.')
+    lines = command('/usr/bin/openssl', 'x509', '-in', str(path), '-noout', '-fingerprint', '-sha256', '-enddate').splitlines()
+    fields = dict(line.split('=', 1) for line in lines)
+    fingerprint = fields.get('sha256 Fingerprint', fields.get('SHA256 Fingerprint', '')).replace(':', '').lower()
+    require(re.fullmatch('[a-f0-9]{64}', fingerprint) and 'notAfter' in fields, 'The selected stored leaf is unavailable.')
+    expiry_utc = datetime.fromtimestamp(ssl.cert_time_to_seconds(fields['notAfter']), timezone.utc)
+    return dict(certificate_sha256=fingerprint, certificate_expires_utc=expiry_utc.isoformat())
+
+
 def trial_guest(request):
     action = request['action']
+    result = dict(action=action, vm_instance_id=request['facts']['VmInstanceId'])
     if action == 'start':
         proof = observe(request)
-        require(proof['acme_empty'], 'This initial certificate trial requires empty ACME state.')
+        mode = request.get('mode', 'issue')
+        if mode == 'issue':
+            require(proof['acme_empty'], 'This initial certificate trial requires empty ACME state.')
+        elif mode == 'renew':
+            require(not proof['acme_empty'], 'A renewal trial requires an existing certificate.')
+            result['previous_certificate'] = stored_certificate(request)
+        else:
+            raise ValueError('Unsupported certificate trial mode.')
         command('/usr/bin/systemd-tmpfiles', '--create', '/etc/tmpfiles.d/azd-santa-https-lock.conf')
         command('/usr/bin/systemctl', 'start', FIREWALL_UNIT)
         script_dir = str(Path(request['binary']).parent)
@@ -150,13 +180,14 @@ def trial_guest(request):
         require(not command('/usr/bin/ss', '-Hlt', 'sport = :443'), 'TCP443 remains bound after stopping the held unit.')
     else:
         raise ValueError('Unsupported guest trial action.')
-    return dict(action=action, vm_instance_id=request['facts']['VmInstanceId'])
+    return result
 
 
-def render_script(facts, action=None):
+def render_script(facts, action=None, mode='issue'):
     request = render_request(facts)
     if action is not None:
         request['action'] = action
+        request['mode'] = mode
     token = base64.b64encode(json.dumps(request, sort_keys=True).encode()).decode('ascii')
     source = source_bytes(__file__).decode('utf-8')
     return f"set -eu\n/usr/bin/python3 -I -B - '{token}' <<'SANTA_HELD_READY'\n{source}\nSANTA_HELD_READY\n"

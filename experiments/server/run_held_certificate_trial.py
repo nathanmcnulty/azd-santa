@@ -1,9 +1,11 @@
-"""Original Unlicense. Run one initial held certificate trial on the selected Azure VM."""
+"""Original Unlicense. Run one held certificate window on the selected Azure VM."""
+from datetime import datetime
 import hashlib
 import http.client
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import time
 import urllib.error
@@ -18,7 +20,24 @@ import private_arm_adapter as arm
 import probe_held_https as probe
 
 
-def run(facts, directory):
+def validate_previous(proof):
+    if (set(proof) != {'certificate_sha256', 'certificate_expires_utc'} or
+            not re.fullmatch('[a-f0-9]{64}', proof['certificate_sha256']) or
+            datetime.fromisoformat(proof['certificate_expires_utc']).utcoffset() is None):
+        raise ValueError('Stored certificate proof is incomplete.')
+    return proof
+
+
+def renewal_observed(previous, current):
+    if previous['certificate_sha256'] == current['certificate_sha256']:
+        return False
+    if datetime.fromisoformat(current['certificate_expires_utc']) <= datetime.fromisoformat(previous['certificate_expires_utc']):
+        raise ValueError('The new certificate does not extend the stored certificate lifetime.')
+    return True
+
+
+def run(facts, directory, mode='issue'):
+    ingress.require(mode in ('issue', 'renew'), 'Unsupported certificate trial mode.')
     candidate.validate_facts(facts)
     subscription = facts['SubscriptionId']
     group = 'rg-azd-santa-vm-' + facts['EnvironmentName']
@@ -63,7 +82,7 @@ def run(facts, directory):
             return error.code
 
     def invoke_guest(action):
-        script = guest.render_script(facts, action)
+        script = guest.render_script(facts, action, mode)
         nonce = 'SANTA_CERTIFICATE_GUEST_DONE:' + uuid.uuid4().hex
         script += f"printf '%s\\n' '{nonce}'\n"
         path = directory / f'{action}-held.sh'
@@ -78,8 +97,12 @@ def run(facts, directory):
         ingress.require(len(markers) == 1 and lines.count(nonce) == 1 and lines.index(markers[0]) < lines.index(nonce),
                         'Guest trial action did not produce terminal evidence.')
         proof = json.loads(markers[0].split(':', 1)[1])
-        ingress.require(proof == dict(action=action, vm_instance_id=instance), 'Guest trial evidence differs from the selection.')
+        expected = dict(action=action, vm_instance_id=instance)
+        if action == 'start' and mode == 'renew':
+            expected['previous_certificate'] = validate_previous(proof['previous_certificate'])
+        ingress.require(proof == expected, 'Guest trial evidence differs from the selection.')
         record('guest-' + action, proof)
+        return proof
 
     record('endpoint', facts)
     endpoint = directory / 'endpoint.json'
@@ -87,31 +110,44 @@ def run(facts, directory):
     ingress.require(read(facts['VmId'])['properties']['vmId'].lower() == instance, 'The selected VM instance changed.')
     intent = ingress.plan(facts, read(nsg), read(subnet), read(facts['NicId']))
 
-    def observe():
+    def observe(previous):
         deadline = time.monotonic() + 150
+        unchanged = None
         while time.monotonic() < deadline:
             try:
                 result = probe.observe(endpoint, digest)
             except (OSError, http.client.RemoteDisconnected):
                 time.sleep(3)
                 continue
-            record('certificate', result)
-            return result
+            if previous is None:
+                record('certificate', result)
+                return result
+            observed = renewal_observed(previous, result)
+            result.update(renewal_observed=observed, previous_certificate=previous)
+            if observed:
+                record('certificate', result)
+                return result
+            unchanged = result
+            time.sleep(3)
+        if unchanged is not None:
+            record('certificate', unchanged)
+            return unchanged
         raise TimeoutError('Trusted HTTPS did not return the held response during the certificate window.')
 
     try:
-        invoke_guest('start')
+        started = invoke_guest('start')
         ingress.require(read(facts['VmId'])['properties']['vmId'].lower() == instance
                         and ingress.plan(facts, read(nsg), read(subnet), read(facts['NicId'])) == intent,
                         'Selected VM or network changed while preparing the held listener.')
-        return ingress.run(intent, read, put, observe, record)
+        return ingress.run(intent, read, put, lambda: observe(started.get('previous_certificate')), record)
     finally:
         invoke_guest('stop')
 
 
 if __name__ == '__main__':
     try:
-        result = run(json.load(sys.stdin), Path(sys.argv[1]))
+        mode = sys.argv[2] if len(sys.argv) > 2 else 'issue'
+        result = run(json.load(sys.stdin), Path(sys.argv[1]), mode)
         print(json.dumps(result, sort_keys=True))
     except Exception:
         raise SystemExit('Certificate trial failed or is uncertain. Inspect this attempt directory and the selected NSG before another action.') from None

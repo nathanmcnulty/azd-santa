@@ -160,6 +160,22 @@ trusted HTTP503, restored deny-all and stopped the listener. The retirement
 command removed the disposable group and its resources. Scheduled Azure renewal
 remains open. [Live command and retirement evidence](https://github.com/nathanmcnulty/azd-santa/issues/64#issuecomment-7236399029)
 
+For a lab staged with the renewal-capable configuration, use `-Mode Renew`
+after initial issuance. The same held unit reads the stored leaf fingerprint
+and expiry before starting. Caddy checks its normal renewal eligibility every
+30 seconds within the five-minute service limit. This mode preserves ACME
+state and lets Caddy decide when to renew.
+
+```powershell
+./Invoke-SantaHeldCertificateTrial.ps1 -EnvironmentName $environment -Mode Renew
+```
+
+A `renewal_observed` value of `true` requires a different trusted fingerprint
+with a later expiry. An unchanged trusted leaf is recorded with
+`renewal_observed: false`. The command restores ingress and stops the service
+in either case. This is an explicit lab window. Azure scheduling, renewal
+validation, and upgrades of previously staged service files remain open.
+
 ### Loopback renewal test
 
 The optional renewal fixture uses the pinned Caddy binary and Pebble v2.10.3
