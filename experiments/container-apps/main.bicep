@@ -109,9 +109,6 @@ resource environment 'Microsoft.App/managedEnvironments@2025-07-01' = {
       internal: true
       infrastructureSubnetId: integrationSubnet.id
     }
-    appLogsConfiguration: {
-      destination: 'none'
-    }
     workloadProfiles: [
       {
         name: 'Consumption'

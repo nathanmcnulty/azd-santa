@@ -19,7 +19,7 @@
       "evidence": [
         {
           "path": "experiments/container-apps/main.bicep",
-          "sha256": "1e1ac30f60f99513213270050ba65fc53020a07ea2fac39c2e0e1cf26289f1d8"
+          "sha256": "c617c52bb05f7def47ed43e45b2fb988a38df2403222831d166920936bf96c0d"
         }
       ]
     },
