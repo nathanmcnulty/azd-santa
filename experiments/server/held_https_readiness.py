@@ -128,17 +128,48 @@ def observe(request):
                 acme_empty=not any((state / 'acme').iterdir()))
 
 
+def trial_guest(request):
+    action = request['action']
+    if action == 'start':
+        proof = observe(request)
+        require(proof['acme_empty'], 'This initial certificate trial requires empty ACME state.')
+        command('/usr/bin/systemd-tmpfiles', '--create', '/etc/tmpfiles.d/azd-santa-https-lock.conf')
+        command('/usr/bin/systemctl', 'start', FIREWALL_UNIT)
+        script_dir = str(Path(request['binary']).parent)
+        sys.path.insert(0, script_dir)
+        import https_edge
+        require(https_edge.verify_firewall(443)['maximum_connections'] == 16, 'The kernel TCP cap is not enforced.')
+        command('/usr/bin/systemctl', 'start', HELD_UNIT)
+        require(command('/usr/bin/systemctl', 'is-active', HELD_UNIT) == 'active', 'The held unit did not start.')
+    elif action == 'stop':
+        facts = request['facts']
+        identity = metadata()
+        require(identity['vmId'].lower() == facts['VmInstanceId'] and identity['resourceId'].lower() == facts['VmId'].lower(),
+                'Guest identity changed before trial cleanup.')
+        command('/usr/bin/systemctl', 'stop', HELD_UNIT)
+        require(not command('/usr/bin/ss', '-Hlt', 'sport = :443'), 'TCP443 remains bound after stopping the held unit.')
+    else:
+        raise ValueError('Unsupported guest trial action.')
+    return dict(action=action, vm_instance_id=request['facts']['VmInstanceId'])
+
+
+def render_script(facts, action=None):
+    request = render_request(facts)
+    if action is not None:
+        request['action'] = action
+    token = base64.b64encode(json.dumps(request, sort_keys=True).encode()).decode('ascii')
+    source = source_bytes(__file__).decode('utf-8')
+    return f"set -eu\n/usr/bin/python3 -I -B - '{token}' <<'SANTA_HELD_READY'\n{source}\nSANTA_HELD_READY\n"
+
+
 if __name__ == '__main__':
     if len(sys.argv) == 2 and sys.argv[1] == 'render':
-        facts = json.load(sys.stdin)
-        data = json.dumps(render_request(facts), sort_keys=True).encode()
-        token = base64.b64encode(data).decode('ascii')
-        source = source_bytes(__file__).decode('utf-8')
-        print(f"set -eu\n/usr/bin/python3 -I -B - '{token}' <<'SANTA_HELD_READY'\n{source}\nSANTA_HELD_READY")
+        print(render_script(json.load(sys.stdin)), end='')
     elif len(sys.argv) == 2:
         try:
             request = json.loads(base64.b64decode(sys.argv[1], validate=True))
-            print('SANTA_HELD_READY:' + json.dumps(observe(request), separators=(',', ':')))
+            proof = trial_guest(request) if 'action' in request else observe(request)
+            print('SANTA_HELD_READY:' + json.dumps(proof, separators=(',', ':')))
         except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
             raise SystemExit(str(error)) from None
     else:

@@ -5,6 +5,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import sys
 import tarfile
@@ -15,10 +16,114 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'experiments/server'))
 import https_edge as edge
+import certificate_ingress as ingress
 import held_https_readiness as readiness
 import prepare_held_https as held
 import probe_held_https as probe
+import run_held_certificate_trial as trial
 from test_https_proxy import facts
+
+
+class CertificateWindow(unittest.TestCase):
+    def setUp(self):
+        selected = facts()
+        base = selected['NicId'].rsplit('/', 2)[0]
+        nsg_id = base + '/networkSecurityGroups/nsg-santa-lab'
+        subnet_id = base + '/virtualNetworks/vnet-santa-lab/subnets/host'
+        tags = {'azd-solution': 'azd-santa', 'purpose': 'synthetic-vm-lab', 'azd-env-name': 'synthetic'}
+        deny = dict(priority=100, direction='Inbound', access='Deny', protocol='*', sourcePortRange='*',
+                    destinationPortRange='*', sourceAddressPrefix='*', destinationAddressPrefix='*')
+        self.version = '"44444444-4444-4444-8444-444444444444"'
+        nsg = dict(id=nsg_id, etag=self.version, location='westus2', tags=tags,
+                   properties=dict(provisioningState='Succeeded', subnets=[{'id': subnet_id}],
+                       networkInterfaces=[], securityRules=[dict(name='deny-all-inbound', properties=deny)]))
+        subnet = dict(id=subnet_id, properties=dict(provisioningState='Succeeded', addressPrefix='10.10.0.0/24',
+                      networkSecurityGroup={'id': nsg_id}, ipConfigurations=[{'id': selected['IpConfigurationId']}]))
+        config = dict(id=selected['IpConfigurationId'], properties=dict(subnet={'id': subnet_id},
+                      publicIPAddress={'id': selected['PublicIpId']}, privateIPAddress='10.10.0.4'))
+        nic = dict(id=selected['NicId'], properties=dict(provisioningState='Succeeded',
+                   virtualMachine={'id': selected['VmId']}, ipConfigurations=[config]))
+        self.intent = ingress.plan(selected, nsg, subnet, nic)
+        self.view = nsg
+        self.selected = selected
+        self.arm_views = {nsg_id: nsg, subnet_id: subnet, selected['NicId']: nic,
+                          selected['VmId']: {'properties': {'vmId': selected['VmInstanceId']}}}
+        self.calls = []
+        self.receipts = {}
+
+    def read(self, resource):
+        self.assertEqual(resource, self.intent['resource_id'])
+        return copy.deepcopy(self.view)
+
+    def put(self, resource, body, version):
+        self.assertEqual((resource, version), (self.intent['resource_id'], self.view['etag']))
+        self.calls.append((copy.deepcopy(body), version))
+        self.view['properties']['securityRules'] = copy.deepcopy(body['properties']['securityRules'])
+        self.view['etag'] = '"55555555-5555-4555-8555-555555555555"'
+        return 202
+
+    def record(self, name, receipt):
+        self.assertNotIn(name, self.receipts)
+        self.receipts[name] = receipt
+
+    def test_window_targets_only_the_nic_and_restores_after_probe_failure(self):
+        allow = self.intent['temporary']['properties']['securityRules'][0]['properties']
+        self.assertEqual((allow['destinationAddressPrefix'], allow['destinationPortRange']), ('10.10.0.4', '443'))
+        def probe():
+            self.assertIn('ingress-intent', self.receipts)
+            raise LookupError('fixture TLS failed')
+        with patch.object(ingress.time, 'sleep'), self.assertRaisesRegex(LookupError, 'fixture TLS failed'):
+            ingress.run(self.intent, self.read, self.put, probe, self.record)
+        self.assertEqual(self.calls, [(self.intent['temporary'], self.version),
+                                     (self.intent['original'], self.view['etag'])])
+        self.assertTrue(self.receipts['ingress-outcome']['verified_closed'])
+
+    def test_unknown_opening_does_not_claim_recovery_from_an_unchanged_policy(self):
+        def put(*_):
+            self.calls.append('submitted once')
+            raise TimeoutError('fixture timeout')
+        with self.assertRaisesRegex(ValueError, 'Opening outcome is uncertain'):
+            ingress.run(self.intent, self.read, put, lambda: self.fail('No probe'), self.record)
+        self.assertEqual(self.calls, ['submitted once'])
+        self.assertFalse(self.receipts['ingress-outcome']['verified_closed'])
+
+    def test_unrelated_policy_changes_are_never_overwritten(self):
+        def probe():
+            self.view['tags']['changed'] = 'outside trial'
+        with self.assertRaisesRegex(ValueError, 'changed outside'):
+            ingress.run(self.intent, self.read, self.put, probe, self.record)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_controller_starts_probes_restores_and_stops_the_held_unit(self):
+        history = []
+        selected = self.selected
+        def read(_method, url, *args):
+            path = url.removeprefix('https://management.azure.com').split('?')[0]
+            return copy.deepcopy(self.arm_views[path])
+        def guest(command, *args, **kwargs):
+            file = Path(command[-1][1:])
+            action = file.name.split('-')[0]
+            history.append(action)
+            nonce = re.search('SANTA_CERTIFICATE_GUEST_DONE:[a-f0-9]{32}', file.read_text()).group()
+            proof = json.dumps(dict(action=action, vm_instance_id=selected['VmInstanceId']))
+            return dict(value=[dict(code='ComponentStatus/StdOut/succeeded', message=f'SANTA_HELD_READY:{proof}\n{nonce}')])
+        def write(request, **kwargs):
+            body = json.loads(request.data)
+            history.append('open' if body == self.intent['temporary'] else 'restore')
+            self.put(self.intent['resource_id'], body, request.get_header('If-match'))
+            return unittest.mock.MagicMock(**{'__enter__.return_value.status': 202})
+        def observe(*args):
+            history.append('probe')
+            return {'http_status': 503}
+        credentials = dict(tenant=selected['TenantId'], subscription=selected['SubscriptionId'], accessToken='fixture')
+        with tempfile.TemporaryDirectory() as folder, patch.object(trial.arm, 'resolve_cli'), \
+             patch.object(trial.arm, 'cached_cli', return_value=credentials), patch.object(trial.arm, 'https', side_effect=read), \
+             patch.object(trial.arm, 'bounded_cli', side_effect=guest), patch.object(trial.probe, 'observe', side_effect=observe), \
+             patch.object(ingress.time, 'sleep'), patch.object(trial.urllib.request, 'build_opener', return_value=SimpleNamespace(open=write)):
+            self.assertEqual(trial.run(selected, Path(folder)), {'http_status': 503})
+            outcome = json.loads((Path(folder) / 'ingress-outcome.json').read_bytes())
+            self.assertTrue(outcome['verified_closed'])
+        self.assertEqual(history, ['start', 'open', 'probe', 'restore', 'stop'])
 
 
 class HeldObservation(unittest.TestCase):
