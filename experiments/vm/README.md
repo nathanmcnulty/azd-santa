@@ -3,15 +3,17 @@
 Optional **private backend installation and host qualification**. Root
 `azure.yaml` remains Intune-only; this nested project runs no root hooks,
 publishes no profiles/rules, installs no Mac package and enrolls no devices.
-The selected 2026-11-14 cold invocation completed provisioning, fresh six-volume
-guest installation and client finalization on its first attempt. Earlier rerun,
-standalone provision and reboot evidence remains bound to its older image; see
-[installation results](../../docs/private-vm-installation.md). The new image also
-passed an unchanged-source rerun, original-container/data reboot checks and24
-post-reboot synthetic HTTP requests. Recovery faults and native
-snapshot/capture/resume still need qualification.
-Trusted reachable TLS, native-client and customer MFA acceptance remain pending.
-The backend listener is loopback-only.
+The selected private VM passed cold installation, unchanged-source rerun, and
+post-reboot protocol checks. A later cold `azd up` staged the certificate-only
+service and verified disabled HTTPS with the backend running on loopback. The
+same pilot completed trusted initial certificate issuance and was retired after
+the test. A separate restricted, one-Mac Monitor pilot verified administrator
+MFA, native sync, and rollback. [Installation results](../../docs/private-vm-installation.md)
+[Held certificate evidence](https://github.com/nathanmcnulty/azd-santa/issues/64#issuecomment-7235611041)
+[Native sync and rollback evidence](https://github.com/nathanmcnulty/azd-santa/issues/53#issuecomment-7234759659)
+
+See [backend status](../../docs/backend-status.md) for the remaining rollout,
+renewal, and recovery gates.
 The user selected VM-first testing followed by a Container Apps comparison.
 
 ## Host and boundaries
@@ -78,6 +80,11 @@ receipt/binding and records `SANTA_OPERATOR_BINDING_PATH` in the selected azd
 environment. No image ID, remote script or JSON assembly is required from admins.
 
 ### Set up the first administrator
+
+For a disposable certificate test, the nested azd environment can run
+`Get-SantaHeldHttpsReadiness.ps1` and `Invoke-SantaHeldCertificateTrial.ps1`.
+The live pilot verified the held response, stopped listener, and restored NSG.
+See the [HTTPS edge instructions](../../docs/https-edge.md#held-certificate-qualification).
 
 After installation, use an operator workstation that can reach the backend
 through its configured trusted HTTPS route. This command opens the current
@@ -176,10 +183,9 @@ before retiring it. See [Azure resource group deletion][azure-delete].
 
 ## Remaining gates
 
-The synthetic host scaffold and private community-server installation have
-separate evidence. The current maintained-server candidate is pinned Zentral
-core; trusted browser/TLS, native Mac Monitor sync, new-image admission and
-backup/restore remain unqualified. See the [current backend status](../../docs/backend-status.md).
+The server candidate is pinned Zentral core. General application ingress,
+scheduled certificate renewal, supported upgrades, and integrated recovery
+remain open. See the [current backend status](../../docs/backend-status.md).
 The Container Apps deployment must use equivalent application tests and explicit
 durable storage; synthetic host results cannot substitute for that comparison.
 
