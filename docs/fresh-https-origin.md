@@ -17,6 +17,13 @@ IMDS VM/subscription/tag bindings and derives the one canonical Azure hostname
 from the selected subscription/environment and IMDS region. Wrong-region,
 cross-target, path/query/port/userinfo and noncanonical origins reject.
 
+On the first run Azure can report a selected resource still provisioning, omit
+pending endpoint details, or change a resource between consecutive reads.
+The install hook takes up to two additional read-only observations in those
+cases, with 5 and 10 seconds between attempts. It still requires two matching
+reads and the original deny-all inbound policy before submitting installation.
+Unexpected identity, linkage, network policy, and CLI errors stop the hook.
+
 The fresh generator sets `api.fqdn` to that hostname. Pinned upstream
 `zentral/conf/__init__.py` derives `api.tls_hostname` and `api_base_url()` as HTTPS;
 there is no invented `api.tls` switch. Allowed hosts retain localhost/127.0.0.1 for

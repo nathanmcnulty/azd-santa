@@ -43,7 +43,7 @@
         },
         {
           "path": "experiments/server/HttpsEndpoint.psm1",
-          "sha256": "b548c7161c9db5efa35199ca6c12fc430b9393c272b1b0d762fd433c2be65b9d"
+          "sha256": "d527d16b77aa73dfdf96d371ebd307a2c7d1e08e4898c5702e31d6a60e739e63"
         }
       ]
     },
@@ -69,7 +69,7 @@
         },
         {
           "path": "experiments/server/HttpsEndpoint.psm1",
-          "sha256": "b548c7161c9db5efa35199ca6c12fc430b9393c272b1b0d762fd433c2be65b9d"
+          "sha256": "d527d16b77aa73dfdf96d371ebd307a2c7d1e08e4898c5702e31d6a60e739e63"
         },
         {
           "path": "experiments/server/BackupStoreSelection.psm1",
@@ -107,7 +107,7 @@
         },
         {
           "path": "experiments/server/HttpsEndpoint.psm1",
-          "sha256": "b548c7161c9db5efa35199ca6c12fc430b9393c272b1b0d762fd433c2be65b9d"
+          "sha256": "d527d16b77aa73dfdf96d371ebd307a2c7d1e08e4898c5702e31d6a60e739e63"
         }
       ]
     },
@@ -193,7 +193,7 @@
         },
         {
           "path": "experiments/server/HttpsEndpoint.psm1",
-          "sha256": "b548c7161c9db5efa35199ca6c12fc430b9393c272b1b0d762fd433c2be65b9d"
+          "sha256": "d527d16b77aa73dfdf96d371ebd307a2c7d1e08e4898c5702e31d6a60e739e63"
         }
       ]
     },
@@ -354,7 +354,7 @@
       "evidence": [
         {
           "path": "experiments/server/HttpsEndpoint.psm1",
-          "sha256": "b548c7161c9db5efa35199ca6c12fc430b9393c272b1b0d762fd433c2be65b9d"
+          "sha256": "d527d16b77aa73dfdf96d371ebd307a2c7d1e08e4898c5702e31d6a60e739e63"
         },
         {
           "path": "experiments/server/New-SantaHttpsCandidate.ps1",
@@ -382,7 +382,7 @@
       "rationale": "Nested VM postprovision validates the selected account/group/VM outputs and schedules two-hour shutdown for that exact VM, including host-only mode. When SANTA_PRIVATE_BACKEND_INSTALL=true, it additionally transports bounded pinned sources, submits one durable privileged fresh-install job and observes it before nonmutating finalization. SANTA_PRIVATE_HTTPS_ORIGIN=true optionally consumes the existing selected cached HTTPS endpoint reader for a fresh origin-bound profile only. No root Intune hook, network admission, tenant grant or operator reset is added; actual complete ARM/hook/cold-install delivery remains unqualified.",
       "evidenceState": "code",
       "evidence": [
-        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "a928d3822389b179a3962840940272abedbeb429644563b6a44e8053ef946aa7" },
+        { "path": "experiments/vm/PrivateVmInstall.psm1", "sha256": "c0d5ba1a06b5677f3ab5c2792ee236bf34858d188086a9244dcaee26d582adc4" },
         { "path": "experiments/vm/Install-PrivateBackend.ps1", "sha256": "33c620439f5abadef688f4a6f0477e80e4676986beac0cb6d43b975c092320d5" },
         { "path": "experiments/server/private_install.py", "sha256": "8b2c2e3867ed19e462a8d26e2df873077946596541c1cf767952e5c207e710dc" },
         { "path": "experiments/server/private_install_transport.py", "sha256": "ec26e620151179eef05e97d4d274d88a90717126c68a3d6eedd488357d273a16" },
