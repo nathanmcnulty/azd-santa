@@ -135,13 +135,15 @@ Describe 'Optional private VM azd installation' {
         It 'binds only authoritative selected HTTPS facts into fresh submission and completion' {
             $script:values.SANTA_PRIVATE_HTTPS_ORIGIN = 'true'
             $script:origin = 'https://santa-1111111111114111-synthetic-vm.westus2.cloudapp.azure.com'
-            Mock Get-SantaHttpsEndpointFacts { @{ Fqdn = $script:origin.Substring(8) } }
+            Mock Get-SantaHttpsEndpointFacts { @{ Fqdn = $script:origin.Substring(8); VmInstanceId = $script:target.VmInstanceId } }
             Mock Invoke-PrivateAzure { @{} }
             Mock New-PrivateSourceBundle { [pscustomobject]@{ Sha256 = 'a'*64; ArchiveSha256 = 'b'*64; Chunks = @('AAAA') } }
             Mock Send-PrivateInstallCommand { param($Target,$Command)
                 if ($Command.mode -eq 'observe') { return @{ scope='private-azd-install-observation'; state='not-installed'; completion=$null } }
                 if ($Command.mode -eq 'chunk') { return @{ scope='private-azd-install-chunk'; index=0; count=1 } }
                 $Command.https_origin | Should -BeExactly $script:origin
+                $Command.https_endpoint.Fqdn | Should -BeExactly $script:origin.Substring(8)
+                $Command.https_endpoint.VmInstanceId | Should -BeExactly $script:target.VmInstanceId
                 @{ scope='private-azd-install-observation'; unit='azd-santa-install-aaaaaaaaaaaaaaaa.service'; completion=@{
                     scope='private-azd-install-complete'; bundle_sha256='a'*64; outputs=@{}+$script:target+@{Origin=$script:origin} } }
             }

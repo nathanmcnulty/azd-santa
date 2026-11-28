@@ -13,6 +13,7 @@ import re
 import unittest
 from unittest.mock import patch
 from test_private_install import installer
+from test_https_proxy import facts as endpoint_facts
 import test_zentral_eval as eval_tests
 generator = eval_tests.generator
 
@@ -24,6 +25,18 @@ TARGET = dict(TenantId='22222222-2222-4222-8222-222222222222',
     VmInstanceId='33333333-3333-4333-8333-333333333333')
 
 class FreshOrigin(unittest.TestCase):
+    def test_held_stage_requires_exact_target_origin_and_endpoint(self):
+        bundle = Path(installer.__file__).parent
+        endpoint = dict(endpoint_facts(), Fqdn=ORIGIN[8:])
+        context = dict(target=TARGET, https_origin=ORIGIN, https_endpoint=endpoint)
+        self.assertEqual(installer.selected_https_stage(context, bundle, ORIGIN).__name__, 'prepare_held_https')
+        self.assertIsNone(installer.selected_https_stage(dict(target=TARGET), bundle, 'https://localhost:8000'))
+        for changed in (dict(endpoint, Fqdn='other.westus2.cloudapp.azure.com'),
+                        dict(endpoint, VmInstanceId='44444444-4444-4444-8444-444444444444'),
+                        dict(endpoint, PublicIpAddress='127.0.0.1')):
+            with self.assertRaises(ValueError):
+                installer.selected_https_stage(dict(context, https_endpoint=changed), bundle, ORIGIN)
+
     def test_guest_origin_is_bound_to_canonical_target_and_imds_region(self):
         context = dict(target=TARGET, https_origin=ORIGIN)
         self.assertEqual(installer.selected_origin(context, dict(location='westus2')), ORIGIN)
@@ -78,11 +91,15 @@ class FreshOrigin(unittest.TestCase):
             for guard in harness.harness(root,external): stack.enter_context(guard)
             digest,archive,data=installation.package()
             relay.run(dict(mode='chunk',bundle_sha256=digest,archive_sha256=archive,index=0,count=1,data=data))
-            command=dict(mode='submit',bundle_sha256=digest,archive_sha256=archive,count=1,target=TARGET,https_origin=ORIGIN)
+            command=dict(mode='submit',bundle_sha256=digest,archive_sha256=archive,count=1,target=TARGET,
+                         https_origin=ORIGIN,https_endpoint=dict(endpoint_facts(), Fqdn=ORIGIN[8:]))
             with self.assertRaises(TimeoutError): relay.run(command)
             active=json.loads((root/'private-azd-install.json').read_bytes())
             self.assertEqual(active['https_origin'],ORIGIN)
+            self.assertEqual(active['https_endpoint'],command['https_endpoint'])
             with self.assertRaises(ValueError): relay.run(dict(command,https_origin=ORIGIN.replace('westus2','eastus')))
+            with self.assertRaises(ValueError): relay.run(dict(command,https_endpoint=dict(
+                command['https_endpoint'], PublicIpAddress='1.1.1.1')))
             self.assertEqual(sum(args[0]=='systemd-run' for args in calls),1)
 
     def test_completion_cannot_report_a_different_bound_origin(self):

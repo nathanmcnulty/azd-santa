@@ -73,9 +73,10 @@ upstream license and readme. The package contains the selected endpoint identity
 held production config, five-minute service unit, firewall unit and boot lock
 configuration. It has no
 application service, proxy handler, enablement link or ACME state. Building it
-does not write to Azure or start a listener. The VM deployment still needs to
-install the package, prepare private service state and verify the selected VM
-before explicitly starting a certificate trial.
+does not write to Azure or start a listener. The opted-in fresh VM installer
+uses the same file renderer after verifying the selected VM and endpoint. It
+stages the files and creates the private service state while leaving the service
+stopped. A certificate trial still requires an explicit activation step.
 
 `held_configuration()` supports only staging/production issuers and removes the
 application proxy entirely. The selected hostname receives503 with Retry-After60;

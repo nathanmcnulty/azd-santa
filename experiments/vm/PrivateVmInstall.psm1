@@ -11,7 +11,8 @@ $files = @('private_install.py', 'private_install_transport.py', 'bootstrap-host
     'prepare_database_roles.py', 'database_roles.py', 'prepare_zentral_eval.py', 'stage_runtime.py',
     'runtime_service.py', 'santa_admission.py', 'cold_backup.py', 'native_snapshot.py',
     'worker_lifecycle.py', 'prepare_worker_lifecycle.py', 'test_live_zentral.py',
-    'zentral-source.lock.json', 'dependency-images.lock.json')
+    'zentral-source.lock.json', 'dependency-images.lock.json', 'prepare_held_https.py',
+    'https_edge.py', 'prepare_https_proxy.py', 'caddy.lock.json')
 
 function Invoke-PrivateAzd {
     param([string[]]$Arguments, [switch]$Json)
@@ -249,7 +250,10 @@ function Invoke-PrivateVmAzdHook {
         }
         try {
             $submission = @{ mode = 'submit'; bundle_sha256 = $bundle.Sha256; archive_sha256 = $bundle.ArchiveSha256; count = $bundle.Chunks.Count; target = $target }
-            if ($origin -cne 'https://localhost:8000') { $submission.https_origin = $origin }
+            if ($origin -cne 'https://localhost:8000') {
+                $submission.https_origin = $origin
+                $submission.https_endpoint = $endpoint
+            }
             $state = Send-PrivateInstallCommand $target $submission
         }
         catch {
@@ -269,6 +273,7 @@ function Invoke-PrivateVmAzdHook {
                 'docker-prerequisites' = 'Check the pinned Docker and Compose prerequisite evidence.'
                 'source-build' = 'Check the retained source build and dependency image evidence.'
                 'runtime-initialization' = 'Check the retained runtime initialization evidence.'
+                'held-https-staging' = 'Check the pinned Caddy download and retained HTTPS staging evidence.'
             }
             $failureCode = $state['failure_code']
             if ($failureCode -is [string] -and $guidance.ContainsKey($failureCode)) {

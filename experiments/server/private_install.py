@@ -58,6 +58,21 @@ def selected_origin(context, metadata):
     return origin
 
 
+def selected_https_stage(context, bundle, origin):
+    if origin == 'https://localhost:8000':
+        require('https_endpoint' not in context)
+        return None
+    endpoint = context['https_endpoint']
+    target = context['target']
+    for key in ('TenantId', 'SubscriptionId', 'EnvironmentName', 'VmId', 'VmInstanceId'):
+        require(endpoint[key] == target[key])
+    require(origin == 'https://' + endpoint['Fqdn'])
+    candidate = load(bundle, 'prepare_https_proxy')
+    candidate.validate_facts(endpoint)
+    load(bundle, 'https_edge')
+    return load(bundle, 'prepare_held_https')
+
+
 def write(path, value):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'w') as output:
@@ -74,7 +89,7 @@ def verified(context_path, digest):
     require(hashlib.sha256(manifest).hexdigest() == context['bundle_sha256'])
     files = json.loads(manifest)['files']
     for name, metadata in files.items():
-        require(name in {'zentral-source.lock.json', 'dependency-images.lock.json'}
+        require(name in {'zentral-source.lock.json', 'dependency-images.lock.json', 'caddy.lock.json'}
                 or re.fullmatch(r'[a-zA-Z0-9_-]+\.(?:py|sh|json)', name))
         selected = bundle / name; info = selected.lstat()
         require(selected == selected.resolve(strict=True) and info.st_uid == 0 and not info.st_mode & 0o022)
@@ -143,6 +158,7 @@ def install(context_path, digest):
         tags = {item['name']: item['value'] for item in metadata['tagsList']}
         require(tags.get('azd-solution') == 'azd-santa' and tags.get('purpose') == 'synthetic-vm-lab' and tags.get('azd-env-name') == context['target']['EnvironmentName'])
         origin = selected_origin(context, metadata)
+        https_stage = selected_https_stage(context, bundle, origin)
         phase = 42
         work = ROOT / ('private-runtime-' + context['target']['EnvironmentName'])
         require(not work.exists() and not Path('/etc/systemd/system/azd-santa-runtime.service').exists())
@@ -184,6 +200,10 @@ def install(context_path, digest):
         sysctl = Path('/etc/sysctl.d/90-azd-santa-qualification.conf')
         if sysctl.exists(): require(sysctl.read_text() == 'vm.max_map_count=1048576\n')
         else: sysctl.write_text('vm.max_map_count=1048576\n')
+        if https_stage is not None:
+            phase = 46
+            stage_receipt = https_stage.stage_on_guest(context['https_endpoint'], run)
+            write(evidence / 'held-https.json', stage_receipt)
         phase = 44
         source_module = load(bundle, 'prepare_source')
         source = Path(source_module.prepare(bundle / 'upstream')['source'])

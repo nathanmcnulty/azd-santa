@@ -3,7 +3,9 @@ import copy
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
+import stat
 import sys
 import tarfile
 import tempfile
@@ -30,8 +32,8 @@ class HeldPackage(unittest.TestCase):
                 entry.size = len(data) if entry.isfile() else 0
                 archive.addfile(entry, io.BytesIO(data))
         lock = directory / 'caddy.lock.json'
-        lock.write_text(json.dumps({'linuxAmd64': {'archiveSha256': hashlib.sha256(
-            release.read_bytes()).hexdigest()}}), encoding='utf-8')
+        lock.write_text(json.dumps({'linuxAmd64': {'archiveUrl': 'https://fixture.invalid/caddy.tar.gz',
+            'archiveSha256': hashlib.sha256(release.read_bytes()).hexdigest()}}), encoding='utf-8')
         return release, lock
 
     def test_package_only_contains_held_service_and_pinned_files(self):
@@ -74,6 +76,47 @@ class HeldPackage(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'Invalid file'):
                     held.prepare(facts(), release, destination)
             self.assertFalse(destination.exists())
+
+    @unittest.skipUnless(os.name == 'posix', 'guest staging uses Linux file ownership and modes')
+    def test_guest_stages_only_verified_files_and_never_starts_a_service(self):
+        import pwd
+
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            release, lock = self.make_release(directory)
+            binary = directory / 'opt/azd-santa-https/pilot'
+            config = directory / 'etc/azd-santa-https/pilot/held.json'
+            state = directory / 'var/lib/azd-santa-https/pilot'
+            units = directory / 'etc/systemd/system'
+            for root in (binary.parent.parent, config.parent.parent.parent, state.parent.parent, units):
+                root.mkdir(parents=True, exist_ok=True)
+            # Use the real archive verifier and file writer. Map fixed paths into
+            # the fixture while retaining the original rendered unit contents.
+            files = held.package_files(facts(), release.read_bytes(), lock.read_bytes())
+            mapped = {directory / path.relative_to('/'): value for path, value in files.items()}
+            (directory / 'etc/tmpfiles.d').mkdir()
+            commands = []
+            def run(label, command):
+                commands.append((label, command))
+                return ''
+            opener = SimpleNamespace(open=lambda *_args, **_kw: release.open('rb'))
+            with patch.multiple(held, BINARY_DIR=binary, CONFIG=config, STATE=state), \
+                 patch.object(edge.candidate, 'LOCK', lock), \
+                 patch.object(held, 'package_files', return_value=mapped) as renderer, \
+                 patch.object(held, 'secure_guest_parent'), \
+                 patch.object(held.urllib.request, 'build_opener', return_value=opener), \
+                 patch.object(os, 'chown') as owner, \
+                 patch.object(pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=1234, pw_gid=1234)):
+                receipt = held.stage_on_guest(facts(), run)
+                renderer.assert_called_once_with(facts(), release.read_bytes(), lock.read_bytes())
+                self.assertEqual(owner.call_count, 3)
+                with self.assertRaises(FileExistsError):
+                    held.stage_on_guest(facts(), run)
+            self.assertEqual([command[0] for _, command in commands], ['/usr/bin/ss', '/usr/sbin/useradd', '/usr/bin/ss'])
+            self.assertEqual(receipt['listener'], 'unbound')
+            self.assertEqual(stat.S_IMODE((binary / 'caddy').stat().st_mode), 0o755)
+            self.assertEqual(stat.S_IMODE(state.stat().st_mode), 0o700)
+            self.assertNotIn('reverse_proxy', config.read_text())
 
 
 class Edge(unittest.TestCase):
