@@ -157,6 +157,28 @@ update and a stale ETag returned HTTP 412 with the new tag retained. The test
 used no VM and the resource group was removed. The integrated command and
 certificate renewal still need live VM validation.
 
+### Loopback renewal test
+
+The optional renewal fixture uses the pinned Caddy binary and Pebble v2.10.3
+on loopback. It verifies two TLS-ALPN validations, a Caddy renewal event, a new
+trusted leaf certificate with a later expiration, and the held HTTP503 from
+the same Caddy process. The fixture uses 90-second certificates and a two-second
+renewal scan. Test roots are confined to the test connections, and the processes
+and temporary state are cleaned up. Azure, public ACME, and VM resources are
+outside this test.
+
+The fixture's options come from the pinned [Caddy automation source](https://github.com/caddyserver/caddy/blob/v2.11.9/modules/caddytls/automation.go)
+and [Pebble test documentation](https://github.com/letsencrypt/pebble/tree/v2.10.3).
+
+Set `SANTA_CADDY_EXE` to the pinned platform binary. Set `SANTA_PEBBLE_BIN` to
+the directory containing `pebble` and `pebble-challtestsrv` built with
+`go install github.com/letsencrypt/pebble/v2/cmd/pebble@v2.10.3 github.com/letsencrypt/pebble/v2/cmd/pebble-challtestsrv@v2.10.3`.
+Set `SANTA_PEBBLE_ROOT` to the corresponding released Go module directory.
+
+```powershell
+python -m unittest discover -s tests -p test_https_renewal_live.py
+```
+
 On 2026-11-15, cold startup exposed a missing `/run/xtables.lock`: systemd rejected
 the firewall namespace before its helper executed. Installing the fixed tmpfiles
 entry restored the private service. Another Azure restart then verified the

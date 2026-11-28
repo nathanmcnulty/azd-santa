@@ -10,4 +10,9 @@ Describe 'Bounded stock HTTPS edge' {
         $result=& $python -m unittest discover -s $PSScriptRoot -p test_https_edge_live.py 2>&1
         $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
     }
+    It 'renews a short-lived certificate with explicitly selected loopback ACME tools' {
+        $python=if($env:SANTA_CRYPTO_PYTHON){$env:SANTA_CRYPTO_PYTHON}else{'python'}
+        $result=& $python -m unittest discover -s $PSScriptRoot -p test_https_renewal_live.py 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($result -join "`n")
+    }
 }
