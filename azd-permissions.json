@@ -395,6 +395,21 @@
     {
       "resource": "Azure Resource Manager",
       "kind": "azure-rbac",
+      "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Resources/subscriptions/resourceGroups/resources/read; Microsoft.Resources/subscriptions/resourceGroups/delete; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/instanceView/read; Microsoft.Network/networkInterfaces/read; Microsoft.Authorization/locks/read; Microsoft.Storage/storageAccounts/read",
+      "principal": "Selected disposable VM lab operator (existing rights only)",
+      "phase": "deployment",
+      "feature": "optional-private-vm-lab-retirement",
+      "defaultEnabled": false,
+      "scope": "Read the selected subscription's Storage network references and delete only the explicitly selected tagged synthetic VM lab group",
+      "rationale": "Explicit standalone cleanup requires the accepted immutable VM instance, deallocated power state, exact lab inventory and no visible Storage subnet dependency or lock. It observes Azure deletion before reporting completion. It does not grant rights, change Storage rules or interact with Intune.",
+      "evidenceState": "code",
+      "evidence": [
+        { "path": "experiments/vm/Remove-SantaVmLab.ps1", "sha256": "faff9eea34c80274489219486eded6a6557a448b219417e1a5cfa160b02a9cad" }
+      ]
+    },
+    {
+      "resource": "Azure Resource Manager",
+      "kind": "azure-rbac",
       "permission": "Microsoft.Resources/subscriptions/read; Microsoft.Resources/subscriptions/resourceGroups/read; Microsoft.Compute/virtualMachines/read; Microsoft.Compute/virtualMachines/runCommand/action",
       "principal": "Explicit selected cached Azure CLI installation operator (existing rights only)",
       "phase": "deployment",

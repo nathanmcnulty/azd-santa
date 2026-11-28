@@ -154,10 +154,25 @@ az vm deallocate --subscription $subscription --resource-group $group --name vm-
 az vm get-instance-view --subscription $subscription --resource-group $group --name vm-santa-lab
 ```
 
-Deallocation stops compute billing, **not disk/public-IP charges**. Retain the
-small lab artifacts for the next test or remove the exact tagged lab group after
-exporting needed receipts; group deletion destroys its disk and synthetic state.
-Do not run root `azd down` or delete the existing Intune anchor group.
+Disks and public IPs can still incur charges while the VM is deallocated. For a
+disposable test, save the receipts you need and retire the exact lab group. Group
+deletion permanently removes its OS disk, public IP, and synthetic state. Check
+that no Intune profile, external integration, or planned recovery uses this lab.
+
+```powershell
+./Remove-SantaVmLab.ps1 -TenantId $tenant -SubscriptionId $subscription `
+  -EnvironmentName $environment -VmInstanceId $vmInstanceId -WhatIf
+```
+
+Use `SANTA_VM_INSTANCE_ID` from the accepted nested `azd` deployment outputs.
+Run the same command without `-WhatIf` to confirm retirement. The script checks
+the lab identity, resources, locks, and Storage subnet rules visible in the
+selected subscription. It waits for Azure to confirm the group is gone. It
+requires existing Azure read and group-deletion access. The root Intune project
+has a separate lifecycle. Finish other deployments and changes to this group
+before retiring it. See [Azure resource group deletion][azure-delete].
+
+[azure-delete]: https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/delete-resource-group
 
 ## Remaining gates
 
